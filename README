@@ -197,4 +197,78 @@ between jobs can be maintained simply by first running all the daligner jobs, th
 the initial sort jobs, and then all the jobs in each phase of the external merge sort.
 Each of these phases is separated by an informative comment line for your scripting
 convenience.
-                                                                                       XXXXX
+
+Example:
+
+//  Recall G.db from the example in DAZZ_DB/README
+
+> cat G.db
+files =         1
+       1862 G Sim
+blocks =         2
+size =        11 cutoff =         0 all = 0
+         0         0
+      1024      1024
+      1862      1862
+> HPCplanner -d -t5 G | csh -v   // Run the HPCdazzler script
+
+# Dazzler jobs (2)
+dazzler -d -t5 G.1 G.1
+dazzler -d -t5 G.2 G.1 G.2
+# Initial sort jobs (4)
+LAsort G.1.G.1.*.las && LAmerge G.L1.1.1 G.1.G.1.*.S.las && rm G.1.G.1.*.S.las
+LAsort G.1.G.2.*.las && LAmerge G.L1.1.2 G.1.G.2.*.S.las && rm G.1.G.2.*.S.las
+LAsort G.2.G.1.*.las && LAmerge G.L1.2.1 G.2.G.1.*.S.las && rm G.2.G.1.*.S.las
+LAsort G.2.G.2.*.las && LAmerge G.L1.2.2 G.2.G.2.*.S.las && rm G.2.G.2.*.S.las
+# Level 1 jobs (2)
+LAmerge G.1 G.L1.1.1 G.L1.1.2 && rm G.L1.1.1.las G.L1.1.2.las
+LAmerge G.2 G.L1.2.1 G.L1.2.2 && rm G.L1.2.1.las G.L1.2.2.las
+
+> LAshow -c -a:G -w50 G.1 | more  // Take a look at the result !
+
+G.1: 34,510 records
+
+         1          9 c   [     0.. 1,876] x [ 9,017..10,825]  ( 18 trace pts)
+
+                      12645
+    A      ---------+====>   dif/(len1+len2) = 398/(1876+1808) = 21.61%
+    B <====+---------
+       9017
+
+         1 ..........gtg-cggt--caggggtgcctgc-t-t-atcgcaatgtta
+                     |||*||||**||||||||*||||*|*|*||**|*|*||||
+      9008 gagaggccaagtggcggtggcaggggtg-ctgcgtcttatatccaggtta  27.5%
+
+        35 ta-ctgggtggttaaacttagccaggaaacctgttgaaataa-acggtgg
+           ||*|||||||||||||*|**|*||*|*||||||*|**|||||*|*|||||
+      9057 tagctgggtggttaaa-tctg-ca-g-aacctg-t--aataacatggtgg  24.0%
+
+        83 -ctagtggcttgccgtttacccaacagaagcataatgaaa-tttgaaagt
+           *||||||||*||||||||*||**||||*|||**|||||||*||||*||||
+      9100 gctagtggc-tgccgttt-ccgcacag-agc--aatgaaaatttg-aagt  20.0%
+
+       131 ggtaggttcctgctgtct-acatacagaacgacggagcgaaaaggtaccg
+           ||*|||||||||||||*|*||||*|*|*||||||||||*||||||||||*
+      9144 gg-aggttcctgctgt-tcacat-c-ggacgacggagc-aaaaggtacc-  16.0%
+
+...
+
+> LAcat G >G.las   //  Combine G.1.las & G.2.las into a single .las file
+> LAshow G | more    //   Take another look, now at G.las
+
+G: 62,654 records
+   1    9 c   [     0.. 1,876] x [ 9,017..10,825] :   <    398 diffs  ( 18 trace pts)
+   1   38 c   [     0.. 7,107] x [ 5,381..12,330] :   <  1,614 diffs  ( 71 trace pts)
+   1   49 n   [ 5,493..14,521] x [     0.. 9,065] :   <  2,028 diffs  ( 91 trace pts)
+   1   68 n   [12,809..14,521] x [     0.. 1,758] :   <    373 diffs  ( 17 trace pts)
+   1  147 c   [     0..13,352] x [   854..14,069] :   <  2,993 diffs  (133 trace pts)
+   1  231 n   [10,892..14,521] x [     0.. 3,735] :   <    816 diffs  ( 37 trace pts)
+   1  292 c   [ 3,835..14,521] x [     0..10,702] :   <  2,353 diffs  (107 trace pts)
+   1  335 n   [ 7,569..14,521] x [     0.. 7,033] :   <  1,544 diffs  ( 70 trace pts)
+   1  377 c   [ 9,602..14,521] x [     0.. 5,009] :   <  1,104 diffs  ( 49 trace pts)
+   1  414 c   [ 6,804..14,521] x [     0.. 7,812] :   <  1,745 diffs  ( 77 trace pts)
+   1  415 c   [     0.. 3,613] x [ 7,685..11,224] :   <    840 diffs  ( 36 trace pts)
+   1  445 c   [ 9,828..14,521] x [     0.. 4,789] :   <  1,036 diffs  ( 47 trace pts)
+   1  464 n   [     0.. 1,942] x [12,416..14,281] :   <    411 diffs  ( 19 trace pts)
+
+...
