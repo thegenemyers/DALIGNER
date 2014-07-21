@@ -117,10 +117,16 @@ char *Strdup(char *name, char *mesg)
 
 FILE *Fopen(char *name, char *mode)
 { FILE *f;
+  char newmode[3];
 
   if (name == NULL || mode == NULL)
     return (NULL);
-  if ((f = fopen(name,mode)) == NULL)
+  if (strcmp(mode, "r") == 0) {
+      strcpy(newmode,"rm");
+  } else {
+      strcpy(newmode,mode);
+  }
+  if ((f = fopen(name,newmode)) == NULL)
     EPRINTF(EPLACE,"%s: Cannot open %s for '%s'\n",Prog_Name,name,mode);
   return (f);
 }
