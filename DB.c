@@ -372,7 +372,7 @@ int Open_DB(char* path, HITS_DB *db)
   else
     { HITS_READ *reads;
       int        i, r, maxlen;
-      int64      totlen;
+      int64      totlen = 0;
 
       nreads = olast-ofirst;
       reads  = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+1),"Allocating Open_DB index");
