@@ -18,6 +18,8 @@
 
 #include <stdio.h>
 
+#include "QV.h"
+
 typedef unsigned char      uint8;
 typedef unsigned short     uint16;
 typedef unsigned int       uint32;
@@ -162,6 +164,25 @@ typedef struct _track
     void          *data;  //     data[anno[i] .. anno[i+1]-1] is data if data != NULL
   } HITS_TRACK;
 
+//  The information for accessing QV streams is in a HITS_QV record that is a "pseudo-track"
+//    named ".@qvs" and is always the first track record in the list (if present).  Since normal
+//    track names cannot begin with a . (this is enforced), this pseudo-track is never confused
+//    with a normal track.
+
+typedef struct
+  { struct _track *next;
+    char          *name;
+    int            ncodes;  //  # of coding tables
+    QVcoding      *coding;  //  array [0..ncodes-1] of coding schemes (see QV.h)
+    uint16        *table;   //  for i in [0,db->nreads-1]: read i should be decompressed with
+                            //    scheme coding[table[i]]
+    FILE          *quiva;   //  the open file pointer to the .qvs file
+  } HITS_QV;
+
+//  The DB record holds all information about the current state of an active DB including an
+//    array of HITS_READS, one per read, and a linked list of HITS_TRACKs the first of which
+//    is always a HITS_QV pseudo-track (if the QVs have been loaded).
+
 typedef struct
   { int         oreads;     //  Total number of reads in DB
     int         breads;     //  Total number of reads in trimmed DB (if trimmed set)
@@ -221,10 +242,26 @@ typedef struct
 
 int Open_DB(char *path, HITS_DB *db);
 
-  // Shut down an open 'db' by freeing all associated space and closing the bases file.
-  //   The record pointed at by db however remains (the user supplied it and so should free it).
+  // Trim the DB or part thereof and all loaded tracks according to the cuttof and all settings
+  //   of the current DB partition.  Reallocate smaller memory blocks for the information kept
+  //   for the retained reads.
+
+void Trim_DB(HITS_DB *db);
+
+  // Shut down an open 'db' by freeing all associated space, including tracks and QV structures,
+  //   and any open file pointers.  The record pointed at by db however remains (the user
+  //   supplied it and so should free it).
 
 void Close_DB(HITS_DB *db);
+
+  // If QV pseudo track is not already in db's track list, then set it up and return a pointer
+  //   to it.  The database must not have been trimmed yet.
+
+void Load_QVs(HITS_DB *db);
+
+  // Remove the QV pseudo track, all space associated with it, and close the .qvs file.
+
+void Close_QVs(HITS_DB *db);
 
   // If track is not already in the db's track list, then allocate all the storage for it,
   //   read it in from the appropriate file, add it to the track list, and return a pointer
@@ -238,11 +275,34 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track);
 
 void Close_Track(HITS_DB *db, char *track);
 
-  // Trim the DB or part thereof and all loaded tracks according to the cuttof and all settings
-  //   of the current DB partition.  Reallocate smaller memory blocks for the information kept
-  //   for the retained reads.
+  // Allocate and return a buffer big enough for the largest read in 'db'.
+  // **NB** free(x-1) if x is the value returned as *prefix* and suffix '\0'(4)-byte
+  // are needed by the alignment algorithms.
 
-void Trim_DB(HITS_DB *db);
+char *New_Read_Buffer(HITS_DB *db);
+
+  // Load into 'read' the i'th read in 'db'.  As a lower case ascii string if ascii is 1, an
+  //   upper case ascii string if ascii is 2, and a numeric string over 0(A), 1(C), 2(G), and 3(T)
+  //   otherwise.  A '\0' (or 4) is prepended and appended to the string so it has a delimeter
+  //   for traversals in either direction.
+
+void Load_Read(HITS_DB *db, int i, char *read, int ascii);
+
+  // Allocate a set of 5 vectors large enough to hold the longest QV stream that will occur
+  //   in the database.  
+
+#define DEL_QV  0   //  The deletion QVs are x[DEL_QV] if x is the buffer returned by New_QV_Buffer
+#define DEL_TAG 1   //  The deleted characters
+#define INS_QV  2   //  The insertion QVs
+#define SUB_QV  3   //  The substitution QVs
+#define MRG_QV  4   //  The merge QVs
+
+char **New_QV_Buffer(HITS_DB *db);
+
+  // Load into 'entry' the 5 QV vectors for i'th read in 'db'.  The deletion tag or characters
+  //   are converted to a numeric or upper/lower case ascii string as per ascii.
+
+void   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
 
   // Allocate a block big enough for all the uncompressed sequences, read them into it,
   //   reset the 'off' in each read record to be its in-memory offset, and set the
@@ -251,19 +311,6 @@ void Trim_DB(HITS_DB *db);
   //   otherwise the reads are left as numeric strings over 0(A), 1(C), 2(G), and 3(T).
 
 void Read_All_Sequences(HITS_DB *db, int ascii);
-
-  // Allocate and return a buffer big enough for the largest read in 'db'.
-  // **NB** free(x-1) if x is the value returned as *prefix* and suffix '\0'(4)-byte
-  // are needed by the alignment algorithms.
-
-char *New_Read_Buffer(HITS_DB *db);
-
-  // Load into 'read' the i'th read in 'db'.  As an ASCII string if ascii is non-zero, and as
-  //   a numeric string over 0(A), 1(C), 2(G), and 3(T) otherwise.  Return non-zero if i is
-  //   out of range (i.e. end of index).   A '\0' (or 4) is prepended and appended to the
-  //   string so it has a delimeter for traversals in either direction.
-
-int Load_Read(HITS_DB *db, int i, char *read, int ascii);
 
   // For the DB "path" = "prefix/root[.db]", find all the files for that DB, i.e. all those
   //   of the form "prefix/[.]root.part" and call foreach with the complete path to each file

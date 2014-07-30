@@ -21,7 +21,7 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]",
+  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
     "       [-e<double(.70)] [-m<double(.55)>] [-l<int(1000)>]",
     "       [-s<int(100)>] [-dal<int(4)>] [-mrg<int(25)>]",
     "       <path:db> [<block:int>[-<range:int>]"
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
 
   int    MUNIT, DUNIT;
   int    VON, BON, DON;
-  int    WINT, TINT, HINT, KINT, SINT, LINT;
+  int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT;
   double EREL, MREL;
 
   { int    i, j, k;         //  Process options
@@ -59,6 +59,7 @@ int main(int argc, char *argv[])
     WINT  = 6;
     HINT  = 35;
     TINT  = 0;
+    HGAP  = 0;
     EREL  = .70;
     MREL  = .55;
     SINT  = 100;
@@ -83,6 +84,9 @@ int main(int argc, char *argv[])
             break;
           case 't':
             ARG_POSITIVE(TINT,"Tuple suppression frequency")
+            break;
+          case 'H':
+            ARG_POSITIVE(HGAP,"HGAP threshold (in bp.s)")
             break;
           case 'e':
             ARG_REAL(EREL)
@@ -266,6 +270,8 @@ int main(int argc, char *argv[])
               printf(" -h%d",HINT);
             if (TINT > 0)
               printf(" -t%d",TINT);
+            if (HGAP > 0)
+              printf(" -H%d",HGAP);
             if (EREL != .7)
               printf(" -e%g",EREL);
             if (MREL != .55)

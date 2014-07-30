@@ -17,6 +17,7 @@
 extern int BIASED;
 extern int VERBOSE;
 extern int MINOVER;
+extern int HGAP_MIN;
 
 #define NTHREADS  4    //  Must be a power of 2
 #define NSHIFT    2    //  log_2 NTHREADS

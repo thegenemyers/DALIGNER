@@ -983,7 +983,8 @@ void *report_thread(void *arg)
 #endif
   Path        *bpath = &(ovlb->path);
   int          nfilt = 0;
-  int64        ohits = 0;
+  int64        ahits = 0;
+  int64        bhits = 0;
   int          tspace, small, tbytes;
 
   uint64 *hitc;
@@ -1012,10 +1013,10 @@ void *report_thread(void *arg)
       tbytes = sizeof(uint16);
     }
 
-  fwrite(&ohits,sizeof(int64),1,ofile1);
+  fwrite(&ahits,sizeof(int64),1,ofile1);
   fwrite(&tspace,sizeof(int),1,ofile1);
   if (MR_two)
-    { fwrite(&ohits,sizeof(int64),1,ofile2);
+    { fwrite(&bhits,sizeof(int64),1,ofile2);
       fwrite(&tspace,sizeof(int),1,ofile2);
     }
 
@@ -1091,9 +1092,14 @@ void *report_thread(void *arg)
                           { Compress_TraceTo8(ovla);
                             Compress_TraceTo8(ovlb);
                           }
-                        Write_Overlap(ofile1,ovla,tbytes);
-                        Write_Overlap(ofile2,ovlb,tbytes);
-                        ohits += 1;
+                        if (ovla->alen >= HGAP_MIN)
+                          { Write_Overlap(ofile1,ovla,tbytes);
+                            ahits += 1;
+                          }
+                        if (ovlb->alen >= HGAP_MIN)
+                          { Write_Overlap(ofile2,ovlb,tbytes);
+                            bhits += 1;
+                          }
 
 #ifdef TEST_GATHER
                         printf("  [%5d,%5d] x [%5d,%5d] = %4d",
@@ -1141,18 +1147,18 @@ void *report_thread(void *arg)
       }
 
   data->nfilt  = nfilt;
-  data->ncheck = ohits;
+  data->ncheck = ahits + bhits;
 
   if (MR_two)
     { rewind(ofile2);
-      fwrite(&ohits,sizeof(int64),1,ofile2);
+      fwrite(&bhits,sizeof(int64),1,ofile2);
       fclose(ofile2);
     }
   else
-    ohits *= 2;
+    ahits += bhits;
 
   rewind(ofile1);
-  fwrite(&ohits,sizeof(int64),1,ofile1);
+  fwrite(&ahits,sizeof(int64),1,ofile1);
   fclose(ofile1);
 
   return (NULL);

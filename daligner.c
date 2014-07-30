@@ -45,7 +45,7 @@
 
 
 static char *Usage[] =
-  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]",
+  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
     "       [-e<double(.70)] [-m<double(.55)>] [-l<int(1000)>] [-s<int(100)>]",
     "       <subject:file> <target:file> ...",
   };
@@ -53,6 +53,7 @@ static char *Usage[] =
 int VERBOSE;   //   Globally visible to filter.c
 int BIASED;
 int MINOVER;
+int HGAP_MIN;
 
 
 static HITS_DB *read_DB(char *name, int dust)
@@ -200,6 +201,7 @@ int main(int argc, char *argv[])
     HIT_MIN   = 35;
     BIN_SHIFT = 6;
     MAX_REPS  = 0;
+    HGAP_MIN  = 0;
     AVE_ERROR = .70;
     MIN_ERROR = .55;
     SPACING   = 100;
@@ -223,6 +225,9 @@ int main(int argc, char *argv[])
             break;
           case 't':
             ARG_POSITIVE(MAX_REPS,"Tuple supression frequency")
+            break;
+          case 'H':
+            ARG_POSITIVE(HGAP_MIN,"HGAP threshold (in bp.s)")
             break;
           case 'e':
             ARG_REAL(AVE_ERROR)
@@ -275,6 +280,9 @@ int main(int argc, char *argv[])
   aroot  = Root(afile,".db");
   ablock = *read_DB(afile,DUSTED);
   cblock = *complement_DB(&ablock);
+
+  if (ablock.cutoff >= HGAP_MIN)
+    HGAP_MIN = ablock.cutoff;
 
   asettings = New_Align_Spec( AVE_ERROR, MIN_ERROR, SPACING, ablock.freq);
 

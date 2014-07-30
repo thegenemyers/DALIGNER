@@ -96,7 +96,7 @@ the alignments for a given read can operate in simple sequential scans of these
 sorted files.
 
 
-4. LAshow [-coU] [-(a|r):<db>] [-i<int(4)>] [-w<int(100)>][-b<int(10)>]
+4. LAshow [-coU] [-(a|r):<db>] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
                  <align:las> [ <reads:range> ... ]
 
 LAshow produces a printed listing of the local alignments contained in the specified
