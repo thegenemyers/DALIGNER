@@ -1,3 +1,40 @@
+/************************************************************************************\
+*                                                                                    *
+* Copyright (c) 2014, Dr. Eugene W. Myers (EWM). All rights reserved.                *
+*                                                                                    *
+* Redistribution and use in source and binary forms, with or without modification,   *
+* are permitted provided that the following conditions are met:                      *
+*                                                                                    *
+*  · Redistributions of source code must retain the above copyright notice, this     *
+*    list of conditions and the following disclaimer.                                *
+*                                                                                    *
+*  · Redistributions in binary form must reproduce the above copyright notice, this  *
+*    list of conditions and the following disclaimer in the documentation and/or     *
+*    other materials provided with the distribution.                                 *
+*                                                                                    *
+*  · The name of EWM may not be used to endorse or promote products derived from     *
+*    this software without specific prior written permission.                        *
+*                                                                                    *
+* THIS SOFTWARE IS PROVIDED BY EWM ”AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES,    *
+* INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND       *
+* FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL EWM BE LIABLE   *
+* FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES *
+* (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS  *
+* OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY      *
+* THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING     *
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN  *
+* IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.                                      *
+*                                                                                    *
+* For any issues regarding this software and its use, contact EWM at:                *
+*                                                                                    *
+*   Eugene W. Myers Jr.                                                              *
+*   Bautzner Str. 122e                                                               *
+*   01099 Dresden                                                                    *
+*   GERMANY                                                                          *
+*   Email: gene.myers@gmail.com                                                      *
+*                                                                                    *
+\************************************************************************************/
+
 /*******************************************************************************************
  *
  *  Fast local alignment filter for long, noisy reads based on "dumbing down" of my RECOMB 2005
@@ -783,20 +820,6 @@ static void *count_thread(void *arg)
               while (db == cb)
                 db = CODE(bsort[++ib]);
 
-/*
-              jb = ib++;
-              while ((db = CODE(bsort[ib])) == cb)
-                ib += 1;
-              do
-                { x = READ(asort[ia]);
-                  while (jb < ib && READ(bsort[jb]) <= x)
-                    jb += 1;
-                  nhits += (ib-jb);
-                  ia += 1;
-                }
-              while ((da = CODE(asort[ia])) == ca);
-*/
-
               ca = da;
               cb = db;
             }
@@ -876,28 +899,6 @@ static void *merge_thread(void *arg)
               while ((da = CODE(asort[++ia])) == ca);
               while (db == cb)
                 db = CODE(bsort[++ib]);
-
-/*
-              jb = ib++;
-              while ((db = CODE(bsort[ib])) == cb)
-                ib += 1;
-              do
-                { v = (asort[ia] >> 32);
-                  x = (v >> 16);
-                  while (jb < ib && READ(bsort[jb]) <= x)
-                    jb += 1;
-                  if ((d = ib-jb) > 0)
-                    { kptr[v & BMASK] += d;
-                      v = (v << 16);
-                      for (b = jb; b < ib; b++)
-                        { x = bsort[b];
-                          hits[nhits++] = (x & 0xffff000000000000ll) | v | ((x >> 32) & 0xffffll);
-                        }
-                    }
-                  ia += 1;
-                }
-              while ((da = CODE(asort[ia])) == ca);
-*/
 
               ca = da;
               cb = db;
@@ -1031,7 +1032,19 @@ void *report_thread(void *arg)
       { int   apos, bpos, diag;
         int   lasta, lastd;
         int   ar, br;
+        int   alen, blen;
 
+        ar = (p & 0xffffll);
+        br = ((p >> 16) & 0xffffll);
+        alen = aread[ar].end - aread[ar].beg;
+        blen = bread[br].end - bread[br].beg;
+        if (alen < HGAP_MIN && blen < HGAP_MIN)
+          { do
+              q = (hits[++h] >> 32);
+            while (q == p);
+            continue;
+          }
+          
         g = h;
         do
           { bpos = (hits[h] & 0xffffll);
@@ -1050,7 +1063,7 @@ void *report_thread(void *arg)
         printf("%5lld vs %5lld : %3d",(p>>16)&0xffffll,p&0xffffll,h-g);
 #endif
 
-        ar = lasta = -1;
+        lasta = -1;
         lastd = -(Kmer+1);
         for (f = g; f < h; f++)
           { bpos = (hits[f] & 0xffffll);
@@ -1059,13 +1072,11 @@ void *report_thread(void *arg)
             if ((lastd != diag && apos >= lasta) || (lastd == diag && apos > lasta+Kmer))
               { diag >>= Binshift;
                 if (score[diag] + score[diag+1] >= Hitmin || score[diag] + score[diag-1] >= Hitmin)
-                  { if (ar < 0)
-                      { ar = (p & 0xffffll);
-                        br = ((p >> 16) & 0xffffll);
-                        align->bseq = aseq + aread[ar].boff;
+                  { if (lasta < 0)
+                      { align->bseq = aseq + aread[ar].boff;
                         align->aseq = bseq + bread[br].boff;
-                        align->blen = ovlb->blen = ovla->alen = aread[ar].end-aread[ar].beg;
-                        align->alen = ovlb->alen = ovla->blen = bread[br].end-bread[br].beg;
+                        align->blen = ovlb->blen = ovla->alen = alen;
+                        align->alen = ovlb->alen = ovla->blen = blen;
                         ovlb->bread = ovla->aread = ar + afirst;
                         ovlb->aread = ovla->bread = br + bfirst;
                       }
