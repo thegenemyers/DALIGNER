@@ -61,7 +61,7 @@ static char *Usage = "<source:las> > <target>.las";
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ void     *iblock, *oblock;
+{ char     *iblock, *oblock;
   FILE     *input;
   int64     novl, bsize, ovlsize, ptrsize;
   int       tspace, tbytes;
@@ -77,8 +77,8 @@ int main(int argc, char *argv[])
   ptrsize = sizeof(void *);
   ovlsize = sizeof(Overlap) - ptrsize;
   bsize   = MEMORY * 1000000ll;
-  oblock  = Malloc(bsize,"Allocating output block");
-  iblock  = Malloc(bsize + ptrsize,"Allocating input block");
+  oblock  = (char *) Malloc(bsize,"Allocating output block");
+  iblock  = (char *) Malloc(bsize + ptrsize,"Allocating input block");
   if (oblock == NULL || iblock == NULL)
     exit (1);
   iblock += ptrsize;
@@ -91,13 +91,17 @@ int main(int argc, char *argv[])
 
     novl   = 0;
     tspace = 0;
+    mspace = 0;
+    tbytes = sizeof(uint8);
     for (i = 0; 1; i++)
       { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
         if ((input = fopen(name,"r")) == NULL) break;
 
-        fread(&povl,sizeof(int64),1,input);
+        if (fread(&povl,sizeof(int64),1,input) != 1)
+          SYSTEM_ERROR
         novl += povl;
-        fread(&mspace,sizeof(int),1,input);
+        if (fread(&mspace,sizeof(int),1,input) != 1)
+          SYSTEM_ERROR
         if (i == 0)
           { tspace = mspace;
             if (tspace <= TRACE_XOVR)
@@ -120,8 +124,8 @@ int main(int argc, char *argv[])
     Overlap *w;
     int64    tsize, povl;
     int      mspace;
-    void    *iptr, *itop;
-    void    *optr, *otop;
+    char    *iptr, *itop;
+    char    *optr, *otop;
 
     optr = oblock;
     otop = oblock + bsize;
@@ -130,8 +134,10 @@ int main(int argc, char *argv[])
       { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
         if ((input = fopen(name,"r")) == NULL) break;
 
-        fread(&povl,sizeof(int64),1,input);
-        fread(&mspace,sizeof(int),1,input);
+        if (fread(&povl,sizeof(int64),1,input) != 1)
+          SYSTEM_ERROR
+        if (fread(&mspace,sizeof(int),1,input) != 1)
+          SYSTEM_ERROR
 
         iptr = iblock;
         itop = iblock + fread(iblock,1,bsize,input);

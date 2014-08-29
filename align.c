@@ -63,7 +63,8 @@
 #include "DB.h"
 #include "align.h"
 
-#undef    DEBUG_PASSES     //  Show forward / backward extension points for Local_Alignment
+#undef    DEBUG_PASSES     //  Show forward / backward extension termini for Local_Alignment
+#undef    DEBUG_POINTS     //  Show trace points
 #undef    DEBUG_WAVE       //  Show waves of Local_Alignment
 #undef     SHOW_MATCH_WAVE //  For waves of Local_Alignment also show # of matches
 #undef    SHOW_TRAIL       //  Show trace at the end of forward and reverse passes
@@ -116,21 +117,21 @@ Work_Data *New_Work_Data()
 }
 
 static void enlarge_vector(_Work_Data *work, int newmax)
-{ work->vecmax = newmax*1.2 + 10000;
+{ work->vecmax = ((int) (newmax*1.2)) + 10000;
   work->vector = Realloc(work->vector,work->vecmax,"Enlarging DP vector");
   if (work->vector == NULL)
     exit (1);
 }
 
 static void enlarge_points(_Work_Data *work, int newmax)
-{ work->pntmax = newmax*1.2 + 10000;
+{ work->pntmax = ((int) (newmax*1.2)) + 10000;
   work->points = Realloc(work->points,work->pntmax,"Enlarging point vector");
   if (work->points == NULL)
     exit (1);
 }
 
 static void enlarge_trace(_Work_Data *work, int newmax)
-{ work->tramax = newmax*1.2 + 10000;
+{ work->tramax = ((int) (newmax*1.2)) + 10000;
   work->trace  = Realloc(work->trace,work->tramax,"Enlarging trace vector");
   if (work->trace == NULL)
     exit (1);
@@ -169,8 +170,10 @@ void Free_Work_Data(Work_Data *ework)
   //  Derivative fixed parameters
 
 #define PATH_TOP  0x1000000000000000ll   //  Must be 1 << PATH_LEN
+#define PATH_INT  0x0fffffffffffffffll   //  Must be PATH_TOP-1
 #define TRIM_MASK 0x7fff                 //  Must be (1 << TRIM_LEN) - 1
-#define TRIM_LEN4 59                     //  Must be 4*TRIM_LEN-1
+#define TRIM_MLAG 200                    //  How far can last trim point be behind best point
+#define WAVE_LAG   30                    //  How far can worst point be behind the best point
 
 static double Bias_Factor[10] = { .690, .690, .690, .690, .780,
                                   .850, .900, .933, .966, 1.000 };
@@ -179,13 +182,9 @@ static double Bias_Factor[10] = { .690, .690, .690, .690, .780,
 
 typedef struct
   { double ave_corr;
-    double min_corr;
     int    trace_space;
     float  freq[4];
-    int    path_beg;
-    int    path_min;
-    BVEC   path_int;
-    int    wave_gap;
+    int    ave_path;
     int16 *score;
     int16 *table;
   } _Align_Spec;
@@ -206,8 +205,8 @@ typedef struct
 
 static void set_table(int bit, int prefix, int score, int max, Table_Bits *parms)
 { if (bit >= TRIM_LEN)
-    { parms->table[prefix] = score-max;
-      parms->score[prefix] = score;
+    { parms->table[prefix] = (int16) (score-max);
+      parms->score[prefix] = (int16) score;
     }
   else
     { if (score > max)
@@ -219,7 +218,7 @@ static void set_table(int bit, int prefix, int score, int max, Table_Bits *parms
 
 /* Create an alignment specification record including path tip tables & values */
 
-Align_Spec *New_Align_Spec(double ave_corr, double min_corr, int trace_space, float *freq)
+Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
 { _Align_Spec *spec;
   Table_Bits   parms;
   double       match;
@@ -230,31 +229,24 @@ Align_Spec *New_Align_Spec(double ave_corr, double min_corr, int trace_space, fl
     exit (1);
 
   spec->ave_corr    = ave_corr;
-  spec->min_corr    = min_corr;
   spec->trace_space = trace_space;
   spec->freq[0]     = freq[0];
   spec->freq[1]     = freq[1];
   spec->freq[2]     = freq[2];
   spec->freq[3]     = freq[3];
 
-  spec->path_beg = PATH_LEN * (.55 + ave_corr/2.);
-  if (spec->path_beg > PATH_LEN) spec->path_beg = PATH_LEN;
-
-  spec->path_min    = PATH_LEN * min_corr;
-  spec->wave_gap    = 30;
-  spec->path_int    = (0x1ll << spec->path_beg) - 1;
-
   match = freq[0] + freq[3];
   if (match > .5)
     match = 1.-match;
-  bias = (match+.025)*20-1;
+  bias = (int) ((match+.025)*20.-1.);
   if (match < .2)
     { fprintf(stderr,"Warning: Base bias worse than 80/20%% !\n");
       bias = 3;
     }
 
-  parms.mscore  = FRACTION * Bias_Factor[bias] * (1. - ave_corr);
-  parms.dscore  = FRACTION - parms.mscore;
+  spec->ave_path = (int) (PATH_LEN * (1. - Bias_Factor[bias] * (1. - ave_corr)));
+  parms.mscore   = (int) (FRACTION * Bias_Factor[bias] * (1. - ave_corr));
+  parms.dscore   = FRACTION - parms.mscore;
 
   parms.score = (int16 *) Malloc(sizeof(int16)*(TRIM_MASK+1)*2,"Allocating trim table");
   if (parms.score == NULL)
@@ -277,9 +269,6 @@ void Free_Align_Spec(Align_Spec *espec)
 
 double Average_Correlation(Align_Spec *espec)
 { return (((_Align_Spec *) espec)->ave_corr); }
-
-double Minimum_Correlation(Align_Spec *espec)
-{ return (((_Align_Spec *) espec)->min_corr); }
 
 int Trace_Spacing(Align_Spec *espec)
 { return (((_Align_Spec *) espec)->trace_space); }
@@ -316,14 +305,17 @@ void Print_Stats()
 #ifdef DEBUG_WAVE
 
 static void print_wave(int *V, int *M, int low, int hgh, int besta)
-{ int k;
+{ int k, bestk;
 
   (void) M;
   printf("  [%6d,%6d]: ",low,hgh);
   for (k = low; k <= hgh; k++)
-    printf(" %3d",(V[k]+k)/2);
-    // printf(" %3d",besta-V[k]);
-  printf(" : %d\n",besta);
+    { if (besta == V[k])
+        bestk = k;
+      // printf(" %3d",(V[k]+k)/2);
+      printf(" %3d",besta-V[k]);
+    }
+  printf(" : %d (%d,%d)\n",besta,(besta+bestk)/2,(besta-bestk)/2);
 #ifdef SHOW_MATCH_WAVE
   printf("                   ");
   for (k = low; k <= hgh; k++)
@@ -345,14 +337,14 @@ typedef struct
     int mark;
   } Pebble;
 
-static int forward_wave(_Work_Data *work, _Align_Spec *spec,
-                        Alignment *align, Path *bpath,
-                        int mind, int maxd, int mida)
+static void forward_wave(_Work_Data *work, _Align_Spec *spec,
+                         Alignment *align, Path *bpath,
+                         int mind, int maxd, int mida)
 { char *aseq  = align->aseq;
   char *bseq  = align->bseq;
   Path *apath = align->path;
 
-  int     hgh, low, dif, lpt, pos;
+  int     hgh, low, dif, pos;
   int    *V, *M;
   BVEC   *T;
 
@@ -361,19 +353,17 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
   Pebble *cells;
   int     avail, cmax, boff;
 
-  int     PATH_BEG    = spec->path_beg;
-  int     PATH_MIN    = spec->path_min;
-  BVEC    PATH_INT    = spec->path_int;
-  int     WAVE_GAP    = spec->wave_gap;
   int     TRACE_SPACE = spec->trace_space;
+  int     PATH_AVE    = spec->ave_path;
   int16  *SCORE       = spec->score;
   int16  *TABLE       = spec->table;
 
-  int     besty, bestd, besta;
-  int     bestha, besthb;
-  int     trimy, trimd, trima;
+  int     besta, besty;
+  int     trima, trimy, trimd;
   int     trimha, trimhb;
-  int     more, lasta;
+  int     morea, morey, mored;
+  int     moreha, morehb;
+  int     more, morem, lasta;
   int     aclip, bclip;
 
   { int alen = align->alen + 1;
@@ -407,19 +397,20 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
   else
     pos = -INT32_MAX;
   dif   = 0;
-  lpt   = 0;
+
   more  = 1;
   aclip =  INT32_MAX;
   bclip = -INT32_MAX;
 
+  besta  = trima  = morea = lasta = mida;
+  besty  = trimy  = morey = (mida-hgh) >> 1;
+  trimd  = mored  = 0;
+  trimha = moreha = 0;
+  trimhb = morehb = 1;
+  morem  = -1;
+
   { int   k;
     char *a;
-
-    besta = trima = mida;
-    besty = trimy = (mida-hgh) >> 1;
-    bestd = trimd = 0;
-    bestha = trimha = 0;
-    besthb = trimhb = 1;
 
     a  = aseq + hgh;
     for (k = hgh; k >= low; k--)
@@ -431,7 +422,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         y = (mida-k) >> 1;
 
         if (avail >= cmax-1)
-          { cmax  = avail*1.2 + 10000;
+          { cmax  = ((int) (avail*1.2)) + 10000;
             cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
             if (cells == NULL)
               exit (1);
@@ -481,7 +472,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
 
         while (y+k >= na)
           { if (avail >= cmax)
-              { cmax  = avail*1.2 + 10000;
+              { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
                   exit (1);
@@ -498,7 +489,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
           }
         while (y >= nb)
           { if (avail >= cmax)
-              { cmax  = avail*1.2 + 10000;
+              { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
                   exit (1);
@@ -515,15 +506,15 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
           }
 
         if (c > besta)
-          { besty  = trimy  = y;
-            besta  = trima  = c;
-            bestha = trimha = ha;
-            besthb = trimhb = hb;
+          { besta  = trima = lasta = c;
+            besty  = trimy = y;
+            trimha = ha;
+            trimhb = hb;
           }
 
         V[k]  = c;
         T[k]  = PATH_INT;
-        M[k]  = PATH_BEG;
+        M[k]  = PATH_LEN;
         HA[k] = ha;
         HB[k] = hb;
         NA[k] = na;
@@ -537,9 +528,25 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
     { if (bseq[besty] != 4 && aseq[besta - besty] != 4)
         more = 1;
       if (hgh >= aclip)
-        hgh = aclip-1;
+        { hgh = aclip-1;
+          if (morem <= M[aclip])
+            { morem  = M[aclip];
+              morea  = V[aclip];
+              morey  = (morea - aclip)/2;
+              moreha = HA[aclip];
+              morehb = HB[aclip];
+            }
+        }
       if (low <= bclip)
-        low = bclip+1;
+        { low = bclip+1;
+          if (morem <= M[bclip])
+            { morem  = M[bclip];
+              morea  = V[bclip];
+              morey  = (morea - bclip)/2;
+              moreha = HA[bclip];
+              morehb = HB[bclip];
+            }
+        }
       aclip =  INT32_MAX;
       bclip = -INT32_MAX;
     }
@@ -551,10 +558,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
 
   /* Compute successive waves until no furthest reaching points remain */
 
-  lasta = mida + TRIM_LEN4; 
-fagain:
-
-  while (more && hgh >= low)
+  while (more && lasta >= besta - TRIM_MLAG)
     { int     k, n;
       int     ua, ub;
       BVEC    t;
@@ -575,7 +579,7 @@ fagain:
       am = ac = V[hgh] = V[hgh+1] = V[low-1] = -1;
       a  = aseq + hgh;
       t  = PATH_INT;
-      n  = PATH_BEG;
+      n  = PATH_LEN;
       ua = ub = -1;
       for (k = hgh; k >= low; k--)
         { int     y, m;
@@ -618,7 +622,7 @@ fagain:
                 ha = HA[k];
                 hb = HB[k];
               }
-            
+
           if ((b & PATH_TOP) != 0)
             m -= 1;
           b <<= 1;
@@ -650,7 +654,7 @@ fagain:
           while (y+k >= NA[k])
             { if (cells[ha].mark < NA[k])
                 { if (avail >= cmax)
-                    { cmax  = avail*1.2 + 10000;
+                    { cmax  = ((int) (avail*1.2)) + 10000;
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
@@ -671,7 +675,7 @@ fagain:
           while (y >= NB[k])
             { if (cells[hb].mark < NB[k])
                 { if (avail >= cmax)
-                    { cmax  = avail*1.2 + 10000;
+                    { cmax  = ((int) (avail*1.2)) + 10000;
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
@@ -689,22 +693,19 @@ fagain:
               NB[k] += TRACE_SPACE;
             }
 
-          if (m >= PATH_MIN)
-            { if (c > besta)
-                { besty  = y;
-                  besta  = c;
-                  bestd  = dif; 
-                  bestha = ha;
-                  besthb = hb;
+          if (c > besta)
+            { besta = c;
+              besty = y;
+              if (m >= PATH_AVE)
+                { lasta = c;
                   if (TABLE[b & TRIM_MASK] >= 0)
                     if (TABLE[(b >> TRIM_LEN) & TRIM_MASK] + SCORE[b & TRIM_MASK] >= 0)
-                      if (c > lasta)
-                        { trimy  = y;
-                          trima  = c;
-                          trimd  = dif;
-                          trimha = ha;
-                          trimhb = hb;
-                        }
+                      { trima  = c;
+                        trimy  = y;
+                        trimd  = dif;
+                        trimha = ha;
+                        trimhb = hb;
+                      }
                 }
             }
 
@@ -725,19 +726,37 @@ fagain:
         { if (bseq[besty] != 4 && aseq[besta-besty] != 4)
             more = 1;
           if (hgh >= aclip)
-            hgh = aclip-1;
+            { hgh = aclip-1;
+              if (morem <= M[aclip])
+                { morem  = M[aclip];
+                  morea  = V[aclip];
+                  morey  = (morea - aclip)/2;
+                  mored  = dif;
+                  moreha = HA[aclip];
+                  morehb = HB[aclip];
+                }
+            }
           if (low <= bclip)
-            low = bclip+1;
+            { low = bclip+1;
+              if (morem <= M[bclip])
+                { morem  = M[bclip];
+                  morea  = V[bclip];
+                  morey  = (morea - bclip)/2;
+                  mored  = dif;
+                  moreha = HA[bclip];
+                  morehb = HB[bclip];
+                }
+            }
           aclip =  INT32_MAX;
           bclip = -INT32_MAX;
         }
 
-      n = besta - WAVE_GAP;
+      n = besta - WAVE_LAG;
       while (hgh >= low)
-        if (M[hgh] < PATH_MIN || V[hgh] < n)
+        if (V[hgh] < n)
           hgh -= 1;                               
         else
-          { while (M[low] < PATH_MIN || V[low] < n)
+          { while (V[low] < n)
               low += 1;
             break;
           }
@@ -755,39 +774,26 @@ fagain:
 #endif
     }
 
-  if (more && trima > lasta)
-    { lasta = besta + TRIM_LEN4;
-      low = hgh = besta - 2*besty;
-      dif = bestd;
-      V[low] = besta;
-      T[low] = PATH_INT;
-      M[low] = PATH_BEG;
-#ifdef WAVE_STATS
-      RESTARTS += 1;
-#endif
-      goto fagain;
-    }
-
   { uint16 *atrace = (uint16 *) apath->trace;
     uint16 *btrace = (uint16 *) bpath->trace;
     int     atlen, btlen;
-    int     bestx;
+    int     trimx;
     int     a, b, k, h;
 
-    if (more)
-      { bestx  = trima-trimy;
-        besty  = trimy;
-        bestd  = trimd;
-        bestha = trimha;
-        besthb = trimhb;
+    if (morem >= 0)
+      { trimx  = morea-morey;
+        trimy  = morey;
+        trimd  = mored;
+        trimha = moreha;
+        trimhb = morehb;
       }
     else
-      bestx = besta-besty;
+      trimx = trima-trimy;
 
     atlen = btlen = 0;
 
     a = -1;
-    for (h = bestha; h >= 0; h = b)
+    for (h = trimha; h >= 0; h = b)
       { b = cells[h].ptr; 
         cells[h].ptr = a;
         a = h;
@@ -802,27 +808,27 @@ fagain:
     for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
       { k = cells[h].diag;
         a = cells[h].mark - k;
-        atrace[atlen++] = a-b;
+        atrace[atlen++] = (uint16) (a-b);
 #ifdef SHOW_TRAIL
         printf("     %4d: (%5d,%5d): %3d\n",h,a+k,a,a-b); fflush(stdout);
 #endif
         b = a;
       }
-    if (b+k != bestx)
-      { atrace[atlen++] = besty-b;
+    if (b+k != trimx)
+      { atrace[atlen++] = (uint16) (trimy-b);
 #ifdef SHOW_TRAIL
-        printf("           (%5d,%5d): %3d\n",bestx,besty,besty-b); fflush(stdout);
+        printf("           (%5d,%5d): %3d\n",trimx,trimy,trimy-b); fflush(stdout);
 #endif
       }
-    else if (b != besty)
-      { atrace[atlen-1] += besty-b;
+    else if (b != trimy)
+      { atrace[atlen-1] = (uint16) (atrace[atlen-1] + (trimy-b));
 #ifdef SHOW_TRAIL
-        printf("         @ (%5d,%5d): %3d\n",bestx,besty,besty-b); fflush(stdout);
+        printf("         @ (%5d,%5d): %3d\n",trimx,trimy,trimy-b); fflush(stdout);
 #endif
       }
 
     a = -1;
-    for (h = besthb; h >= 0; h = b)
+    for (h = trimhb; h >= 0; h = b)
       { b = cells[h].ptr; 
         cells[h].ptr = a;
         a = h;
@@ -837,56 +843,54 @@ fagain:
     for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
       { k = cells[h].diag;
         a = cells[h].mark + k;
-        btrace[btlen++] = a-b;  
+        btrace[btlen++] = (uint16) (a-b);
 #ifdef SHOW_TRAIL
         printf("     %4d: (%5d,%5d): %3d\n",h,a,a-k,a-b); fflush(stdout);
 #endif
         b = a;
       }
-    if (b-k != besty)
-      { btrace[btlen++] = bestx-b;  
+    if (b-k != trimy)
+      { btrace[btlen++] = (uint16) (trimx-b);
 #ifdef SHOW_TRAIL
-        printf("           (%5d,%5d): %3d\n",bestx,besty,bestx-b); fflush(stdout);
+        printf("           (%5d,%5d): %3d\n",trimx,trimy,trimx-b); fflush(stdout);
 #endif
       }
-    else if (b != bestx)
-      { btrace[btlen-1] += bestx-b;
+    else if (b != trimx)
+      { btrace[btlen-1] = (uint16) (btrace[btlen-1] + (trimx-b));
 #ifdef SHOW_TRAIL
-        printf("         @ (%5d,%5d): %3d\n",bestx,besty,bestx-b); fflush(stdout);
+        printf("         @ (%5d,%5d): %3d\n",trimx,trimy,trimx-b); fflush(stdout);
 #endif
       }
 
-    apath->aepos = bestx;
-    apath->bepos = besty;
-    apath->diffs = bestd;
-    apath->tlen  = atlen;
+    apath->aepos = (READIDX) trimx;
+    apath->bepos = (READIDX) trimy;
+    apath->diffs = (READIDX) trimd;
+    apath->tlen  = (READIDX) atlen;
     if (COMP(align->flags))
-      { bpath->abpos = align->blen - apath->bepos;
-        bpath->bbpos = align->alen - apath->aepos;
+      { bpath->abpos = (READIDX) (align->blen - apath->bepos);
+        bpath->bbpos = (READIDX) (align->alen - apath->aepos);
       }
     else
       { bpath->aepos = apath->bepos;
         bpath->bepos = apath->aepos;
       }
-    bpath->diffs = bestd;
-    bpath->tlen  = btlen;
+    bpath->diffs = (READIDX) trimd;
+    bpath->tlen  = (READIDX) btlen;
   }
 
   work->cells  = (void *) cells;
   work->celmax = cmax;
-
-  return (!more);
 }
 
 /*** Reverse Wave ***/
 
-static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
-                        Alignment *align, Path *bpath, int mind, int maxd, int mida)
+static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
+                         Alignment *align, Path *bpath, int mind, int maxd, int mida)
 { char *aseq  = align->aseq - 1;
   char *bseq  = align->bseq - 1;
   Path *apath = align->path;
 
-  int     hgh, low, dif, lpt, pos;
+  int     hgh, low, dif, pos;
   int    *V, *M;
   BVEC   *T;
 
@@ -895,19 +899,17 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
   Pebble *cells;
   int     avail, cmax, boff;
 
-  int     PATH_BEG    = spec->path_beg;
-  int     PATH_MIN    = spec->path_min;
-  BVEC    PATH_INT    = spec->path_int;
-  int     WAVE_GAP    = spec->wave_gap;
   int     TRACE_SPACE = spec->trace_space;
+  int     PATH_AVE    = spec->ave_path;
   int16  *SCORE       = spec->score;
   int16  *TABLE       = spec->table;
 
-  int     besty, bestd, besta;
-  int     bestha, besthb;
-  int     trimy, trimd, trima;
+  int     besta, besty;
+  int     trima, trimy, trimd;
   int     trimha, trimhb;
-  int     more, lasta;
+  int     morea, morey, mored;
+  int     moreha, morehb;
+  int     more, morem, lasta;
   int     aclip, bclip;
 
   { int alen = align->alen + 1;
@@ -939,19 +941,20 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
   else
     pos = -INT32_MAX;
   dif   = 0;
-  lpt   = 0;
+
   more  = 1;
   aclip = -INT32_MAX;
   bclip =  INT32_MAX;
 
+  besta  = trima  = morea = lasta = mida;
+  besty  = trimy  = morey = (mida-hgh) >> 1;
+  trimd  = mored  = 0;
+  trimha = moreha = 0;
+  trimhb = morehb = 1;
+  morem  = -1;
+
   { int   k;
     char *a;
-
-    besta = trima = mida;
-    besty = trimy = (mida-hgh) >> 1;
-    bestd = trimd = 0;
-    bestha = trimha = 0;
-    besthb = trimhb = 1;
 
     a = aseq + low;
     for (k = low; k <= hgh; k++)
@@ -963,7 +966,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
         y = (mida-k) >> 1;
 
         if (avail >= cmax-1)
-          { cmax  = avail*1.2 + 10000;
+          { cmax  = ((int) (avail*1.2)) + 10000;
             cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
             if (cells == NULL)
               exit (1);
@@ -1011,7 +1014,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
 
         while (y+k <= na)
           { if (avail >= cmax)
-              { cmax  = avail*1.2 + 10000;
+              { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
                   exit (1);
@@ -1028,7 +1031,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
           }
         while (y <= nb)
           { if (avail >= cmax)
-              { cmax  = avail*1.2 + 10000;
+              { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
                   exit (1);
@@ -1045,15 +1048,15 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
           }
 
         if (c < besta)
-          { besty  = trimy  = y;
-            besta  = trima  = c;
-            bestha = trimha = ha;
-            besthb = trimhb = hb;
+          { besta  = trima = lasta = c;
+            besty  = trimy = y;
+            trimha = ha;
+            trimhb = hb;
           }
 
         V[k]  = c;
         T[k]  = PATH_INT;
-        M[k]  = PATH_BEG;
+        M[k]  = PATH_LEN;
         HA[k] = ha;
         HB[k] = hb;
         NA[k] = na;
@@ -1067,9 +1070,25 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
     { if (bseq[besty] != 4 && aseq[besta - besty] != 4)
         more = 1;
       if (low <= aclip)
-        low = aclip+1;
+        { low = aclip+1;
+          if (morem <= M[aclip])
+            { morem  = M[aclip];
+              morea  = V[aclip];
+              morey  = (morea - aclip)/2;
+              moreha = HA[aclip];
+              morehb = HB[aclip];
+            }
+        }
       if (hgh >= bclip)
-        hgh = bclip-1;
+        { hgh = bclip-1;
+          if (morem <= M[bclip])
+            { morem  = M[bclip];
+              morea  = V[bclip];
+              morey  = (morea - bclip)/2;
+              moreha = HA[bclip];
+              morehb = HB[bclip];
+            }
+        }
       aclip = -INT32_MAX;
       bclip =  INT32_MAX;
     }
@@ -1079,10 +1098,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec,
   print_wave(V,M,low,hgh,besta);
 #endif
 
-  lasta = mida - TRIM_LEN4; 
-ragain:
-
-  while (more && hgh >= low)
+  while (more && lasta <= besta + TRIM_MLAG)
     { int    k, n;
       int    ua, ub;
       BVEC   t;
@@ -1105,7 +1121,7 @@ ragain:
       ac = V[hgh] = V[hgh+1] = V[low-1] = INT32_MAX;
       a  = aseq + low;
       t  = PATH_INT;
-      n  = PATH_BEG;
+      n  = PATH_LEN;
       ua = ub = -1;
       for (k = low; k <= hgh; k++)
         { int     y, m;
@@ -1180,7 +1196,7 @@ ragain:
           while (y+k <= NA[k])
             { if (cells[ha].mark > NA[k])
                 { if (avail >= cmax)
-                    { cmax  = avail*1.2 + 10000;
+                    { cmax  = ((int) (avail*1.2)) + 10000;
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
@@ -1200,7 +1216,7 @@ ragain:
           while (y <= NB[k])
             { if (cells[hb].mark > NB[k])
                 { if (avail >= cmax)
-                    { cmax  = avail*1.2 + 10000;
+                    { cmax  = ((int) (avail*1.2)) + 10000;
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
@@ -1218,22 +1234,19 @@ ragain:
               NB[k] -= TRACE_SPACE;
             }
 
-          if (m >= PATH_MIN)
-            { if (c < besta)
-                { besty  = y;
-                  besta  = c;
-                  bestd  = dif; 
-                  bestha = ha;
-                  besthb = hb;
+          if (c < besta)
+            { besta = c;
+              besty = y;
+              if (m >= PATH_AVE)
+                { lasta = c;
                   if (TABLE[b & TRIM_MASK] >= 0)
                     if (TABLE[(b >> TRIM_LEN) & TRIM_MASK] + SCORE[b & TRIM_MASK] >= 0)
-                      if (c < lasta)
-                        { trimy  = y;
-                          trima  = c;
-                          trimd  = dif;
-                          trimha = ha;
-                          trimhb = hb;
-                        }
+                      { trima  = c;
+                        trimy  = y;
+                        trimd  = dif;
+                        trimha = ha;
+                        trimhb = hb;
+                      }
                 }
             }
 
@@ -1254,19 +1267,37 @@ ragain:
         { if (bseq[besty] != 4 && aseq[besta - besty] != 4)
             more = 1;
           if (low <= aclip)
-            low = aclip+1;
+            { low = aclip+1;
+              if (morem <= M[aclip])
+                { morem  = M[aclip];
+                  morea  = V[aclip];
+                  morey  = (morea - aclip)/2;
+                  mored  = dif;
+                  moreha = HA[aclip];
+                  morehb = HB[aclip];
+                }
+            }
           if (hgh >= bclip)
-            hgh = bclip-1;
+            { hgh = bclip-1;
+              if (morem <= M[bclip])
+                { morem  = M[bclip];
+                  morea  = V[bclip];
+                  morey  = (morea - bclip)/2;
+                  mored  = dif;
+                  moreha = HA[bclip];
+                  morehb = HB[bclip];
+                }
+            }
           aclip = -INT32_MAX;
           bclip =  INT32_MAX;
         }
 
-      n = besta + WAVE_GAP;
+      n = besta + WAVE_LAG;
       while (hgh >= low)
-        if (M[hgh] < PATH_MIN || V[hgh] > n)
+        if (V[hgh] > n)
           hgh -= 1;                               
         else
-          { while (M[low] < PATH_MIN || V[low] > n)
+          { while (V[low] > n)
               low += 1;
             break;
           }
@@ -1284,36 +1315,26 @@ ragain:
 #endif
     }
 
-  if (more && trima < lasta)
-    { lasta = besta - TRIM_LEN4;
-      low = hgh = besta - 2*besty;
-      dif = bestd;
-      V[low] = besta;
-      T[low] = PATH_INT;
-      M[low] = PATH_BEG;
-      goto ragain;
-    }
-
   { uint16 *atrace = (uint16 *) apath->trace;
     uint16 *btrace = (uint16 *) bpath->trace;
     int     atlen, btlen;
-    int     bestx;
+    int     trimx;
     int     a, b, k, h;
 
-    if (more)
-      { bestx  = trima-trimy;
-        besty  = trimy;
-        bestd  = trimd;
-        bestha = trimha;
-        besthb = trimhb;
+    if (morem >= 0)
+      { trimx  = morea-morey;
+        trimy  = morey;
+        trimd  = mored;
+        trimha = moreha;
+        trimhb = morehb;
       }
     else
-      bestx = besta-besty;
+      trimx = trima-trimy;
 
     atlen = btlen = 0;
 
     a = -1;
-    for (h = bestha; h >= 0; h = b)
+    for (h = trimha; h >= 0; h = b)
       { b = cells[h].ptr; 
         cells[h].ptr = a;
         a = h;
@@ -1328,7 +1349,7 @@ ragain:
     if ((b+k)%TRACE_SPACE != 0)
       { h = cells[h].ptr;
         if (h < 0)
-          a = besty;
+          a = trimy;
         else
           { k = cells[h].diag;
             a = cells[h].mark - k;
@@ -1337,38 +1358,37 @@ ragain:
         printf("    +%4d: (%5d,%5d): %3d\n",h,a+k,a,b-a); fflush(stdout);
 #endif
         if (apath->tlen == 0)
-          { atrace[--atlen] = b-a;
-          }
+          atrace[--atlen] = (READIDX) (b-a);
         else
-          atrace[0] += b-a;
+          atrace[0] = (READIDX) (atrace[0] + (b-a));
         b = a;
       }
     if (h >= 0)
       { for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
           { k = cells[h].diag;
             a = cells[h].mark - k;
-            atrace[--atlen] = b-a;
+            atrace[--atlen] = (READIDX) (b-a);
 #ifdef SHOW_TRAIL
             printf("     %4d: (%5d,%5d): %3d\n",h,a+k,a,b-a); fflush(stdout);
 #endif
             b = a;
           }
-        if (b+k != bestx)
-          { atrace[--atlen] = b-besty;
+        if (b+k != trimx)
+          { atrace[--atlen] = (READIDX) (b-trimy);
 #ifdef SHOW_TRAIL
-            printf("           (%5d,%5d): %3d\n",bestx,besty,b-besty); fflush(stdout);
+            printf("           (%5d,%5d): %3d\n",trimx,trimy,b-trimy); fflush(stdout);
 #endif
           }
-        else if (b != besty)
-          { atrace[atlen] += b-besty;
+        else if (b != trimy)
+          { atrace[atlen] = (READIDX) (atrace[atlen] + (b-trimy));
 #ifdef SHOW_TRAIL
-            printf("         @ (%5d,%5d): %3d\n",bestx,besty,b-besty); fflush(stdout);
+            printf("         @ (%5d,%5d): %3d\n",trimx,trimy,b-trimy); fflush(stdout);
 #endif
           }
       }
 
     a = -1;
-    for (h = besthb; h >= 0; h = b)
+    for (h = trimhb; h >= 0; h = b)
       { b = cells[h].ptr; 
         cells[h].ptr = a;
         a = h;
@@ -1383,7 +1403,7 @@ ragain:
     if ((b-k)%TRACE_SPACE != boff)
       { h = cells[h].ptr;
         if (h < 0)
-          a = bestx;
+          a = trimx;
         else
           { k = cells[h].diag;
             a = cells[h].mark + k;
@@ -1392,9 +1412,9 @@ ragain:
         printf("    +%4d: (%5d,%5d): %3d\n",h,a,a-k,b-a); fflush(stdout);
 #endif
         if (bpath->tlen == 0)
-          btrace[--btlen] += b-a;
+          btrace[--btlen] = (READIDX) (b-a);
         else
-          btrace[0] += b-a;
+          btrace[0] = (READIDX) (btrace[0] + (b-a));
         b = a;
       }
 
@@ -1402,48 +1422,46 @@ ragain:
       { for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
           { k = cells[h].diag;
             a = cells[h].mark + k;
-            btrace[--btlen] = b-a;
+            btrace[--btlen] = (READIDX) (b-a);
 #ifdef SHOW_TRAIL
             printf("     %4d: (%5d,%5d): %3d\n",h,a,a-k,b-a); fflush(stdout);
 #endif
             b = a;
           }
-        if (b-k != besty)
-          { btrace[--btlen] = b-bestx;
+        if (b-k != trimy)
+          { btrace[--btlen] = (READIDX) (b-trimx);
 #ifdef SHOW_TRAIL
-            printf("           (%5d,%5d): %3d\n",bestx,besty,b-bestx); fflush(stdout);
+            printf("           (%5d,%5d): %3d\n",trimx,trimy,b-trimx); fflush(stdout);
 #endif
           }
-        else if (b != bestx)
-          { btrace[btlen] += b-bestx;
+        else if (b != trimx)
+          { btrace[btlen] = (READIDX) (btrace[btlen] + (b-trimx));
 #ifdef SHOW_TRAIL
-            printf("         @ (%5d,%5d): %3d\n",bestx,besty,b-bestx); fflush(stdout);
+            printf("         @ (%5d,%5d): %3d\n",trimx,trimy,b-trimx); fflush(stdout);
 #endif
           }
       }
 
-    apath->abpos  = bestx;
-    apath->bbpos  = besty;
-    apath->diffs += bestd;
-    apath->tlen  -= atlen;
-    apath->trace  = atrace + atlen;
+    apath->abpos = (READIDX) trimx;
+    apath->bbpos = (READIDX) trimy;
+    apath->diffs = (READIDX) (apath->diffs + trimd);
+    apath->tlen  = (READIDX) (apath->tlen  - atlen);
+    apath->trace = atrace + atlen;
     if (COMP(align->flags))
-      { bpath->aepos = align->blen - apath->bbpos;
-        bpath->bepos = align->alen - apath->abpos;
+      { bpath->aepos = (READIDX) (align->blen - apath->bbpos);
+        bpath->bepos = (READIDX) (align->alen - apath->abpos);
       }
     else
       { bpath->abpos = apath->bbpos;
         bpath->bbpos = apath->abpos;
       }
-    bpath->diffs += bestd;
-    bpath->tlen  -= btlen;
-    bpath->trace  = btrace + btlen;
+    bpath->diffs = (READIDX) (bpath->diffs + trimd);
+    bpath->tlen  = (READIDX) (bpath->tlen  - btlen);
+    bpath->trace = btrace + btlen;
   }
 
   work->cells  = (void *) cells;
   work->celmax = cmax;
-
-  return ( ! more);
 }
 
 
@@ -1479,7 +1497,7 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec, int
     bpath = (Path *) work->points;
 
     apath->trace = ((uint16 *) (bpath+1)) + maxtp;
-    bpath->trace = apath->trace +  2*maxtp;
+    bpath->trace = ((uint16 *) apath->trace) +  2*maxtp;
   }
 
 #ifdef DEBUG_PASSES
@@ -1487,25 +1505,25 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec, int
 #endif
 
   { int l, h, a;
-    int eof, bof;
 
     l = h = xcnt-ycnt;
     a = xcnt+ycnt;
 
-    eof = forward_wave(work,spec,align,bpath,l,h,a);
+    forward_wave(work,spec,align,bpath,l,h,a);
 #ifdef DEBUG_PASSES
-    printf("F1 (%d,%d) => (%d,%d) %d:%d\n",xcnt,ycnt,apath->aepos,apath->bepos,apath->diffs,eof);
+    printf("F1 (%d,%d) => (%d,%d) %d\n",xcnt,ycnt,apath->aepos,apath->bepos,apath->diffs);
 #endif
 
-    bof = reverse_wave(work,spec,align,bpath,l,h,a);
+    reverse_wave(work,spec,align,bpath,l,h,a);
 #ifdef DEBUG_PASSES
-    printf("R1 (%d,%d) => (%d,%d) %d:%d\n",xcnt,ycnt,apath->abpos,apath->bbpos,apath->diffs,bof);
+    printf("R1 (%d,%d) => (%d,%d) %d\n",xcnt,ycnt,apath->abpos,apath->bbpos,apath->diffs);
 #endif
   }
 
   if (COMP(align->flags))
     { uint16 *trace = (uint16 *) bpath->trace;
-      int     i, j, p;
+      uint16  p;
+      int     i, j;
 
       i = bpath->tlen-1;
       j = 0;
@@ -1518,7 +1536,7 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec, int
         }
     }
 
-#ifdef DEBUG_PASSES
+#ifdef DEBUG_POINTS
   { uint16 *trace = (uint16 *) apath->trace;
     int     a, h;
 
@@ -1560,19 +1578,21 @@ static int64 PtrSize   = sizeof(void *);
 static int64 OvlIOSize = sizeof(Overlap) - sizeof(void *);
 
 int Read_Overlap(FILE *input, Overlap *ovl)
-{ if (fread( ((void *) ovl) + PtrSize, OvlIOSize, 1, input) == 0)
+{ if (fread( ((char *) ovl) + PtrSize, OvlIOSize, 1, input) != 1)
     return (1);
   return (0);
 }
 
 int Read_Trace(FILE *input, Overlap *ovl, int tbytes)
-{ if (fread(ovl->path.trace,tbytes,ovl->path.tlen,input) == 0)
-    return (1);
+{ if (tbytes > 0 && ovl->path.tlen > 0)
+    { if (fread(ovl->path.trace, tbytes*ovl->path.tlen, 1, input) != 1)
+        return (1);
+    }
   return (0);
 }
 
 void Write_Overlap(FILE *output, Overlap *ovl, int tbytes)
-{ fwrite( ((void *) ovl) + PtrSize, OvlIOSize, 1, output);
+{ fwrite( ((char *) ovl) + PtrSize, OvlIOSize, 1, output);
   if (ovl->path.trace != NULL)
     fwrite(ovl->path.trace,tbytes,ovl->path.tlen,output);
 }
@@ -1583,7 +1603,7 @@ void Compress_TraceTo8(Overlap *ovl)
   int     j;
 
   for (j = 0; j < ovl->path.tlen; j++)
-    t8[j] = t16[j];
+    t8[j] = (uint8) (t16[j]);
 }
 
 void Decompress_TraceTo16(Overlap *ovl)
@@ -1641,7 +1661,8 @@ int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
         p += trace16[i];
     }
   if (p != ovl->path.bepos)
-    { if (verbose)         fprintf(stderr,"  %s: Trace point sum != aligned interval\n",fname);
+    { if (verbose)
+        fprintf(stderr,"  %s: Trace point sum != aligned interval\n",fname);
       return (1); 
     }         
   return (0);
@@ -1668,9 +1689,9 @@ static int seqlen(char *seq)
    given fragment restores it to its original state.                */
 
 void Complement_Seq(char *aseq)
-{ int len;                    /* Complement and reverse sequence */
+{ int   len;
   char *s, *t;
-  int c;
+  int   c;
 
   len = seqlen(aseq);
 
@@ -1678,11 +1699,11 @@ void Complement_Seq(char *aseq)
   t = aseq + (len-1);
   while (s < t)
     { c    = 3 - *s;
-      *s++ = 3 - *t;
-      *t-- = c;
+      *s++ = (char) (3 - *t);
+      *t-- = (char) c;
     }
   if (s == t)
-    *s = 3 - *s;
+    *s = (char) (3 - *s);
 }
 
 /* Print an alignment to file between a and b given in trace (unpacked).
@@ -1700,7 +1721,7 @@ void Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   char *Abuf, *Bbuf, *Dbuf;
   int   i, j, o;
   char *a, *b;
-  int   mtag, dtag;
+  char  mtag, dtag;
   int   prefa, prefb;
   int   aend, bend;
   int   sa, sb;
@@ -1938,7 +1959,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   char *Abuf, *Bbuf, *Dbuf;
   int   i, j, o;
   char *a, *b;
-  int   mtag, dtag;
+  char  mtag, dtag;
   int   prefa, prefb;
   int   aend, bend;
   int   sa, sb;
@@ -2519,8 +2540,8 @@ static void Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
   wave.Aabs = align->aseq;
   wave.Babs = align->bseq;
 
-  path->diffs = dandc_nd(align->aseq+path->abpos,path->aepos-path->abpos,
-                         align->bseq+path->bbpos,path->bepos-path->bbpos,&wave);
+  path->diffs = (READIDX) dandc_nd(align->aseq+path->abpos,path->aepos-path->abpos,
+                                   align->bseq+path->bbpos,path->bepos-path->bbpos,&wave);
   path->trace = trace;
   path->tlen  = wave.Stop - trace;
 }
@@ -3038,7 +3059,7 @@ void Compute_Trace_ALL(Alignment *align, Work_Data *ework)
   wave.Aabs = aseq;
   wave.Babs = bseq;
 
-  path->diffs = iter_np(aseq+path->abpos,M,bseq+path->bbpos,N,&wave);
+  path->diffs = (READIDX) iter_np(aseq+path->abpos,M,bseq+path->bbpos,N,&wave);
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
 }
@@ -3127,7 +3148,7 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
 
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
-  path->diffs = diffs;
+  path->diffs = (READIDX) diffs;
 }
 
 void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
@@ -3229,5 +3250,5 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
 
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
-  path->diffs = diffs;
+  path->diffs = (READIDX) diffs;
 }

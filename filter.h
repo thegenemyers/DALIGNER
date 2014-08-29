@@ -51,10 +51,12 @@
 #include "DB.h"
 #include "align.h"
 
-extern int BIASED;
-extern int VERBOSE;
-extern int MINOVER;
-extern int HGAP_MIN;
+extern int    BIASED;
+extern int    VERBOSE;
+extern int    MINOVER;
+extern int    HGAP_MIN;
+extern uint64 MEM_LIMIT;
+extern uint64 MEM_PHYSICAL;
 
 #define NTHREADS  4    //  Must be a power of 2
 #define NSHIFT    2    //  log_2 NTHREADS

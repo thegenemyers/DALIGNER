@@ -61,7 +61,7 @@ static char *Usage = "<align:las> (<parts:int> | <path:db>) < <source>.las";
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ void     *iblock, *oblock;
+{ char     *iblock, *oblock;
   FILE     *output, *dbvis;
   int64     novl, bsize, ovlsize, ptrsize;
   int       parts, tspace, tbytes;
@@ -93,16 +93,20 @@ int main(int argc, char *argv[])
         free(pwd);
         free(root);
 
-        fscanf(dbvis,DB_NFILE,&nfiles);
+        if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
+          SYSTEM_ERROR
         while (nfiles-- > 0)
-          fgets(buffer,2*MAX_NAME+100,dbvis);
+          if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
+            SYSTEM_ERROR
         parts = 0;
         if (fscanf(dbvis,DB_NBLOCK,&parts) != 1)
           { fprintf(stderr,"%s: DB %s has not been partitioned\n",Prog_Name,argv[2]);
             exit (1);
           }
-        fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all);
-        fscanf(dbvis,DB_BDATA,&olast,&blast);
+        if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
+          SYSTEM_ERROR
+        if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
+          SYSTEM_ERROR
       }
     else
       { dbvis = NULL;
@@ -116,8 +120,8 @@ int main(int argc, char *argv[])
   ptrsize = sizeof(void *);
   ovlsize = sizeof(Overlap) - ptrsize;
   bsize   = MEMORY * 1000000ll;
-  oblock  = Malloc(bsize,"Allocating output block");
-  iblock  = Malloc(bsize + ptrsize,"Allocating input block");
+  oblock  = (char *) Malloc(bsize,"Allocating output block");
+  iblock  = (char *) Malloc(bsize + ptrsize,"Allocating input block");
   if (oblock == NULL || iblock == NULL)
     exit (1);
   iblock += ptrsize;
@@ -125,8 +129,10 @@ int main(int argc, char *argv[])
   pwd   = PathTo(argv[1]);
   root  = Root(argv[1],".las");
 
-  fread(&novl,sizeof(int64),1,stdin);
-  fread(&tspace,sizeof(int),1,stdin);
+  if (fread(&novl,sizeof(int64),1,stdin) != 1)
+    SYSTEM_ERROR
+  if (fread(&tspace,sizeof(int),1,stdin) != 1)
+    SYSTEM_ERROR
   if (tspace <= TRACE_XOVR)
     tbytes = sizeof(uint8);
   else
@@ -136,8 +142,8 @@ int main(int argc, char *argv[])
     Overlap *w;
     int      low, hgh, last;
     int64    tsize, povl;
-    void    *iptr, *itop;
-    void    *optr, *otop;
+    char    *iptr, *itop;
+    char    *optr, *otop;
 
     iptr = iblock;
     itop = iblock + fread(iblock,1,bsize,stdin);
@@ -150,7 +156,8 @@ int main(int argc, char *argv[])
 
         low = hgh;
         if (dbvis != NULL)
-          { fscanf(dbvis,DB_BDATA,&olast,&blast);
+          { if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
+              SYSTEM_ERROR
             last = blast-1;
             hgh  = 0;
           }

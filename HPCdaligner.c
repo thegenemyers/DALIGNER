@@ -59,12 +59,12 @@
 
 static char *Usage[] =
   { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "       [-e<double(.70)] [-m<double(.55)>] [-l<int(1000)>]",
-    "       [-s<int(100)>] [-dal<int(4)>] [-mrg<int(25)>]",
+    "       [-e<double(.70)] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
+    "       [-dal<int(4)>] [-mrg<int(25)>]",
     "       <path:db> [<block:int>[-<range:int>]"
   };
 
-int power(int base, int exp)
+static int power(int base, int exp)
 { int i, pow;
 
   pow = 1;
@@ -81,8 +81,8 @@ int main(int argc, char *argv[])
 
   int    MUNIT, DUNIT;
   int    VON, BON, DON;
-  int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT;
-  double EREL, MREL;
+  int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
+  double EREL;
 
   { int    i, j, k;         //  Process options
     int    flags[128];
@@ -97,10 +97,10 @@ int main(int argc, char *argv[])
     HINT  = 35;
     TINT  = 0;
     HGAP  = 0;
-    EREL  = .70;
-    MREL  = .55;
-    SINT  = 100;
+    EREL  = 0.;
     LINT  = 1000;
+    SINT  = 100;
+    MINT  = -1;
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -132,11 +132,14 @@ int main(int argc, char *argv[])
                 exit (1);
               }
             break;
+          case 'l':
+            ARG_POSITIVE(LINT,"Minimum ovlerap length")
+            break;
           case 's':
             ARG_POSITIVE(SINT,"Trace spacing")
             break;
-          case 'l':
-            ARG_POSITIVE(LINT,"Minimum ovlerap length")
+          case 'M':
+            ARG_NON_NEGATIVE(MINT,"Memory allocation (in Gb)")
             break;
           case 'm':
             if (argv[i][2] == 'r' && argv[i][3] == 'g')
@@ -155,13 +158,9 @@ int main(int argc, char *argv[])
                                    Prog_Name,MUNIT);
                     exit (1);
                   }
-                break;
               }
-            ARG_REAL(MREL)
-            if (MREL < .55 || MREL >= 1.)
-              { fprintf(stderr,"%s: Minimum correlation must be in [.55,1.) (%g)\n",Prog_Name,MREL);
-                exit (1);
-              }
+            else
+              goto optflags;
             break;
           case 'd':
             if (argv[i][2] == 'a' && argv[i][3] == 'l')
@@ -209,10 +208,13 @@ int main(int argc, char *argv[])
     if (dbvis == NULL)
       exit (1);
 
-    fscanf(dbvis,"files = %d\n",&nfiles);
+    if (fscanf(dbvis,"files = %d\n",&nfiles) != 1)
+      SYSTEM_ERROR
     for (i = 0; i < nfiles; i++)
       { char buffer[30001];
-        fgets(buffer,30000,dbvis);
+
+        if (fgets(buffer,30000,dbvis) == NULL)
+          SYSTEM_ERROR
       }
 
     if (fscanf(dbvis,"blocks = %d\n",&nblocks) != 1)
@@ -309,14 +311,14 @@ int main(int argc, char *argv[])
               printf(" -t%d",TINT);
             if (HGAP > 0)
               printf(" -H%d",HGAP);
-            if (EREL != .7)
+            if (EREL > .1)
               printf(" -e%g",EREL);
-            if (MREL != .55)
-              printf(" -m%g",MREL);
             if (LINT != 1000)
               printf(" -l%d",LINT);
             if (SINT != 100)
               printf(" -s%d",SINT);
+            if (MINT >= 0)
+              printf(" -M%d",MINT);
             if (usepath)
               printf(" %s/%s.%d",pwd,root,i);
             else

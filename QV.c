@@ -183,7 +183,7 @@ static void Build_Table(HTree *node, int code, int len, uint32 *codebits, int *c
 
 static HScheme *Huffman(uint64 *hist, HScheme *inscheme)
 { HScheme *scheme;
-  HTree   *heap[257];
+  HTree   *heap[259];
   HTree    node[512];
   int      hsize;
   HTree   *lft, *rgt;
@@ -342,8 +342,10 @@ static void Write_Scheme(HScheme *scheme, FILE *out)
 
   lens = scheme->codelens;
   bits = scheme->codebits;
-  x = scheme->type;
+
+  x = (uint8) (scheme->type);
   fwrite(&x,1,1,out);
+
   for (i = 0; i < 256; i++)
     { x = (uint8) (lens[i]);
       fwrite(&x,1,1,out);
@@ -369,13 +371,17 @@ static HScheme *Read_Scheme(FILE *in)
   bits = scheme->codebits;
   look = scheme->lookup;
 
-  fread(&x,1,1,in);
+  if (fread(&x,1,1,in) != 1)
+    SYSTEM_ERROR
   scheme->type = x;
   for (i = 0; i < 256; i++)
-    { fread(&x,1,1,in);
+    { if (fread(&x,1,1,in) != 1)
+        SYSTEM_ERROR
       lens[i] = x;
       if (x > 0)
-        fread(bits+i,sizeof(uint32),1,in);
+        { if (fread(bits+i,sizeof(uint32),1,in) != 1)
+            SYSTEM_ERROR
+        }
       else
         bits[i] = 0;
     }
@@ -557,31 +563,33 @@ static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
   lens = scheme->codelens;
   look = scheme->lookup;
 
-#define GET					\
-  if (n > ilen)					\
-    { icode <<= ilen;				\
-      fread(ipart,sizeof(uint32),1,in);		\
-      ilen    = n-ilen;				\
-      icode <<= ilen;				\
-      ilen    = 32-ilen;			\
-    }						\
-  else						\
-    { icode <<= n;				\
-      ilen   -= n;				\
+#define GET							\
+  if (n > ilen)							\
+    { icode <<= ilen;						\
+      if (fread(ipart,sizeof(uint32),1,in) != 1)		\
+        SYSTEM_ERROR						\
+      ilen    = n-ilen;						\
+      icode <<= ilen;						\
+      ilen    = 32-ilen;					\
+    }								\
+  else								\
+    { icode <<= n;						\
+      ilen   -= n;						\
     }
 
-#define GETFLIP					\
-  if (n > ilen)					\
-    { icode <<= ilen;				\
-      fread(ipart,sizeof(uint32),1,in);		\
-      Flip_Long(ipart);				\
-      ilen    = n-ilen;				\
-      icode <<= ilen;				\
-      ilen    = 32-ilen;			\
-    }						\
-  else						\
-    { icode <<= n;				\
-      ilen   -= n;				\
+#define GETFLIP							\
+  if (n > ilen)							\
+    { icode <<= ilen;						\
+      if (fread(ipart,sizeof(uint32),1,in) != 1)		\
+        SYSTEM_ERROR						\
+      Flip_Long(ipart);						\
+      ilen    = n-ilen;						\
+      icode <<= ilen;						\
+      ilen    = 32-ilen;					\
+    }								\
+  else								\
+    { icode <<= n;						\
+      ilen   -= n;						\
     }
 
   n     = 16;
@@ -597,7 +605,7 @@ static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
             c = *cpart;
             n = 8;
           }
-        read[j] = c;
+        read[j] = (char) c;
       }
   else
     for (j = 0; j < rlen; j++)
@@ -609,7 +617,7 @@ static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
             c = *cpart;
             n = 8;
           }
-        read[j] = c;
+        read[j] = (char) c;
       }
 }
 
@@ -662,7 +670,7 @@ static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
             n = 16;
           }
         for (k = 0; k < c; k++)
-          read[j++] = rchar;
+          read[j++] = (char) rchar;
 
         if (j < rlen)
           { GETFLIP
@@ -673,7 +681,7 @@ static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
                 c = *cpart;
                 n = 8;
               }
-            read[j] = c;
+            read[j] = (char) c;
           }
       }
   else
@@ -687,7 +695,7 @@ static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
             n = 16;
           }
         for (k = 0; k < c; k++)
-          read[j++] = rchar;
+          read[j++] = (char) rchar;
 
         if (j < rlen)
           { GET
@@ -698,7 +706,7 @@ static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
                 c = *cpart;
                 n = 8;
               }
-            read[j] = c;
+            read[j] = (char) c;
           }
       }
 }
@@ -822,7 +830,7 @@ int Read_Lines(FILE *input, int nlines)
 
   rlen = strlen(Read);
   while (Read[rlen-1] != '\n')
-    { Rmax = 1.4*Rmax + MIN_BUFFER;
+    { Rmax = ((int) 1.4*Rmax) + MIN_BUFFER;
       Read = (char *) Realloc(Read,5*Rmax,"Reallocating QV entry read buffer");
       if (Read == NULL)
         exit (1);
@@ -1083,13 +1091,13 @@ void Write_QVcoding(FILE *output, QVcoding *coding)
     if (coding->delChar < 0)
       half = 256;
     else
-      half = coding->delChar;
+      half = (uint16) (coding->delChar);
     fwrite(&half,sizeof(uint16),1,output);
 
     if (coding->subChar < 0)
       half = 256;
     else
-      half = coding->subChar;
+      half = (uint16) (coding->subChar);
     fwrite(&half,sizeof(uint16),1,output);
 
     len = strlen(coding->prefix);
@@ -1119,29 +1127,39 @@ QVcoding *Read_QVcoding(FILE *input)
   { uint16 half;
     int    len;
 
-    fread(&half,sizeof(uint16),1,input);
+    if (fread(&half,sizeof(uint16),1,input) != 1)
+      SYSTEM_ERROR
     coding.flip = (half != 0x33cc);
 
-    fread(&half,sizeof(uint16),1,input);
-    if (coding.flip) Flip_Short(&half);
+    if (fread(&half,sizeof(uint16),1,input) != 1)
+      SYSTEM_ERROR
+    if (coding.flip)
+      Flip_Short(&half);
     coding.delChar = half;
     if (coding.delChar >= 256)
       coding.delChar = -1;
 
-    fread(&half,sizeof(uint16),1,input);
-    if (coding.flip) Flip_Short(&half);
+    if (fread(&half,sizeof(uint16),1,input) != 1)
+      SYSTEM_ERROR
+    if (coding.flip)
+      Flip_Short(&half);
     coding.subChar = half;
     if (coding.subChar >= 256)
       coding.subChar = -1;
 
     //  Read the short name common to all headers
 
-    fread(&len,sizeof(int),1,input);
-    if (coding.flip) Flip_Long(&len);
+    if (fread(&len,sizeof(int),1,input) != 1)
+      SYSTEM_ERROR
+    if (coding.flip)
+      Flip_Long(&len);
     coding.prefix = (char *) Malloc(len+1,"Allocating header prefix");
     if (coding.prefix == NULL)
       exit (1);
-    fread(coding.prefix,1,len,input);
+    if (len > 0)
+      { if (fread(coding.prefix,len,1,input) != 1)
+          SYSTEM_ERROR
+      }
     coding.prefix[len] = '\0';
   }
 
@@ -1214,8 +1232,8 @@ void Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int loss
       int    k;
 
       for (k = 0; k < rlen; k++)
-        { insert[k] = ((insert[k] >> 1) << 1);
-          merge[k]  = (( merge[k] >> 2) << 2);
+        { insert[k] = (uint8) ((insert[k] >> 1) << 1);
+          merge[k]  = (uint8) (( merge[k] >> 2) << 2);
         }
     }
 
@@ -1229,15 +1247,18 @@ void Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int loss
 }
 
 void Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rlen)
-{ int clen;
+{ int clen, tlen;
 
   //  Decode each stream and write to output
 
   if (coding->delChar < 0)
     { Decode(coding->delScheme, input, entry[0], rlen);
       clen = rlen;
-
-      fread(entry[1],1,COMPRESSED_LEN(clen),input);
+      tlen = COMPRESSED_LEN(clen);
+      if (tlen > 0)
+        { if (fread(entry[1],tlen,1,input) != 1)
+            SYSTEM_ERROR
+        }
       Uncompress_Read(clen,entry[1]);
       Lower_Read(entry[1]);
     }
@@ -1245,11 +1266,13 @@ void Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rl
     { Decode_Run(coding->delScheme, coding->dRunScheme, input,
                  entry[0], rlen, coding->delChar);
       clen = Packed_Length(entry[0],rlen,coding->delChar);
-
-      fread(entry[1],1,COMPRESSED_LEN(clen),input);
+      tlen = COMPRESSED_LEN(clen);
+      if (tlen > 0)
+        { if (fread(entry[1],tlen,1,input) != 1)
+            SYSTEM_ERROR
+        }
       Uncompress_Read(clen,entry[1]);
       Lower_Read(entry[1]);
-
       Unpack_Tag(entry[1],clen,entry[0],rlen,coding->delChar);
     }
 

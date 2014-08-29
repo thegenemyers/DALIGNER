@@ -40,7 +40,7 @@
 
                                       Author:  Gene Myers
                                       First:   July 17, 2013
-                                      Current: June 30, 2014
+                                      Current: August 29, 2014
 
   The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
@@ -55,18 +55,18 @@ alignment but simply a set of trace points, typically every 100bp or so, that al
 efficient reconstruction of alignments on demand.
 
 1. daligner [-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                   [-e<double(.70)] [-m<double(.55)] [-l<int(1000)]
-                   [-s<int(100)>] <subject:db> <target:db> ...
+                   [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
+                   [-H<int>] [-M<int>] <subject:db> <target:db> ...
 
 Compare sequences in the trimmed <subject> block against those in the list of <target>
 blocks searching for local alignments involving at least -l base pairs (default 1000)
-or more, that have an average correlation rate of -e (default 70%), and that have a
-minimum correlation rate of -m (default 55%). The local alignments found will be output
-in a sparse encoding where a trace point on the alignment is recorded every -s base
-pairs of the a-read (default 100bp). The subject reads are compared in both
-orientations against each target read and local alignments meeting the criteria are
-output to one of several created files described below.  The -v option turns on a
-verbose reporting mode that gives statistics on each major step of the computation.  
+or more, that have an average correlation rate of -e (default 70%).  The local
+alignments found will be output in a sparse encoding where a trace point on the
+alignment is recorded every -s base pairs of the a-read (default 100bp). The subject
+reads are compared in both orientations against each target read and local alignments
+meeting the criteria are output to one of several created files described below.  The
+-v option turns on a verbose reporting mode that gives statistics on each major step of
+the computation.  
 
 There cannot be more than 65,535 reads in a given db block, and each read must be less
 than 65,535 characters long.  DBsplit is guaranteed to produce blocks that meet this
@@ -87,6 +87,19 @@ significantly over-represented (e.g. homopolymer runs). These can be suppressed 
 the -t option: any k-mer that occurs more than t times in either the subject or target
 is not counted in the heuristic. If the -t option is absent then t is effectively
 infinity.  
+
+bias (e.g. >65% AT rich), and at the cost of a bit more time, dynamically adjusts k-mer
+Invariably, some k-mers are significantly over-represented (e.g. homopolymer runs).
+These k-mers create an excessive number of matching k-mer pairs and left unaddressed
+would cause daligner to overflow the available physical memory.  One way to deal with
+this is to explicitly set the -t parameter which suppresses the use of any k-mer that
+occurs more than t times in either the subject or target block.  However, a better way
+to handle the situation is to let the program automatically select a value of t that
+meets a given memory usage limit specified (in Gb) by the -M parameter.  By default
+daligner will use the amount of physical memory as the choice for -M.  If you want to
+use less, say only 8Gb on a 24Gb HPC cluster node because you want to run 3 daligner
+jobs on the node, then specify -M8.  Specifying -M0 basically indicates that you do not
+want daligner to self adjust k-mer suppression to fit within a given amount of memory.
 
 For each subject, target pair of blocks, say X and Y, the program produces files
 containing alignments with the names X.Y.[C|N]#.las and if X !≠ Y then also files
@@ -190,8 +203,8 @@ then the program runs silently.  The exit status is 0 if every file is deemed go
 
 
 8. HPCdaligner [-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                      [-e<double(.70)] [-m<double(.55)] [-l<int(1000)]
-                      [-s<int(100)>] [-dal<int(4)>] [-mrg<int(25)>]
+                      [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
+                      [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
                       <path:db> [<first:int>[-<last:int>]]
 
 HPCdaligner writes a UNIX shell script to the standard output that consists of a

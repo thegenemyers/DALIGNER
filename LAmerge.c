@@ -135,13 +135,13 @@ static void showheap(Overlap **heap, int hsize)
 
 typedef struct
   { FILE   *stream;
-    void   *block;
-    void   *ptr;
-    void   *top;
+    char   *block;
+    char   *ptr;
+    char   *top;
     int64   count;
   } IO_block;
 
-void ovl_reload(IO_block *in, int64 bsize)
+static void ovl_reload(IO_block *in, int64 bsize)
 { int64 remains;
 
   remains = in->top - in->ptr;
@@ -157,7 +157,7 @@ void ovl_reload(IO_block *in, int64 bsize)
 int main(int argc, char *argv[])
 { IO_block *in;
   int64     bsize, osize, psize;
-  void     *block, *oblock;
+  char     *block, *oblock;
   int       i, fway;
   Overlap **heap;
   int       hsize;
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
   int64     totl;
   int       tspace, tbytes;
   FILE     *output;
-  void     *optr, *otop;
+  char     *optr, *otop;
 
   int       VERBOSE;
 
@@ -203,19 +203,21 @@ int main(int argc, char *argv[])
   psize  = sizeof(void *);
   osize  = sizeof(Overlap) - psize;
   bsize  = (MEMORY*1000000ll)/(fway + 1);
-  block  = (void *) Malloc(bsize*(fway+1)+psize,"Allocating LAmerge blocks");
+  block  = (char *) Malloc(bsize*(fway+1)+psize,"Allocating LAmerge blocks");
   in     = (IO_block *) Malloc(sizeof(IO_block)*fway,"Allocating LAmerge IO-reacords");
   if (block == NULL || in == NULL)
     exit (1);
   block += psize;
 
-  totl = 0;
+  totl   = 0;
+  tbytes = 0;
+  tspace = 0;
   for (i = 0; i < fway; i++)
     { int64  novl;
       int    mspace;
       FILE  *input;
       char  *pwd, *root;
-      void  *iblock;
+      char  *iblock;
 
       pwd   = PathTo(argv[i+2]);
       root  = Root(argv[i+2],".las");
@@ -225,9 +227,11 @@ int main(int argc, char *argv[])
       free(pwd);
       free(root);
 
-      fread(&novl,sizeof(int64),1,input);
+      if (fread(&novl,sizeof(int64),1,input) != 1)
+        SYSTEM_ERROR
       totl += novl;
-      fread(&mspace,sizeof(int),1,input);
+      if (fread(&mspace,sizeof(int),1,input) != 1)
+        SYSTEM_ERROR
       if (i == 0)
         { tspace = mspace;
           if (tspace <= TRACE_XOVR)
@@ -317,7 +321,7 @@ int main(int argc, char *argv[])
           optr = oblock;
         }
 
-      memcpy(optr,((void *) ov) + psize,osize);
+      memcpy(optr,((char *) ov) + psize,osize);
       optr += osize;
       memcpy(optr,src->ptr,tsize);
       optr += tsize;

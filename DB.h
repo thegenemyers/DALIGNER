@@ -84,6 +84,11 @@ typedef uint16   READIDX;   //  Reads can be no longer than 2^16
 
 extern char *Prog_Name;   //  Name of program
 
+#define SYSTEM_ERROR							\
+  { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);	\
+    exit (2);								\
+  }
+
 #define ARG_INIT(name)                  \
   Prog_Name = Strdup(name,"");          \
   for (i = 0; i < 128; i++)             \

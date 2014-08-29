@@ -63,17 +63,18 @@
 
 #define THREAD    pthread_t
 
-#define MAX_BIAS  2  //  In -b mode, don't consider tuples with specificity
-                     //     <= 4 ^ -(kmer-MAX_BIAS)
+#define MAX_BIAS  2    //  In -b mode, don't consider tuples with specificity
+                       //     <= 4 ^ -(kmer-MAX_BIAS)
+#define MAXGRAM 10000  //  Cap on k-mer count histogram (in count_thread, merge_thread)
 
 #undef  TEST_LSORT
 #undef  TEST_KSORT
 #undef  TEST_PAIRS
 #undef  TEST_CSORT
-#undef  TEST_GATHER
 #define    HOW_MANY   30000   //  Print first HOW_MANY items for each of the TEST options above
 
 #define TEST_HIT              //  When off, just tuple filtering alone, no check
+#undef  TEST_GATHER
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
 #define   ALIGN_WIDTH    80   //     Parameters for alignment
@@ -111,7 +112,6 @@ static int Suppress;
 static int Kshift;         //  2*Kmer
 static int Kmask;          //  4^Kmer-1
 static int Kpowr;          //  4^Kmer
-static int Binwidth;       //  2^Binshift
 static int TooFrequent;    //  (Suppress != 0) ? Suppress : INT32_MAX
 
 int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin)
@@ -126,8 +126,6 @@ int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin)
   Kshift = 2*Kmer;
   Kpowr  = (1 << Kshift);
   Kmask  = Kpowr-1;
-
-  Binwidth = (1 << Binshift);
 
   if (Suppress == 0)
     TooFrequent = INT32_MAX;
@@ -150,32 +148,31 @@ int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin)
 #define BMASK  0xff             //  = BPOWR-1
 
 static int QSHIFT;              //  = BSHIFT - NSHIFT
-static int QPOWR;               //  = 2^(BSHIFT+NSHIFT)
-static int QMASK;               //  = QPOWR-1
+static int QMASK;               //  = BMASK << NSHIFT
 
 static int     LEX_shift;
-static int     LEX_zsize;
+static int64   LEX_zsize;
 static int     LEX_first;
 static int     LEX_last;
 static uint64 *LEX_src;
 static uint64 *LEX_trg;
 
 typedef struct
-  { int  beg;
-    int  end;
-    int  tptr[BPOWR];
-    int  sptr[NTHREADS*BPOWR];
+  { int64  beg;
+    int64  end;
+    int64  tptr[BPOWR];
+    int64  sptr[NTHREADS*BPOWR];
   } Lex_Arg;
 
 static void *lex_thread(void *arg)
 { Lex_Arg    *data  = (Lex_Arg *) arg;
-  int        *sptr  = data->sptr;
-  int        *tptr  = data->tptr;
+  int64      *sptr  = data->sptr;
+  int64      *tptr  = data->tptr;
   int         shift = LEX_shift;
-  int         zsize = LEX_zsize;
+  int64       zsize = LEX_zsize;
   uint64     *src   = LEX_src;
   uint64     *trg   = LEX_trg;
-  int         i, n, x;
+  int64       i, n, x;
   uint64      c, b;
 
   n = data->end;
@@ -206,12 +203,11 @@ static void *lex_thread(void *arg)
 static uint64 *lex_sort(int nbits, int sbit, uint64 *src, uint64 *trg, Lex_Arg *parmx)
 { THREAD  threads[NTHREADS];
 
-  int     len;
+  int64   len, x, y;
   uint64 *xch;
-  int     i, j, x, z;
+  int     i, j, k, z;
 
   QSHIFT = BSHIFT - NSHIFT;
-  QPOWR  = (BPOWR << NSHIFT);
   QMASK  = (BMASK << NSHIFT);
 
   len       = parmx[NTHREADS-1].end;
@@ -239,11 +235,11 @@ static uint64 *lex_sort(int nbits, int sbit, uint64 *src, uint64 *trg, Lex_Arg *
           parmx[NTHREADS-1].end = len;
 
           for (j = 0; j < BPOWR; j++)
-            { x = (j << NSHIFT);
+            { k = (j << NSHIFT);
               for (z = 0; z < NTHREADS; z++)
                 for (i = 0; i < NTHREADS; i++)
-                  { parmx[i].tptr[j] += parmx[z].sptr[x+i];
-                    parmx[z].sptr[x+i] = 0;
+                  { parmx[i].tptr[j] += parmx[z].sptr[k+i];
+                    parmx[z].sptr[k+i] = 0;
                   }
             }
         }
@@ -251,9 +247,9 @@ static uint64 *lex_sort(int nbits, int sbit, uint64 *src, uint64 *trg, Lex_Arg *
       x = 0;
       for (j = 0; j < BPOWR; j++)
         for (i = 0; i < NTHREADS; i++)
-          { z = parmx[i].tptr[j];
+          { y = parmx[i].tptr[j];
             parmx[i].tptr[j] = x;
-            x += z;
+            x += y;
           }
 
       for (i = 0; i < NTHREADS; i++)
@@ -299,16 +295,16 @@ static uint64     *TA_list;
 static HITS_TRACK *TA_dust;
 
 typedef struct
-  { int  tnum;
-    int *kptr;
-    int  fill;
+  { int    tnum;
+    int64 *kptr;
+    int    fill;
   } Tuple_Arg;
 
 
 static void *tuple_thread(void *arg)
 { Tuple_Arg  *data  = (Tuple_Arg *) arg;
   int         tnum  = data->tnum;
-  int        *kptr  = data->kptr;
+  int64      *kptr  = data->kptr;
   uint64     *list  = TA_list;
   int         n, i, m, c, x, p;
   uint64      h;
@@ -382,7 +378,7 @@ static void *tuple_thread(void *arg)
 static void *biased_tuple_thread(void *arg)
 { Tuple_Arg  *data  = (Tuple_Arg *) arg;
   int         tnum  = data->tnum;
-  int        *kptr  = data->kptr;
+  int64      *kptr  = data->kptr;
   uint64     *list  = TA_list;
   int         n, i, m;
   int         c, x, a, k, p, d;
@@ -551,30 +547,35 @@ static void *compress_thread(void *arg)
   return (NULL);
 }
 
-uint64 *sort_kmers(HITS_DB *block, int *len)
+static uint64 *sort_kmers(HITS_DB *block, int *len)
 { THREAD    threads[NTHREADS];
   Tuple_Arg parmt[NTHREADS];
   Comp_Arg  parmf[NTHREADS];
   Lex_Arg   parmx[NTHREADS];
 
   uint64   *src, *trg, *rez;
-  int       kmers;
+  int       kmers, nreads;
   int       i, j, x, z;
   uint64    h;
 
   if (NormShift == NULL && BIASED)
-    { NormShift = (int *) Malloc(sizeof(int)*(Kmer+1),"Allocating sort_kmers bias shift");
+    { double scale;
+
+      NormShift = (int *) Malloc(sizeof(int)*(Kmer+1),"Allocating sort_kmers bias shift");
       if (NormShift == NULL)
         exit (1);
       for (i = 0; i <= Kmer; i++)
         NormShift[i] = Kshift - 2*i;
       LogNorm = 10000 * Kmer;
       LogThresh = 10000 * (Kmer-MAX_BIAS);
+
+      scale = -10000. / log(4.);
       for (i = 0; i < 4; i++)
-        LogBase[i] = ceil( -10000. * log(block->freq[i]) / log(4.));
+        LogBase[i] = (int) ceil( scale * log(block->freq[i]) );
     }
 
-  kmers = block->reads[block->nreads].boff - Kmer * block->nreads;
+  nreads = block->nreads;
+  kmers  = block->reads[nreads].boff - Kmer * nreads;
 
   if (kmers <= 0)
     goto no_mers;
@@ -591,9 +592,9 @@ uint64 *sort_kmers(HITS_DB *block, int *len)
     exit (1);
 
   if (VERBOSE)
-    { printf("\nKmer count = ");
+    { printf("\n   Kmer count = ");
       Print_Number((int64) kmers,0,stdout);
-      printf("\nUsing %.2fGb of space\n",(1. * kmers) / 67108864);
+      printf("\n   Using %.2fGb of space\n",(1. * kmers) / 67108864);
       fflush(stdout);
     }
 
@@ -626,11 +627,10 @@ uint64 *sort_kmers(HITS_DB *block, int *len)
   for (i = 0; i < NTHREADS; i++)
     pthread_join(threads[i],NULL);
 
-  x = z = 0;
+  x = 0;
   for (i = 0; i < NTHREADS; i++)
     { parmx[i].beg = x;
-      z += block->nreads;
-      j = z >> NSHIFT;
+      j = (int) ((((int64) nreads) * (i+1)) >> NSHIFT);
       parmx[i].end = x = block->reads[j].boff - j*Kmer;
     }
 
@@ -702,17 +702,26 @@ uint64 *sort_kmers(HITS_DB *block, int *len)
 
   if (VERBOSE)
     { if (TooFrequent < INT32_MAX)
-        { printf("Revised kmer count = ");
+        { printf("   Revised kmer count = ");
           Print_Number((int64) kmers,0,stdout);
           printf("\n");
         }
-      printf("Index occupies %.2fGb\n",(1. * kmers) / 134217728);
+      printf("   Index occupies %.2fGb\n",(1. * kmers) / 134217728);
       fflush(stdout);
     }
 
   if (kmers <= 0)
     { free(rez);
       goto no_mers;
+    }
+
+  if (MEM_LIMIT > 0 && kmers > (int64) MEM_LIMIT/4)
+    { fprintf(stderr,"Warning: Block size too big, index occupies more than 1/4 of");
+      if (MEM_LIMIT == MEM_PHYSICAL)
+        fprintf(stderr," physical memory\n");
+      else
+        fprintf(stderr," desired memory allocation\n");
+      fflush(stderr);
     }
 
   *len = kmers;
@@ -737,26 +746,10 @@ void Build_Table(HITS_DB *block)
  *
  ********************************************************************************************/
 
-int count_hits(int b, int e, uint64 *hit)
-{ int c, q, p;
-
-  c = Kmer;
-  q = (hit[b++] & 0xffffll);
-  while (b < e)
-    { p = (hit[b++] & 0xffffll);
-      if (p < q)
-        c += Kmer;
-      else if (p-q < Kmer)
-        c += p-q;
-      else
-        c += Kmer;
-      q = p;
-    }
-  return (c);
-}
-
-int find_tuple(uint64 x, uint64 *a, int n) // smallest k s.t. a[k] >= x (or n if does not exist)
+static int find_tuple(uint64 x, uint64 *a, int n)
 { int l, r, m;
+
+  // smallest k s.t. a[k] >= x (or n if does not exist)
 
   l = 0;
   r = n;
@@ -778,17 +771,21 @@ static int     MG_self;
 typedef struct
   { int    abeg, aend;
     int    bbeg, bend;
-    uint64 nhits;
-    int   *kptr;
+    int64 *kptr;
+    int64  nhits;
+    int    limit;
+    int64  hitgram[MAXGRAM];
   } Merge_Arg;
 
 static void *count_thread(void *arg)
 { Merge_Arg  *data  = (Merge_Arg *) arg;
   uint64     *asort = MG_alist;
   uint64     *bsort = MG_blist;
-  int         nhits = 0;
+  int64      *gram  = data->hitgram;
+  int64       nhits = 0;
   int         aend  = data->aend;
 
+  int64  ct;
   int    ia, ib;
   int    jb, ja;
   uint64 ca, cb;
@@ -808,20 +805,25 @@ static void *count_thread(void *arg)
           if (cb == ca)
             { if (ia >= aend) break;
 
+              ct = 0;
               jb = ib;
               db = cb;
               do
                 { x = READ(asort[ia]);
                   while (db == cb && READ(bsort[ib]) < x)
                     db = CODE(bsort[++ib]);
-                  nhits += (ib-jb);
+                  ct += (ib-jb);
                 }
               while ((da = CODE(asort[++ia])) == ca);
               while (db == cb)
                 db = CODE(bsort[++ib]);
 
+              nhits += ct;
               ca = da;
               cb = db;
+
+              if (ct < MAXGRAM)
+                gram[ct] += 1;
             }
         }
     }
@@ -833,15 +835,21 @@ static void *count_thread(void *arg)
             ca = CODE(asort[++ia]);
           if (cb == ca)
             { if (ia >= aend) break;
+
               ja = ia++;
               while ((da = CODE(asort[ia])) == ca)
                 ia += 1;
               jb = ib++;
               while ((db = CODE(bsort[ib])) == cb)
                 ib += 1;
-              nhits += (ia-ja)*(ib-jb);
+              ct = (ia-ja)*(ib-jb);
+
+              nhits += ct;
               ca = da;
               cb = db;
+
+              if (ct < MAXGRAM)
+                gram[ct] += 1;
             }
         }
     }
@@ -853,13 +861,15 @@ static void *count_thread(void *arg)
 
 static void *merge_thread(void *arg)
 { Merge_Arg  *data  = (Merge_Arg *) arg;
-  int        *kptr  = data->kptr;
+  int64      *kptr  = data->kptr;
   uint64     *asort = MG_alist;
   uint64     *bsort = MG_blist;
   uint64     *hits  = MG_hits;
-  int         nhits = data->nhits;
+  int64       nhits = data->nhits;
   int         aend  = data->aend;
+  int         limit = data->limit;
 
+  int64  ct;
   int    ia, ib;
   int    jb, ja;
   uint64 ca, cb;
@@ -880,26 +890,41 @@ static void *merge_thread(void *arg)
           if (cb == ca)
             { if (ia >= aend) break;
 
+              ct = 0;
+              ja = ia;
               jb = ib;
               db = cb;
               do
-                { v = (asort[ia] >> 32);
-                  x = (v >> 16);
+                { x = READ(asort[ia]);
                   while (db == cb && READ(bsort[ib]) < x)
                     db = CODE(bsort[++ib]);
-                  if ((d = ib-jb) > 0)
-                    { kptr[v & BMASK] += d;
-                      v = (v << 16);
-                      for (b = jb; b < ib; b++)
-                        { x = bsort[b];
-                          hits[nhits++] = (x & 0xffff000000000000ll) | v | ((x >> 32) & 0xffffll);
-                        }
-                    }
+                  ct += (ib-jb);
                 }
               while ((da = CODE(asort[++ia])) == ca);
               while (db == cb)
                 db = CODE(bsort[++ib]);
 
+              if (ct < limit)
+                { ib = jb;
+                  db = cb;
+                  for (a = ja; a < ia; a++)
+                    { v = (asort[a] >> 32);
+                      x = (v >> 16);
+                      while (db == cb && READ(bsort[ib]) < x)
+                        db = CODE(bsort[++ib]);
+                      if ((d = ib-jb) > 0)
+                        { kptr[v & BMASK] += d;
+                          v = (v << 16);
+                          for (b = jb; b < ib; b++)
+                            { x = bsort[b];
+                              hits[nhits++] =
+                                    (x & 0xffff000000000000ll) | v | ((x >> 32) & 0xffffll);
+                            }
+                        }
+                    }
+                  while (db == cb)
+                    db = CODE(bsort[++ib]);
+                }
               ca = da;
               cb = db;
             }
@@ -920,13 +945,15 @@ static void *merge_thread(void *arg)
               while ((db = CODE(bsort[ib])) == cb)
                 ib += 1;
               d = ib-jb;
-              for (a = ja; a < ia; a++)
-                { v = (asort[a] >> 32);
-                  kptr[v & BMASK] += d;
-                  v = (v << 16);
-                  for (b = jb; b < ib; b++)
-                    { x = bsort[b];
-                      hits[nhits++] = (x & 0xffff000000000000ll) | v | ((x >> 32) & 0xffffll);
+              if ((ia-ja)*d < limit)
+                { for (a = ja; a < ia; a++)
+                    { v = (asort[a] >> 32);
+                      kptr[v & BMASK] += d;
+                      v = (v << 16);
+                      for (b = jb; b < ib; b++)
+                        { x = bsort[b];
+                          hits[nhits++] = (x & 0xffff000000000000ll) | v | ((x >> 32) & 0xffffll);
+                        }
                     }
                 }
               ca = da;
@@ -942,23 +969,22 @@ static void *merge_thread(void *arg)
 static HITS_DB *MR_ablock;
 static HITS_DB *MR_bblock;
 static uint64  *MR_hits;
-static int      MR_nhits;
 static int      MR_comp;
 static int      MR_two;
 
 typedef struct
-  { int         beg, end;
+  { int64       beg, end;
     int        *score;
     int        *lastp;
     Work_Data  *work;
     Align_Spec *aspec;
     FILE       *ofile1;
     FILE       *ofile2;
-    int         nfilt;
-    int         ncheck;
+    int64       nfilt;
+    int64       ncheck;
   } Report_Arg;
 
-void *report_thread(void *arg)
+static void *report_thread(void *arg)
 { Report_Arg  *data   = (Report_Arg *) arg;
   uint64      *hits   = MR_hits;
   char        *aseq   = (char *) (MR_ablock->bases);
@@ -983,20 +1009,16 @@ void *report_thread(void *arg)
   Path        *apath;
 #endif
   Path        *bpath = &(ovlb->path);
-  int          nfilt = 0;
+  int64        nfilt = 0;
   int64        ahits = 0;
   int64        bhits = 0;
   int          tspace, small, tbytes;
 
   uint64 *hitc;
-  int     minhit, end;
+  int     minhit;
 
   uint64 p, q;
-  int    g, h, f;
-
-  minhit = (Hitmin-1)/Kmer + 1;
-  hitc   = hits + (minhit-1);
-  end    = data->end - minhit;
+  int64  g, h, f, end;
 
   //  In ovl and align roles of A and B are reversed, as the B sequence must be the
   //    complemented sequence !!
@@ -1021,7 +1043,10 @@ void *report_thread(void *arg)
       fwrite(&tspace,sizeof(int),1,ofile2);
     }
 
-  h = data->beg;
+  minhit = (Hitmin-1)/Kmer + 1;
+  hitc   = hits + (minhit-1);
+  end    = data->end - minhit;
+  h      = data->beg;
   for (p = (hits[h] >> 32); h < end; p = q)
     if ((hitc[h] >> 32) != p)
       { h += 1;
@@ -1060,7 +1085,7 @@ void *report_thread(void *arg)
         while (q == p);
 
 #ifdef TEST_GATHER
-        printf("%5lld vs %5lld : %3d",(p>>16)&0xffffll,p&0xffffll,h-g);
+        printf("%5d vs %5d : %3lld",br+bfirst,ar+afirst,h-g);
 #endif
 
         lasta = -1;
@@ -1075,8 +1100,8 @@ void *report_thread(void *arg)
                   { if (lasta < 0)
                       { align->bseq = aseq + aread[ar].boff;
                         align->aseq = bseq + bread[br].boff;
-                        align->blen = ovlb->blen = ovla->alen = alen;
-                        align->alen = ovlb->alen = ovla->blen = blen;
+                        align->blen = ovlb->blen = ovla->alen = (READIDX) alen;
+                        align->alen = ovlb->alen = ovla->blen = (READIDX) blen;
                         ovlb->bread = ovla->aread = ar + afirst;
                         ovlb->aread = ovla->bread = br + bfirst;
                       }
@@ -1197,17 +1222,10 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
   uint64   *asort, *bsort;
   int       alen, blen;
 
-  int64     atot,   btot;
-  int       areads, breads;
-  int       amax, bmax;
+  int64     atot, btot;
 
-  areads = ablock->nreads;
-  atot   = ablock->totlen;
-  amax   = ablock->maxlen;
-
-  breads = bblock->nreads;
-  btot   = bblock->totlen;
-  bmax   = bblock->maxlen;
+  atot = ablock->totlen;
+  btot = bblock->totlen;
 
   if (comp)
     { asort = Csort;
@@ -1223,24 +1241,34 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
       blen  = Alen;
     }
   else
-    bsort = sort_kmers(bblock,&blen);
+    { if (VERBOSE)
+        printf("\nBuilding index for %s\n",bname);
+      bsort = sort_kmers(bblock,&blen);
+    }
 
   nfilt = ncheck = nhits = 0;
+
+  if (VERBOSE)
+    { if (comp)
+        printf("\nComparing %s to %s\n",aname,bname);
+      else
+        printf("\nComparing c(%s) to %s\n",aname,bname);
+    }
 
   if (alen == 0 || blen == 0)
     goto zerowork;
 
-  { int    i;
-    uint64 p, c;
+  { int    i, j, p;
+    uint64 c;
+    int    limit;
 
     MG_alist = asort;
     MG_blist = bsort;
     MG_self  = self;
 
     parmm[0].abeg = parmm[0].bbeg = 0;
-    parmm[0].kptr = parmx[0].tptr;
     for (i = 1; i < NTHREADS; i++)
-      { p = (alen * ((int64) i)) >> NSHIFT;
+      { p = (int) ((((int64) alen) * i) >> NSHIFT);
         if (p > 0)
           { c = CODE(asort[p-1]);
             while (CODE(asort[p]) == c)
@@ -1248,10 +1276,13 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           }
         parmm[i].abeg = parmm[i-1].aend = p;
         parmm[i].bbeg = parmm[i-1].bend = find_tuple(CODE(asort[p]),bsort,blen);
-        parmm[i].kptr = parmx[i].tptr;
       }
     parmm[NTHREADS-1].aend = alen;
     parmm[NTHREADS-1].bend = blen;
+
+    for (i = 0; i < NTHREADS; i++)
+      for (j = 0; j < MAXGRAM; j++)
+        parmm[i].hitgram[j] = 0;
 
     for (i = 0; i < NTHREADS; i++)
       pthread_create(threads+i,NULL,count_thread,parmm+i);
@@ -1259,17 +1290,81 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     for (i = 0; i < NTHREADS; i++)
       pthread_join(threads[i],NULL);
 
+    if (VERBOSE)
+      printf("\n");
+    if (MEM_LIMIT > 0)
+      { int64 histo[MAXGRAM];
+        int64 tom, avail;
+
+        for (j = 0; j < MAXGRAM; j++)
+          histo[j] = parmm[0].hitgram[j];
+        for (i = 1; i < NTHREADS; i++)
+          for (j = 0; j < MAXGRAM; j++)
+            histo[j] += parmm[i].hitgram[j];
+
+        if (self || nhits >= blen)
+          avail = (MEM_LIMIT - (Alen + Clen)) / 2;
+        else
+          avail = MEM_LIMIT - (Alen + Clen + blen);
+        avail *= .98;
+
+        tom = 0;
+        for (j = 0; j < MAXGRAM; j++)
+          { tom += j*histo[j];
+            if (tom > avail)
+              break;
+          }
+        limit = j;
+
+        if (limit == 1)
+          { fprintf(stderr,"\nError: Insufficient ");
+            if (MEM_LIMIT == MEM_PHYSICAL)
+              fprintf(stderr," physical memory, reduce block size\n");
+            else
+              fprintf(stderr," memory allocation, reduce block size or increase allocation\n");
+            fflush(stderr);
+            exit (1);
+          }
+        else if (limit < 10)
+          { fprintf(stderr,"\nWarning: Sensitivity hampered by low ");
+            if (MEM_LIMIT == MEM_PHYSICAL)
+              fprintf(stderr," physical memory, reduce block size\n");
+            else
+              fprintf(stderr," memory allocation, reduce block size or increase allocation\n");
+            fflush(stderr);
+          }
+        else
+          { if (VERBOSE)
+              { printf("   Capping mutual k-mer matches over %d (effectively -t%d)\n",
+                       limit,(int) sqrt(1.*limit));
+                fflush(stdout);
+              }
+          }
+
+        for (i = 0; i < NTHREADS; i++)
+          { parmm[i].nhits = 0;
+            for (j = 1; j < limit; j++)
+              parmm[i].nhits += j * parmm[i].hitgram[j];
+            parmm[i].limit = limit;
+          }
+      }
+    else
+      for (i = 0; i < NTHREADS; i++)
+        parmm[i].limit = INT32_MAX;
+
     nhits = parmm[0].nhits;
     for (i = 1; i < NTHREADS; i++)
       parmm[i].nhits = nhits += parmm[i].nhits;
 
     if (VERBOSE)
-      { printf("\nHit count = ");
+      { printf("   Hit count = ");
         Print_Number(nhits,0,stdout);
         if (self || nhits >= blen)
-          printf("\nHighwater of %.2fGb space\n",(1. * (Alen + Clen + 2*nhits)) / 134217728);
+          printf("\n   Highwater of %.2fGb space\n",
+                       (1. * (Alen + Clen + 2*nhits)) / 134217728);
         else
-          printf("\nHighwater of %.2fGb space\n",(1. * (Alen + Clen + blen + nhits)) / 134217728);
+          printf("\n   Highwater of %.2fGb space\n",
+                       (1. * (Alen + Clen + blen + nhits)) / 134217728);
         fflush(stdout);
       }
 
@@ -1317,7 +1412,8 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 #endif
   }
 
-  { int i, x;
+  { int   i;
+    int64 x;
 
     x = 0;
     for (i = 0; i < NTHREADS-1; i++)
@@ -1341,39 +1437,39 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 #endif
   }
 
-  { int    i, p;
+  { int    i, w;
+    int64  p;
     uint64 d;
     int   *counters;
 
     MR_ablock = ablock;
     MR_bblock = bblock;
     MR_hits   = khit;
-    MR_nhits  = nhits;
     MR_comp   = comp;
     MR_two    = ! self;
 
-    parmr[0].beg  = 0;
+    parmr[0].beg = 0;
     for (i = 1; i < NTHREADS; i++)
-      { p = (nhits * ((int64) i)) >> NSHIFT;
+      { p = (nhits * i) >> NSHIFT;
         if (p > 0)
           { d = khit[p-1] >> 48;
             while ((khit[p] >> 48) == d)
               p += 1;
           }
-        parmr[i].beg  = parmr[i-1].end = p;
+        parmr[i].beg = parmr[i-1].end = p;
       }
     parmr[NTHREADS-1].end = nhits;
 
-    p = (0xffff >> Binshift) + 2;
-    counters = (int *) Malloc(NTHREADS*4*p*sizeof(int),"Allocating diagonal buckets");
+    w = (0xffff >> Binshift) + 2;
+    counters = (int *) Malloc(NTHREADS*4*w*sizeof(int),"Allocating diagonal buckets");
     if (counters == NULL)
       exit (1);
 
-    for (i = 0; i < 4*p*NTHREADS; i++)
+    for (i = 0; i < 4*w*NTHREADS; i++)
       counters[i] = 0;
     for (i = 0; i < NTHREADS; i++)
-      { parmr[i].score = counters + (4*i+1)*p;
-        parmr[i].lastp = parmr[i].score + 2*p;
+      { parmr[i].score = counters + (4*i+1)*w;
+        parmr[i].lastp = parmr[i].score + 2*w;
         parmr[i].work  = New_Work_Data();
         parmr[i].aspec = aspec;
 
@@ -1419,18 +1515,44 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   free(work2);
   free(work1);
+  goto epilogue;
 
 zerowork:
+  { FILE *ofile;
+    int   i, tspace;
+
+    nhits  = 0;
+    tspace = Trace_Spacing(aspec);
+    for (i = 0; i < NTHREADS; i++)
+      { ofile = Fopen(Catenate(aname,".",bname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+        fwrite(&nhits,sizeof(int64),1,ofile);
+        fwrite(&tspace,sizeof(int),1,ofile);
+        fclose(ofile);
+        if (! self)
+          { ofile = Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+            fwrite(&nhits,sizeof(int64),1,ofile);
+            fwrite(&tspace,sizeof(int),1,ofile);
+            fclose(ofile);
+          }
+      }
+  }
+
+epilogue:
 
   if (VERBOSE)
-    { int width = log10(nhits) + 1;
+    { int width;
+
+      if (nhits <= 0)
+        width = 1;
+      else
+        width = ((int) log10((double) nhits)) + 1;
       width += (width-1)/3;
 
-      printf("\n  ");
+      printf("\n     ");
       Print_Number(nhits,width,stdout);
-      printf(" %d-mers (%e of matrix)\n  ",Kmer,(1.*nhits/atot)/btot);
+      printf(" %d-mers (%e of matrix)\n     ",Kmer,(1.*nhits/atot)/btot);
       Print_Number(nfilt,width,stdout);
-      printf(" seed hits (%e of matrix)\n  ",(1.*nfilt/atot)/btot);
+      printf(" seed hits (%e of matrix)\n     ",(1.*nfilt/atot)/btot);
       Print_Number(ncheck,width,stdout);
       printf(" confirmed hits (%e of matrix)\n",(1.*ncheck/atot)/btot);
       fflush(stdout);

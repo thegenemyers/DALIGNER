@@ -141,11 +141,11 @@ typedef struct
 
 typedef struct
   { Path *path;
-    char *aseq;         /* Pointer to A sequence                              */
-    char *bseq;         /* Pointer to B sequence                              */
-    int   alen;         /* Length of A sequence                               */
-    int   blen;         /* Length of B sequence                               */
-    int   flags;        /* Pipeline status and complementation flags          */
+    char   *aseq;         /* Pointer to A sequence                              */
+    char   *bseq;         /* Pointer to B sequence                              */
+    READIDX alen;         /* Length of A sequence                               */
+    READIDX blen;         /* Length of B sequence                               */
+    int     flags;        /* Pipeline status and complementation flags          */
   } Alignment;
 
 void Complement_Seq(char *a);
@@ -170,20 +170,16 @@ void Complement_Seq(char *a);
 
      ave_corr:    the average correlation (1 - 2*error_rate) for the sought alignments.  For Pacbio
                     data we set this to .70 assuming an average of 15% error in each read.
-     min_corr:    the worst sustained correlation permitted in the alignment.  For Pacbio this
-                    is set to .60, primarily because a .48 correlation occurs between random
-                    DNA sequences.
      trace_space: the spacing interval for keeping trace points and segment differences (see
                     description of 'trace' for Paths above)
      freq[4]:     a 4-element vector where afreq[0] = frequency of A, f(A), freq[1] = f(C),
                     freq[2] = f(G), and freq[3] = f(T).  This vector is part of the header
                     of every HITS database (see db.h).
 
-     Any local alignment found will not have any sustained regionss where the minimum correlation
-     falls below min_corr.  If an alignment cannot reach the boundary of the d.p. matrix with
-     this condition (i.e. overlap), then the last/first 30 columns of the alignment are
-     guaranteed to be suffix/prefix positive at correlation ave_corr * g(freq) where g is
-     an empirically measured function that increases from 1 as the entropy of freq decreases.
+     If an alignment cannot reach the boundary of the d.p. matrix with this condition (i.e.
+     overlap), then the last/first 30 columns of the alignment are guaranteed to be
+     suffix/prefix positive at correlation ave_corr * g(freq) where g is an empirically
+     measured function that increases from 1 as the entropy of freq decreases.
 
      You can get back the original parameters used to create an Align_Spec with the simple
      utility functions below.
@@ -191,13 +187,12 @@ void Complement_Seq(char *a);
 
   typedef void Align_Spec;
 
-  Align_Spec *New_Align_Spec(double ave_corr, double max_corr, int trace_space, float *freq);
+  Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq);
 
   void        Free_Align_Spec(Align_Spec *spec);
 
   int    Trace_Spacing      (Align_Spec *spec);
   double Average_Correlation(Align_Spec *spec);
-  double Minimum_Correlation(Align_Spec *spec);
   float *Base_Frequencies   (Align_Spec *spec);
 
   /* Local_Alignment finds the longest significant local alignment between the sequences in

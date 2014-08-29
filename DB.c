@@ -154,7 +154,8 @@ char *Root(char *name, char *suffix)
         *dot = '.';
     }
   else
-    { epos = strlen(find) - strlen(suffix);
+    { epos  = strlen(find);
+      epos -= strlen(suffix);
       if (epos > 0 && strcasecmp(find+epos,suffix) == 0)
         { find[epos] = '\0';
           path = Strdup(find,"Extracting root from");
@@ -173,9 +174,12 @@ char *Catenate(char *path, char *sep, char *root, char *suffix)
 
   if (path == NULL || root == NULL || sep == NULL || suffix == NULL)
     return (NULL);
-  len = strlen(path) + strlen(sep) + strlen(root) + strlen(suffix);
+  len =  strlen(path);
+  len += strlen(sep);
+  len += strlen(root);
+  len += strlen(suffix);
   if (len > max)
-    { max = 1.2*len + 100;
+    { max = ((int) (1.2*len)) + 100;
       if ((cat = (char *) realloc(cat,max+1)) == NULL)
         { fprintf(stderr,"%s: Out of memory (Making path name for %s)\n",Prog_Name,root);
           return (NULL);
@@ -192,9 +196,10 @@ char *Numbered_Suffix(char *left, int num, char *right)
 
   if (left == NULL || right == NULL)
     return (NULL);
-  len = strlen(left) + strlen(right) + 40;
+  len =  strlen(left);
+  len += strlen(right) + 40;
   if (len > max)
-    { max = 1.2*len + 100;
+    { max = ((int) (1.2*len)) + 100;
       if ((suffix = (char *) realloc(suffix,max+1)) == NULL)
         { fprintf(stderr,"%s: Out of memory (Making number suffix for %d)\n",Prog_Name,num);
           return (NULL);
@@ -248,7 +253,8 @@ void Print_Number(int64 num, int width, FILE *out)
 //  Compress read into 2-bits per base (from [0-3] per byte representation
 
 void Compress_Read(int len, char *s)
-{ int   i, c, d;
+{ int   i;
+  char  c, d;
   char *s0, *s1, *s2, *s3;
 
   s0 = s;
@@ -261,7 +267,7 @@ void Compress_Read(int len, char *s)
   s0[len] = s1[len] = s2[len] = 0;
 
   for (i = 0; i < len; i += 4)
-    *s++ = (s0[i] << 6) | (s1[i] << 4) | (s2[i] << 2) | s3[i];
+    *s++ = (char ) ((s0[i] << 6) | (s1[i] << 4) | (s2[i] << 2) | s3[i]);
 
   s1[len] = c;
   s2[len] = d;
@@ -284,10 +290,10 @@ void Uncompress_Read(int len, char *s)
   t = s+tlen;
   for (i = tlen*4; i >= 0; i -= 4)
     { byte = *t--;
-      s0[i] = ((byte >> 6) & 0x3);
-      s1[i] = ((byte >> 4) & 0x3);
-      s2[i] = ((byte >> 2) & 0x3);
-      s3[i] = (byte & 0x3);
+      s0[i] = (char) ((byte >> 6) & 0x3);
+      s1[i] = (char) ((byte >> 4) & 0x3);
+      s2[i] = (char) ((byte >> 2) & 0x3);
+      s3[i] = (char) (byte & 0x3);
     }
   s[len] = 4;
 }
@@ -374,6 +380,7 @@ int Open_DB(char* path, HITS_DB *db)
   if (db->cutoff < 0 && part > 0)
     { fprintf(stderr,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
                      Prog_Name,root);
+      status = 1;
       goto exit;
     }
   
@@ -386,7 +393,8 @@ int Open_DB(char* path, HITS_DB *db)
     { status = 1;
       goto exit1;
     }
-  fread(db,sizeof(HITS_DB),1,index);
+  if (fread(db,sizeof(HITS_DB),1,index) != 1)
+    SYSTEM_ERROR
   nreads = db->oreads;
 
   { int   p, nblocks, nfiles, blast;
@@ -394,9 +402,11 @@ int Open_DB(char* path, HITS_DB *db)
     char buffer[2*MAX_NAME+100];
 
     nblocks = 0;
-    fscanf(dbvis,DB_NFILE,&nfiles);
+    if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
+      SYSTEM_ERROR
     for (p = 0; p < nfiles; p++)
-      fgets(buffer,2*MAX_NAME+100,dbvis);
+      if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
+        SYSTEM_ERROR
     if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1 || part > nblocks)
       if (part > 0)
         { status = 1;
@@ -411,12 +421,16 @@ int Open_DB(char* path, HITS_DB *db)
           all    = 1;
         }
     else
-      fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all);
+      { if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
+          SYSTEM_ERROR
+      }
 
     if (part > 0)
       { for (p = 1; p <= part; p++)
-          fscanf(dbvis,DB_BDATA,&ofirst,&bfirst);
-        fscanf(dbvis,DB_BDATA,&olast,&blast);
+          if (fscanf(dbvis,DB_BDATA,&ofirst,&bfirst) != 2)
+            SYSTEM_ERROR
+        if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
+          SYSTEM_ERROR
       }
     else
       { ofirst = bfirst = 0;
@@ -434,7 +448,8 @@ int Open_DB(char* path, HITS_DB *db)
 
   if (part <= 0)
     { db->reads = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+1),"Allocating Open_DB index");
-      fread(db->reads,sizeof(HITS_READ),nreads,index);
+      if (fread(db->reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
+        SYSTEM_ERROR
     }
   else
     { HITS_READ *reads;
@@ -445,7 +460,8 @@ int Open_DB(char* path, HITS_DB *db)
       reads  = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+1),"Allocating Open_DB index");
 
       fseeko(index,sizeof(HITS_READ)*ofirst,SEEK_CUR);
-      fread(reads,sizeof(HITS_READ),nreads,index);
+      if (fread(reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
+        SYSTEM_ERROR
 
       totlen = 0;
       maxlen = 0;
@@ -473,6 +489,9 @@ exit1:
 exit:
   if (bptr != NULL)
     *bptr = '.';
+
+  free(pwd);
+  free(root);
 
   return (status);
 }
@@ -515,12 +534,12 @@ void Trim_DB(HITS_DB *db)
     else
       { int   *anno4, size;
         int64 *anno8;
-        void  *anno, *data;
+        char  *anno, *data;
 
         size = record->size;
-        data = record->data; 
+        data = (char *) record->data; 
         if (data == NULL)
-          { anno = record->anno;
+          { anno = (char *) record->anno;
             j = 0;
             for (i = r = 0; i < db->nreads; i++, r += size)
               if ((reads[i].flags & DB_BEST) >= allflag && reads[i].end - reads[i].beg >= cutoff)
@@ -577,7 +596,7 @@ void Trim_DB(HITS_DB *db)
   db->trimmed = 1;
 
   if (j < nreads)
-    reads = Realloc(reads,sizeof(HITS_READ)*(j+1),NULL);
+    db->reads = Realloc(reads,sizeof(HITS_READ)*(j+1),NULL);
 }
 
 // Shut down an open 'db' by freeing all associated space, including tracks and QV structures, 
@@ -643,6 +662,8 @@ void Load_QVs(HITS_DB *db)
       if (indx == NULL)
         exit (1);
     }
+  else
+    indx = NULL;
 
   { char *x;
 
@@ -660,7 +681,8 @@ void Load_QVs(HITS_DB *db)
 
     table = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
 
-    fscanf(istub,DB_NFILE,&nfiles);
+    if (fscanf(istub,DB_NFILE,&nfiles) != 1)
+      SYSTEM_ERROR
 
     if (db->part > 0)
       { int pfirst, plast;
@@ -674,7 +696,8 @@ void Load_QVs(HITS_DB *db)
 
         first = 0;
         for (fbeg = 0; fbeg < nfiles; fbeg++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              SYSTEM_ERROR
             if (last > pfirst)
               break;
             first = last;
@@ -682,7 +705,8 @@ void Load_QVs(HITS_DB *db)
         for (fend = fbeg+1; fend <= nfiles; fend++)
           { if (last >= plast)
               break;
-            fscanf(istub,DB_FDATA,&last,fname,prolog);
+            if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              SYSTEM_ERROR
             first = last;
           }
 
@@ -694,23 +718,27 @@ void Load_QVs(HITS_DB *db)
         //    assign the tables # for each read in the block in "tables".
 
         rewind(istub);
-        fscanf(istub,DB_NFILE,&nfiles);
+        if (fscanf(istub,DB_NFILE,&nfiles) != 1)
+          SYSTEM_ERROR
 
         first = 0;
         for (n = 0; n < fbeg; n++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              SYSTEM_ERROR
             first = last;
           }
 
         for (n = fbeg; n < fend; n++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              SYSTEM_ERROR
 
             i = n-fbeg;
             if (first < pfirst)
               { HITS_READ read;
 
                 fseeko(indx,sizeof(HITS_DB) + sizeof(HITS_READ)*first,SEEK_SET);
-                fread(&read,sizeof(HITS_READ),1,indx);
+                if (fread(&read,sizeof(HITS_READ),1,indx) != 1)
+                  SYSTEM_ERROR
                 fseeko(quiva,read.coff,SEEK_SET);
                 coding[i] = *Read_QVcoding(quiva);
               }
@@ -727,7 +755,7 @@ void Load_QVs(HITS_DB *db)
             if (k > db->nreads)
               k = db->nreads;
             while (j < k)
-              table[j++] = i;
+              table[j++] = (uint16) i;
 
             first = last;
           }
@@ -744,14 +772,15 @@ void Load_QVs(HITS_DB *db)
   
         first = 0;
         for (i = 0; i < nfiles; i++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              SYSTEM_ERROR
   
             fseeko(quiva,db->reads[first].coff,SEEK_SET);
             coding[i] = *Read_QVcoding(quiva);
 	    db->reads[first].coff = ftello(quiva);
 
             for (j = first; j < last; j++)
-              table[j] = i;
+              table[j] = (uint16) i;
 
             first = last;
           }
@@ -826,13 +855,15 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
     if (strcmp(record->name,track) == 0)
       return (record);
 
-  afile = Fopen(Catenate(db->path,".",track,".anno"),"r");
+  afile = fopen(Catenate(db->path,".",track,".anno"),"r");
   if (afile == NULL)
     return (NULL);
-  dfile = Fopen(Catenate(db->path,".",track,".data"),"r");
+  dfile = fopen(Catenate(db->path,".",track,".data"),"r");
 
-  fread(&tracklen,sizeof(int),1,afile);
-  fread(&size,sizeof(int),1,afile);
+  if (fread(&tracklen,sizeof(int),1,afile) != 1)
+    SYSTEM_ERROR
+  if (fread(&size,sizeof(int),1,afile) != 1)
+    SYSTEM_ERROR
 
   if (db->trimmed)
     { if (tracklen != db->breads)
@@ -854,7 +885,18 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
 
   anno = (void *) Malloc(size*(nreads+1),"Allocating Track Anno Vector");
 
-  fread(anno,size,nreads+1,afile);
+  if (size > 0)
+    { if (dfile == NULL)
+        { if (fread(anno,size,nreads,afile) != (size_t) nreads)
+            SYSTEM_ERROR
+        }
+      else
+        { if (fread(anno,size,nreads+1,afile) != (size_t) (nreads+1))
+            SYSTEM_ERROR
+        }
+    }
+  else
+    SYSTEM_ERROR
 
   if (dfile != NULL)
     { int64 *anno8, off8, dlen;
@@ -883,7 +925,10 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
           dlen = anno8[nreads];
           data = (void *) Malloc(dlen,"Allocating Track Data Vector");
         }
-      fread(data,dlen,1,dfile);
+      if (dlen > 0)
+        { if (fread(data,dlen,1,dfile) != 1)
+            SYSTEM_ERROR
+        }
       fclose(dfile);
     }
   else
@@ -958,7 +1003,7 @@ char *New_Read_Buffer(HITS_DB *db)
 void Load_Read(HITS_DB *db, int i, char *read, int ascii)
 { FILE      *bases  = (FILE *) db->bases;
   int64      off;
-  int        len;
+  int        len, clen;
   HITS_READ *r = db->reads;
 
   if (bases == NULL)
@@ -976,7 +1021,11 @@ void Load_Read(HITS_DB *db, int i, char *read, int ascii)
 
   if (ftello(bases) != off)
     fseeko(bases,off,SEEK_SET);
-  fread(read,1,COMPRESSED_LEN(len),bases);
+  clen = COMPRESSED_LEN(len);
+  if (clen > 0)
+    { if (fread(read,clen,1,bases) != 1)
+        SYSTEM_ERROR
+    }
   Uncompress_Read(len,read);
   if (ascii == 1)
     { Lower_Read(read);
@@ -1045,17 +1094,17 @@ void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
     { char *deltag = entry[1];
 
       if (ascii != 2)
-        { int x = deltag[rlen];
+        { char x = deltag[rlen];
           deltag[rlen] = '\0';
           Number_Read(deltag);
           deltag[rlen] = x;
         }
       else
-        { int i;
+        { int j;
           int u = 'A'-'a';
 
-          for (i = 0; i < rlen; i++)
-            deltag[i] += u;
+          for (j = 0; j < rlen; j++)
+            deltag[j] = (char) (deltag[j]+u);
         }
     }
 }
@@ -1081,7 +1130,7 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
 
   char  *seq;
   int64  o, off;
-  int    i, len;
+  int    i, len, clen;
 
   if (bases == NULL)
     db->bases = (void *) (bases = Fopen(Catenate(db->path,"","",".bps"),"r"));
@@ -1103,7 +1152,11 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
       off = reads[i].boff;
       if (ftello(bases) != off)
         fseeko(bases,off,SEEK_SET);
-      fread(seq+o,1,COMPRESSED_LEN(len),bases);
+      clen = COMPRESSED_LEN(len);
+      if (clen > 0)
+        { if (fread(seq+o,clen,1,bases) != 1)
+            SYSTEM_ERROR
+        }
       Uncompress_Read(len,seq+o);
       if (ascii)
         translate(seq+o);

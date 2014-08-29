@@ -74,6 +74,7 @@ int main(int argc, char *argv[])
     ARG_INIT("LAcheck")
 
     RANGE = 0;
+    reads = NULL;
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -107,7 +108,7 @@ int main(int argc, char *argv[])
       }
   }
 
-  { void  *iblock;
+  { char  *iblock;
     int64  bsize, ovlsize, ptrsize;
     int    i, j;
 
@@ -116,7 +117,7 @@ int main(int argc, char *argv[])
     ptrsize = sizeof(void *);
     ovlsize = sizeof(Overlap) - ptrsize;
     bsize   = MEMORY * 1000000ll;
-    iblock  = Malloc(bsize+ptrsize,"Allocating input block");
+    iblock  = (char *) Malloc(bsize+ptrsize,"Allocating input block");
     if (iblock == NULL)
       exit (1);
     iblock += ptrsize;
@@ -126,7 +127,7 @@ int main(int argc, char *argv[])
     for (i = 1; i < argc; i++)
       { char     *pwd, *root;
         FILE     *input;
-        void     *iptr, *itop;
+        char     *iptr, *itop;
         Overlap   last;
         int64     novl;
         int       tspace, tbytes;
@@ -138,8 +139,10 @@ int main(int argc, char *argv[])
         if ((input = Fopen(Catenate(pwd,"/",root,".las"),"r")) == NULL)
           goto error;
 
-        fread(&novl,sizeof(int64),1,input);
-        fread(&tspace,sizeof(int),1,input);
+        if (fread(&novl,sizeof(int64),1,input) != 1)
+          SYSTEM_ERROR
+        if (fread(&tspace,sizeof(int),1,input) != 1)
+          SYSTEM_ERROR
         if (novl < 0)
           { if (VERBOSE)
               fprintf(stderr,"  %s: Number of alignments < 0\n",root);
@@ -162,6 +165,9 @@ int main(int argc, char *argv[])
         //  For each record in file do
 
         last.aread = -1;
+        last.flags =  0;
+        last.path.bbpos = last.path.abpos = 0;
+        last.path.bepos = last.path.aepos = 0;
         for (j = 0; j < novl; j++)
           { Overlap ovl;
             int     tsize;
@@ -255,7 +261,8 @@ int main(int argc, char *argv[])
                       }
                   }
                 if (VERBOSE)
-                  fprintf(stderr,"  %s: Reads are not sorted\n",root);
+                  fprintf(stderr,"  %s: Reads are not sorted (%d vs %d)\n",
+                                 root,ovl.aread+1,ovl.bread+1);
                 goto error;
               }
             else
@@ -269,7 +276,8 @@ int main(int argc, char *argv[])
                     ovl.path.bbpos == last.path.bbpos &&
                     ovl.path.bepos == last.path.bepos)
                   { if (VERBOSE)
-                      fprintf(stderr,"  %s: Reads are not sorted\n",root);
+                      fprintf(stderr,"  %s: Duplicate overlap (%d vs %d)\n",
+                                     root,ovl.aread+1,ovl.bread+1);
                     goto error;
                   }
               }

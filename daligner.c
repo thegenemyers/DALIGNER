@@ -77,21 +77,102 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <sys/param.h>
+#if defined(BSD)
+#include <sys/sysctl.h>
+#endif
+
 #include "DB.h"
 #include "filter.h"
 
-
 static char *Usage[] =
   { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "       [-e<double(.70)] [-m<double(.55)>] [-l<int(1000)>] [-s<int(100)>]",
+    "       [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-M<int>]",
     "       <subject:file> <target:file> ...",
   };
 
-int VERBOSE;   //   Globally visible to filter.c
-int BIASED;
-int MINOVER;
-int HGAP_MIN;
+int     VERBOSE;   //   Globally visible to filter.c
+int     BIASED;
+int     MINOVER;
+int     HGAP_MIN;
+uint64  MEM_LIMIT;
+uint64  MEM_PHYSICAL;
 
+/*  Adapted from code by David Robert Nadeau (http://NadeauSoftware.com) licensed under
+ *     "Creative Commons Attribution 3.0 Unported License"
+ *          (http://creativecommons.org/licenses/by/3.0/deed.en_US)
+ *
+ *   I removed Windows options, reformated, and return int64 instead of size_t
+ */
+
+static int64 getMemorySize( )
+{
+#if defined(CTL_HW) && (defined(HW_MEMSIZE) || defined(HW_PHYSMEM64))
+
+  // OSX, NetBSD, OpenBSD
+
+  int     mib[2];
+  size_t  size = 0;
+  size_t  len = sizeof( size );
+
+  mib[0] = CTL_HW;
+#if defined(HW_MEMSIZE)
+  mib[1] = HW_MEMSIZE;            // OSX
+#elif defined(HW_PHYSMEM64)
+  mib[1] = HW_PHYSMEM64;          // NetBSD, OpenBSD
+#endif
+  if (sysctl(mib,2,&size,&len,NULL,0) == 0)
+    return ((size_t) size);
+  return (0);
+
+#elif defined(_SC_AIX_REALMEM)
+
+  // AIX
+
+  return ((size_t) sysconf( _SC_AIX_REALMEM ) * ((size_t) 1024L));
+
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+
+  // FreeBSD, Linux, OpenBSD, & Solaris
+
+  size_t  size = 0;
+
+  size = (size_t) sysconf(_SC_PHYS_PAGES);
+  return (size * ((size_t) sysconf(_SC_PAGESIZE)));
+
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGE_SIZE)
+
+  // ? Legacy ?
+
+  size_t  size = 0;
+
+  size = (size_t) sysconf(_SC_PHYS_PAGES);
+  return (size * ((size_t) sysconf(_SC_PAGE_SIZE)));
+
+#elif defined(CTL_HW) && (defined(HW_PHYSMEM) || defined(HW_REALMEM))
+
+  // DragonFly BSD, FreeBSD, NetBSD, OpenBSD, and OSX
+
+  int          mib[2];
+  unsigned int size = 0;
+  size_t       len  = sizeof( size );
+
+  mib[0] = CTL_HW;
+#if defined(HW_REALMEM)
+  mib[1] = HW_REALMEM;		// FreeBSD
+#elif defined(HW_PYSMEM)
+  mib[1] = HW_PHYSMEM;		// Others
+#endif
+  if (sysctl(mib,2,&size,&len,NULL,0) == 0)
+    return (size_t)size;
+  return (0);
+
+#else
+
+  return (0);
+
+#endif
+}
 
 static HITS_DB *read_DB(char *name, int dust)
 { static HITS_DB  block;
@@ -140,13 +221,13 @@ static void complement(char *s, int len)
   t = s + (len-1);
   while (s < t)
     { c = *s;
-      *s = 3-*t;
-      *t = 3-c;
+      *s = (char) (3-*t);
+      *t = (char) (3-c);
       s += 1;
       t -= 1;
     }
   if (s == t)
-    *s = 3-*s;
+    *s = (char) (3-*s);
 }
 
 static HITS_DB *complement_DB(HITS_DB *block)
@@ -225,7 +306,6 @@ int main(int argc, char *argv[])
   int    MAX_REPS;
   int    HIT_MIN;
   double AVE_ERROR;
-  double MIN_ERROR;
   int    SPACING;
 
   { int    i, j, k;
@@ -240,9 +320,15 @@ int main(int argc, char *argv[])
     MAX_REPS  = 0;
     HGAP_MIN  = 0;
     AVE_ERROR = .70;
-    MIN_ERROR = .55;
     SPACING   = 100;
     MINOVER   = 1000;    //   Globally visible to filter.c
+
+    MEM_PHYSICAL = getMemorySize() / sizeof(uint64);
+    MEM_LIMIT    = MEM_PHYSICAL;
+    if (MEM_PHYSICAL == 0)
+      { fprintf(stderr,"\nWarning: Could not get physical memory size\n");
+        fflush(stderr);
+      }
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -274,20 +360,19 @@ int main(int argc, char *argv[])
                 exit (1);
               }
             break;
-          case 'm':
-            ARG_REAL(MIN_ERROR)
-            if (MIN_ERROR < .55 || MIN_ERROR >= 1.)
-              { fprintf(stderr,"%s: Minimum correlation must be in [.55,1.) (%g)\n",
-                               Prog_Name,MIN_ERROR);
-                exit (1);
-              }
+          case 'l':
+            ARG_POSITIVE(MINOVER,"Minimum alignment length")
             break;
           case 's':
             ARG_POSITIVE(SPACING,"Trace spacing")
             break;
-          case 'l':
-            ARG_POSITIVE(MINOVER,"Minimum alignment length")
-            break;
+          case 'M':
+            { int limit;
+
+              ARG_NON_NEGATIVE(limit,"Memory allocation (in Gb)")
+              MEM_LIMIT = limit * 134217728;
+              break;
+            }
         }
       else
         argv[j++] = argv[i];
@@ -321,11 +406,16 @@ int main(int argc, char *argv[])
   if (ablock.cutoff >= HGAP_MIN)
     HGAP_MIN = ablock.cutoff;
 
-  asettings = New_Align_Spec( AVE_ERROR, MIN_ERROR, SPACING, ablock.freq);
+  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock.freq);
 
   /* Build indices for A and A complement */
 
+  if (VERBOSE)
+    printf("\nBuilding index for %s\n",aroot);
   Build_Table(&ablock);
+
+  if (VERBOSE)
+    printf("\nBuilding index for c(%s)\n",aroot);
   Build_Table(&cblock);
 
   /* Compare against reads in B in both orientations */
@@ -345,6 +435,7 @@ int main(int argc, char *argv[])
             Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
             Close_DB(&bblock);
           }
+        free(broot);
       }
   }
 

@@ -60,7 +60,7 @@ static char *Usage = "[-v] <align:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
-static void *IBLOCK;
+static char *IBLOCK;
 
 static int SORT_OVL(const void *x, const void *y)
 { int64 l = *((int64 *) x);
@@ -91,7 +91,7 @@ static int SORT_OVL(const void *x, const void *y)
 }
 
 int main(int argc, char *argv[])
-{ void     *iblock, *fblock;
+{ char     *iblock, *fblock;
   int64     isize,   osize;
   int64     ovlsize, ptrsize;
   int       tspace, tbytes;
@@ -153,8 +153,10 @@ int main(int argc, char *argv[])
         stat(name,&info);
         size = info.st_size;
 
-        fread(&novl,sizeof(int64),1,input);
-        fread(&tspace,sizeof(int),1,input);
+        if (fread(&novl,sizeof(int64),1,input) != 1)
+          SYSTEM_ERROR
+        if (fread(&tspace,sizeof(int),1,input) != 1)
+          SYSTEM_ERROR
 
         if (tspace <= TRACE_XOVR)
           tbytes = sizeof(uint8);
@@ -190,7 +192,11 @@ int main(int argc, char *argv[])
             iblock += ptrsize;
             isize   = size;
           }
-        fread(iblock,1,isize,input);
+        size -= (sizeof(int64) + sizeof(int));
+        if (size > 0)
+          { if (fread(iblock,size,1,input) != 1)
+              SYSTEM_ERROR
+          }
         fclose(input);
       }
 
@@ -220,7 +226,7 @@ int main(int argc, char *argv[])
       { int      j;
         Overlap *w;
         int64    tsize, span;
-        void    *fptr, *ftop;
+        char    *fptr, *ftop;
 
         fptr = fblock;
         ftop = fblock + osize;
@@ -232,9 +238,9 @@ int main(int argc, char *argv[])
               { fwrite(fblock,1,fptr-fblock,foutput);
                 fptr = fblock;
               }
-            memcpy(fptr,((void *) w)+ptrsize,ovlsize);
+            memcpy(fptr,((char *) w)+ptrsize,ovlsize);
             fptr += ovlsize;
-            memcpy(fptr,(void *) (w+1),tsize);
+            memcpy(fptr,(char *) (w+1),tsize);
             fptr += tsize;
           }
         if (fptr > fblock)
