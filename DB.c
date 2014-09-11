@@ -377,13 +377,6 @@ int Open_DB(char* path, HITS_DB *db)
   else
     part = 0;
 
-  if (db->cutoff < 0 && part > 0)
-    { fprintf(stderr,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
-                     Prog_Name,root);
-      status = 1;
-      goto exit;
-    }
-  
   if ((dbvis = Fopen(Catenate(pwd,"/",root,".db"),"r")) == NULL)
     { status = 1;
       goto exit;
@@ -407,22 +400,25 @@ int Open_DB(char* path, HITS_DB *db)
     for (p = 0; p < nfiles; p++)
       if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
         SYSTEM_ERROR
-    if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1 || part > nblocks)
-      if (part > 0)
-        { status = 1;
-          if (nblocks == 0)
-            fprintf(stderr,"%s: DB has not been partitioned\n",Prog_Name);
-          else
-            fprintf(stderr,"%s: DB has only %d blocks\n",Prog_Name,nblocks);
-          goto exit2;
-        }
-      else
+    if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1)
+      if (part == 0)
         { cutoff = 0;
           all    = 1;
+        }
+      else
+        { fprintf(stderr,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
+                         Prog_Name,root);
+          status = 1;
+          goto exit2;
         }
     else
       { if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
           SYSTEM_ERROR
+        if (part > nblocks)
+          { fprintf(stderr,"%s: DB %s has only %d blocks\n",Prog_Name,root,nblocks);
+            status = 1;
+            goto exit2;
+          }
       }
 
     if (part > 0)
@@ -647,7 +643,7 @@ void Load_QVs(HITS_DB *db)
       exit (1);
     }
 
-  if (db->reads[db->nreads-1].coff == 0)
+  if (db->reads[db->nreads-1].coff < 0)
     { fprintf(stderr,"%s: The requested QVs have not been added to the DB!\n",Prog_Name);
       exit (1);
     }
