@@ -747,56 +747,6 @@ static void Histogram_Runs(uint64 *run, uint8 *stream, int rlen, int runChar)
 
 /*******************************************************************************************
  *
- *  Tag compression and decompression routines
- *
- ********************************************************************************************/
-
-//  Keep only the symbols in tags[0..rlen-1] for which qvs[k] != rchar and
-//    return the # of symbols kept.
-
-static int Pack_Tag(char *tags, char *qvs, int rlen, int rchar)
-{ int j, k;
-
-  j = 0;
-  for (k = 0; k < rlen; k++)
-    { if (qvs[k] != rchar)
-        tags[j++] = tags[k];
-    }
-  tags[j] = '\0';
-  return (j);
-}
-
-  //  Count the # of non-rchar symbols in qvs[0..rlen-1]
-
-static int Packed_Length(char *qvs, int rlen, int rchar)
-{ int k, clen;
-
-  clen = 0;
-  for (k = 0; k < rlen; k++)
-    if (qvs[k] != rchar)
-      clen += 1;
-  return (clen);
-}
-
-  //  Unpack tags by moving its i'th char to position k where qvs[k] is the i'th non-rchar
-  //    symbol in qvs.  All other chars are set to rchar.  rlen is the length of qvs and
-  //    the unpacked result, clen is the initial length of tags.
-
-static void Unpack_Tag(char *tags, int clen, char *qvs, int rlen, int rchar)
-{ int j, k;
-
-  j = clen-1;
-  for (k = rlen-1; k >= 0; k--)
-    { if (qvs[k] == rchar)
-        tags[k] = 'n';
-      else
-        tags[k] = tags[j--];
-    }
-}
-
-
-/*******************************************************************************************
- *
  *  Reader
  *
  ********************************************************************************************/
@@ -804,7 +754,7 @@ static void Unpack_Tag(char *tags, int clen, char *qvs, int rlen, int rchar)
 static char  *Read = NULL;   //  Referred by:  QVentry, Read_Lines, QVcoding_Scan,
 static int    Rmax = -1;     //                Compress_Next_QVentry, Uncompress_Next_QVentry
 
-static int    Nline;         //  Referred by:  QVcoding_Scan
+static int    Nline;         //  Referred by:  QVcoding_Scan, Pack_Tag, Write_QV_Coding
 
 char *QVentry()
 { return (Read); }
@@ -859,6 +809,58 @@ int Read_Lines(FILE *input, int nlines)
 
 /*******************************************************************************************
  *
+ *  Tag compression and decompression routines
+ *
+ ********************************************************************************************/
+
+//  Keep only the symbols in tags[0..rlen-1] for which qvs[k] != rchar and
+//    return the # of symbols kept.
+
+static int Pack_Tag(char *tags, char *qvs, int rlen, int rchar)
+{ int j, k;
+
+  j = 0;
+  for (k = 0; k < rlen; k++)
+    { if (qvs[k] != rchar)
+        tags[j++] = tags[k];
+      else if (tags[k] != 'n' && tags[k] != 'N')
+        fprintf(stderr,"Warning, %d'th char of Del. Tag is not an 'N' (Line %d) !\n",k+1,Nline-3);
+    }
+  tags[j] = '\0';
+  return (j);
+}
+
+  //  Count the # of non-rchar symbols in qvs[0..rlen-1]
+
+static int Packed_Length(char *qvs, int rlen, int rchar)
+{ int k, clen;
+
+  clen = 0;
+  for (k = 0; k < rlen; k++)
+    if (qvs[k] != rchar)
+      clen += 1;
+  return (clen);
+}
+
+  //  Unpack tags by moving its i'th char to position k where qvs[k] is the i'th non-rchar
+  //    symbol in qvs.  All other chars are set to rchar.  rlen is the length of qvs and
+  //    the unpacked result, clen is the initial length of tags.
+
+static void Unpack_Tag(char *tags, int clen, char *qvs, int rlen, int rchar)
+{ int j, k;
+
+  j = clen-1;
+  for (k = rlen-1; k >= 0; k--)
+    { if (qvs[k] == rchar)
+        tags[k] = 'n';
+      else
+        tags[k] = tags[j--];
+    }
+}
+
+
+/*******************************************************************************************
+ *
  *  Statistics Scan and Scheme creation and write
  *
  ********************************************************************************************/
@@ -879,11 +881,18 @@ void QVcoding_Scan(FILE *input)
   //  Zero histograms
 
   bzero(delHist,sizeof(uint64)*256);
-  bzero(delRun,sizeof(uint64)*256);
   bzero(mrgHist,sizeof(uint64)*256);
   bzero(insHist,sizeof(uint64)*256);
   bzero(subHist,sizeof(uint64)*256);
-  bzero(subRun,sizeof(uint64)*256);
+
+  { int i;
+
+    for (i = 0; i < 256; i++)
+      delRun[i] = subRun[i] = 1;
+  }
+
+  // bzero(delRun,sizeof(uint64)*256);
+  // bzero(subRun,sizeof(uint64)*256);
 
   totChar    = 0;
   delChar    = -1;
@@ -1115,6 +1124,8 @@ void Write_QVcoding(FILE *output, QVcoding *coding)
   Write_Scheme(coding->subScheme,output);
   if (coding->subChar >= 0)
     Write_Scheme(coding->sRunScheme,output);
+
+  Nline = 0;
 }
 
   // Read the encoding scheme 'coding' to 'output'
