@@ -754,7 +754,7 @@ static void Histogram_Runs(uint64 *run, uint8 *stream, int rlen, int runChar)
 static char  *Read = NULL;   //  Referred by:  QVentry, Read_Lines, QVcoding_Scan,
 static int    Rmax = -1;     //                Compress_Next_QVentry, Uncompress_Next_QVentry
 
-static int    Nline;         //  Referred by:  QVcoding_Scan, Pack_Tag, Write_QV_Coding
+static int    Nline;         //  Referred by:  QVcoding_Scan
 
 char *QVentry()
 { return (Read); }
@@ -821,11 +821,8 @@ static int Pack_Tag(char *tags, char *qvs, int rlen, int rchar)
 
   j = 0;
   for (k = 0; k < rlen; k++)
-    { if (qvs[k] != rchar)
-        tags[j++] = tags[k];
-      else if (tags[k] != 'n' && tags[k] != 'N')
-        fprintf(stderr,"Warning, %d'th char of Del. Tag is not an 'N' (Line %d) !\n",k+1,Nline-3);
-    }
+    if (qvs[k] != rchar)
+      tags[j++] = tags[k];
   tags[j] = '\0';
   return (j);
 }
@@ -890,9 +887,6 @@ void QVcoding_Scan(FILE *input)
     for (i = 0; i < 256; i++)
       delRun[i] = subRun[i] = 1;
   }
-
-  // bzero(delRun,sizeof(uint64)*256);
-  // bzero(subRun,sizeof(uint64)*256);
 
   totChar    = 0;
   delChar    = -1;
@@ -1124,8 +1118,6 @@ void Write_QVcoding(FILE *output, QVcoding *coding)
   Write_Scheme(coding->subScheme,output);
   if (coding->subChar >= 0)
     Write_Scheme(coding->sRunScheme,output);
-
-  Nline = 0;
 }
 
   // Read the encoding scheme 'coding' to 'output'
