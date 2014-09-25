@@ -183,8 +183,8 @@ void Number_Read(char *s);    //  Convert read from letters to numbers
 
 typedef struct
   { int     origin; //  Well #
-    READIDX beg;    //  First pulse
-    READIDX end;    //  Last pulse
+    int     beg;    //  First pulse
+    int     end;    //  Last pulse
     int64   boff;   //  Offset (in bytes) of compressed read in 'bases' file, or offset of
                     //    uncompressed bases in memory block
     int64   coff;   //  Offset (in bytes) of compressed quiva streams in 'quiva' file
