@@ -1962,7 +1962,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   char  mtag, dtag;
   int   prefa, prefb;
   int   aend, bend;
-  int   sa, sb;
+  int   sa, sb, s0;
   int   match, diff;
   char *N2A;
 
@@ -1992,7 +1992,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
 
 #define BLOCK(x,y)							\
 { int u, v;								\
-  if (i%block == 1 && i != 1 && x != 7 && o > 0)			\
+  if (i%block == 1 && i != s0 && x != 7 && o > 0)			\
     { fprintf(file,"\n");						\
       fprintf(file,"%*s",indent,"");					\
       if (coord > 0)							\
@@ -2051,6 +2051,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
       prefb = border;
     }
 
+  s0   = i;
   sa   = i;
   sb   = j;
   mtag = ':';
@@ -2273,6 +2274,26 @@ void Print_OCartoon(FILE *file, Overlap *ovl, int indent)
 *  O(ND) trace algorithm                                                                 *
 *                                                                                        *
 \****************************************************************************************/
+
+#ifdef DEBUG_AWAVE
+
+static void print_awave(int *V, int low, int hgh)
+{ int k;
+
+  printf("  [%6d,%6d]: ",low,hgh);
+  for (k = low; k <= hgh; k++)
+    printf(" %3d",V[k]);
+  printf("\n");
+  fflush(stdout);
+}
+
+#endif
+
+#ifdef DEBUG_ALIGN
+
+static int depth = 0;
+
+#endif
 
 typedef struct
   { int  *Stop;          //  Ongoing stack of alignment indels
@@ -2553,20 +2574,6 @@ static void Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
 *                                                                                        *
 \****************************************************************************************/
 
-#ifdef DEBUG_AWAVE
-
-static void print_awave(int *V, int low, int hgh)
-{ int k;
-
-  printf("  [%6d,%6d]: ",low,hgh);
-  for (k = low; k <= hgh; k++)
-    printf(" %3d",V[k]);
-  printf("\n");
-  fflush(stdout);
-}
-
-#endif
-
 /* Iterative O(np) algorithm for finding the alignment between two substrings (specified
      by a Path record).  The variation includes handling substitutions and guarantees
      to find left-most alignments so that low complexity runs are always aligned in
@@ -2575,7 +2582,7 @@ static void print_awave(int *V, int low, int hgh)
 
 #ifdef DEBUG_ALIGN
 
-static int depth = 0;
+static int ToA[4] = { 'a', 'c', 'g', 't' };
 
 #endif
 

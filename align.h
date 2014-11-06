@@ -74,27 +74,27 @@
      by Local_Alignment).  
 
      Optionally, a Path can have additional information about the exact nature of the
-     aligned substrings if the field 'trace' is not NULL.  Trace points is either an
+     aligned substrings if the field 'trace' is not NULL.  Trace points to either an
      array of integers (if computed by a Compute_Trace routine), or an array of unsigned
      short integers (if computed by Local_Alignment).
 
-     If computed by Local_Alignment 'trace' points at a list of 'tlen' (always odd) short values:
+     If computed by Local_Alignment 'trace' points at a list of 'tlen' (= n+1) short
+     values:
 
-            d_0, b_0, d_1, b_1, ... d_n-1, b_n-1, d_n, b_n
+            b_0, b_1, ... b_n-1, b_n
 
      to be interpreted as follows.  The alignment from (abpos,bbpos) to (aepos,bepos)
-     passes through the n trace points:
+     passes through the n trace points for i in [1,n]:
 
             (a_i,b_i) where a_i = floor(abpos/TS)*TS + i*TS
                         and b_i = bbpos + (b_0 + b_1 + b_i-1)
 
-     i.e. every TS'th position of the aread where TS it the "trace spacing" used when finding
-     the alignment (see New_Align_Spec).  Typically TS is 100.  Let (a_n+1,b_n+1) = (aepos,bepos).
-     Then d_i is the number of differences in the portion of the alignment between (a_i,b_i)
-     and (a_i+1,b_i+1).  These trace points allow the Compute_Trace routines to efficiently
-     compute the exact alignment between the two reads by efficiently computing exact alignments
-     between consecutive pairs of trace points.  Moreover, the diff values give one an idea of
-     the quality of the alignment along every segment of TS symbols of the aread.
+     where also let a_0,b_0 = abpos,bbpos and a_(n+1),b_(n+1) = aepos,bepos.  That is, the
+     interior (i.e. i != 0 and i != n+1) trace points pass through every TS'th position of
+     the aread where TS is the "trace spacing" employed when finding the alignment (see
+     New_Align_Spec).  Typically TS is 100.  These trace points allow the Compute_Trace
+     routines to efficiently compute the exact alignment between the two reads by efficiently
+     computing exact alignments between consecutive pairs of trace points.
 
      If computed by a Compute_Trace routine, 'trace' points at a list of 'tlen' integers
      < i1, i2, ... in > that encodes an exact alignment as follows.  A negative number j

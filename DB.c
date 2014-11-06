@@ -392,13 +392,13 @@ int Open_DB(char* path, HITS_DB *db)
 
   { int   p, nblocks, nfiles, blast;
     int64 size;
-    char buffer[2*MAX_NAME+100];
+    char  fname[MAX_NAME], prolog[MAX_NAME];
 
     nblocks = 0;
     if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
       SYSTEM_ERROR
     for (p = 0; p < nfiles; p++)
-      if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
+      if (fscanf(dbvis,DB_FDATA,&blast,fname,prolog) != 3)
         SYSTEM_ERROR
     if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1)
       if (part == 0)
