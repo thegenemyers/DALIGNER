@@ -58,16 +58,18 @@
 #include "DB.h"
 #include "align.h"
 
+static char *Usage[] =
+    { "[-coU] [-(a|r):<db>] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
+      "       <align:las> [ <reads:range> ... ]"
+    };
+
+#define LAST_READ_SYMBOL  '$'
+
 static int ORDER(const void *l, const void *r)
 { int x = *((int32 *) l);
   int y = *((int32 *) r);
   return (x-y);
 }
-
-static char *Usage[] =
-    { "[-coU] [-(a|r):<db>] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
-      "       <align:las> [ <reads:range> ... ]"
-    };
 
 int main(int argc, char *argv[])
 { HITS_DB   _db,  *db  = &_db; 
@@ -152,9 +154,9 @@ int main(int argc, char *argv[])
       char *eptr, *fptr;
 
       for (c = 2; c < argc; c++)
-        { if (argv[c][0] == '#')
-            { fprintf(stderr,"%s: # is not allowed as range start, '%s'\n",
-                      Prog_Name,argv[c]);
+        { if (argv[c][0] == LAST_READ_SYMBOL)
+            { fprintf(stderr,"%s: %c is not allowed as range start, '%s'\n",
+                      Prog_Name,LAST_READ_SYMBOL,argv[c]);
               exit (1);
             }
           else
@@ -171,7 +173,7 @@ int main(int argc, char *argv[])
                   continue;
                 }
               else if (*eptr == '-')
-                { if (eptr[1] == '#')
+                { if (eptr[1] == LAST_READ_SYMBOL)
                     { e = INT32_MAX;
                       fptr = eptr+2;
                     }
