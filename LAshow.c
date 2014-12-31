@@ -59,8 +59,8 @@
 #include "align.h"
 
 static char *Usage[] =
-    { "[-coU] [-(a|r):<db>] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
-      "       <align:las> [ <reads:range> ... ]"
+    { "[-carU] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
+      "        (<source:db> | <source1:dam> <source2:db>) <align:las> [ <reads:range> ... ]"
     };
 
 #define LAST_READ_SYMBOL  '$'
@@ -72,7 +72,8 @@ static int ORDER(const void *l, const void *r)
 }
 
 int main(int argc, char *argv[])
-{ HITS_DB   _db,  *db  = &_db; 
+{ HITS_DB   _db1, *db1 = &_db1; 
+  HITS_DB   _db2, *db2 = &_db2; 
   Overlap   _ovl, *ovl = &_ovl;
   Alignment _aln, *aln = &_aln;
 
@@ -81,8 +82,9 @@ int main(int argc, char *argv[])
   int     tspace, tbytes, small;
   int     reps, *pts;
 
-  int     ALIGN, CARTOON, OVERLAP, REFERENCE;
+  int     ALIGN, CARTOON, REFERENCE;
   int     INDENT, WIDTH, BORDER, UPPERCASE;
+  int     ISDAM;
 
   //  Process options
 
@@ -92,8 +94,6 @@ int main(int argc, char *argv[])
 
     ARG_INIT("LAshow")
 
-    ALIGN     = 0;
-    REFERENCE = 0;
     INDENT    = 4;
     WIDTH     = 100;
     BORDER    = 10;
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("coU")
+            ARG_FLAGS("carU")
             break;
           case 'i':
             ARG_NON_NEGATIVE(INDENT,"Indent")
@@ -114,32 +114,57 @@ int main(int argc, char *argv[])
           case 'b':
             ARG_NON_NEGATIVE(BORDER,"Alignment border")
             break;
-          case 'r':
-            REFERENCE = 1;
-          case 'a':
-            ALIGN = 1;
-            if (argv[i][2] != ':')
-              { fprintf(stderr,"%s: Unrecognizable option %s\n",Prog_Name,argv[i]);
-                exit (1);
-              }
-            if (Open_DB(argv[i]+3,db))
-              exit (1);
-            Trim_DB(db);
-            break;
         }
       else
         argv[j++] = argv[i];
     argc = j;
 
-    CARTOON   = flags['c'];
-    OVERLAP   = flags['o'];
     UPPERCASE = flags['U'];
+    ALIGN     = flags['a'];
+    REFERENCE = flags['r'];
+    CARTOON   = flags['c'];
 
-    if (argc <= 1)
+    if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
         fprintf(stderr,"       %*s %s\n",(int) strlen(Prog_Name),"",Usage[1]);
         exit (1);
       }
+  }
+
+  //  Open trimmed DB
+
+  { int   status;
+
+    ISDAM  = 0;
+    status = Open_DB(argv[1],db1);
+    if (status < 0)
+      exit (1);
+    if (db1->part > 0)
+      { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[1]);
+        exit (1);
+      }
+    if (status == 1)
+      { ISDAM = 1;
+        if (argc <= 3)
+          { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
+            fprintf(stderr,"       %*s %s\n",(int) strlen(Prog_Name),"",Usage[1]);
+            exit (1);
+          }
+        status = Open_DB(argv[2],db2);
+        if (status < 0)
+          exit (1);
+        if (status == 1)
+          { fprintf(stderr,"%s: Second data set cannot be .dam index: %s\n",Prog_Name,argv[2]);
+            exit (1);
+          }
+        if (db2->part > 0)
+          { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[2]);
+            exit (1);
+          }
+      }
+    else
+      db2 = db1;
+    Trim_DB(db2);
   }
 
   //  Process read index arguments into a sorted list of read ranges
@@ -149,25 +174,23 @@ int main(int argc, char *argv[])
     exit (1);
 
   reps = 0;
-  if (argc > 2)
+  if (argc > 3+ISDAM)
     { int   c, b, e;
       char *eptr, *fptr;
 
-      for (c = 2; c < argc; c++)
+      for (c = 3+ISDAM; c < argc; c++)
         { if (argv[c][0] == LAST_READ_SYMBOL)
-            { fprintf(stderr,"%s: %c is not allowed as range start, '%s'\n",
-                      Prog_Name,LAST_READ_SYMBOL,argv[c]);
-              exit (1);
+            { b = db1->nreads;
+              eptr = argv[c]+1;
             }
           else
-            { b = strtol(argv[c],&eptr,10);
-              if (b < 1)
-                { fprintf(stderr,"%s: Non-positive index?, '%d'\n",Prog_Name,b);
+            b = strtol(argv[c],&eptr,10);
+          if (eptr > argv[c])
+            { if (b == 0)
+                { fprintf(stderr,"%s: 0 is not a valid index\n",Prog_Name);
                   exit (1);
                 }
-            }
-          if (eptr > argv[c])
-            { if (*eptr == '\0')
+              if (*eptr == '\0')
                 { pts[reps++] = b;
                   pts[reps++] = b;
                   continue;
@@ -218,8 +241,8 @@ int main(int argc, char *argv[])
   
   { char  *over, *pwd, *root;
 
-    pwd   = PathTo(argv[1]);
-    root  = Root(argv[1],".las");
+    pwd   = PathTo(argv[2+ISDAM]);
+    root  = Root(argv[2+ISDAM],".las");
     over  = Catenate(pwd,"/",root,".las");
     input = Fopen(over,"r");
     if (input == NULL)
@@ -256,12 +279,20 @@ int main(int argc, char *argv[])
     int        in, npt, idx, ar;
     int64      tps;
 
-    if (ALIGN)
-      { work = New_Work_Data();
-  
-        aln->path = &(ovl->path);
-        aln->aseq = New_Read_Buffer(db);
-        aln->bseq = New_Read_Buffer(db);
+    int        ar_wide, br_wide;
+    int        ai_wide, bi_wide;
+    int        mn_wide, mx_wide;
+    int        tp_wide;
+
+    if (ALIGN || REFERENCE || CARTOON)
+      { aln->path = &(ovl->path);
+        if (ALIGN || REFERENCE)
+          { work = New_Work_Data();
+            aln->aseq = New_Read_Buffer(db1);
+            aln->bseq = New_Read_Buffer(db2);
+          }
+        else
+          work = NULL;
       }
     else
       work = NULL;
@@ -274,6 +305,27 @@ int main(int argc, char *argv[])
     in  = 0;
     npt = pts[0];
     idx = 1;
+
+    ar_wide = Number_Digits((int64) db1->nreads);
+    br_wide = Number_Digits((int64) db2->nreads);
+    ai_wide = Number_Digits((int64) db1->maxlen);
+    bi_wide = Number_Digits((int64) db2->maxlen);
+    if (db1->maxlen < db2->maxlen)
+      { mn_wide = ai_wide;
+        mx_wide = bi_wide;
+        tp_wide = Number_Digits((int64) db1->maxlen/tspace+2);
+      }
+    else
+      { mn_wide = bi_wide;
+        mx_wide = ai_wide;
+        tp_wide = Number_Digits((int64) db2->maxlen/tspace+2);
+      }
+    ar_wide += (ar_wide-1)/3;
+    br_wide += (br_wide-1)/3;
+    ai_wide += (ai_wide-1)/3;
+    bi_wide += (bi_wide-1)/3;
+    mn_wide += (mn_wide-1)/3;
+    tp_wide += (tp_wide-1)/3;
 
     //  For each record do
 
@@ -317,75 +369,64 @@ int main(int argc, char *argv[])
         if (!in)
           continue;
 
-        if (OVERLAP)
-          { if (ovl->path.abpos != 0 && ovl->path.bbpos != 0)
-              continue;
-            if (ovl->path.aepos != ovl->alen && ovl->path.bepos != ovl->blen)
-              continue;
-          }
-
         //  Display it
 
-        if (CARTOON || ALIGN)
+        if (ALIGN || CARTOON || REFERENCE)
           printf("\n");
-        Print_Number((int64) ovl->aread+1,10,stdout);
+        Print_Number((int64) ovl->aread+1,ar_wide+1,stdout);
         printf("  ");
-        Print_Number((int64) ovl->bread+1,9,stdout);
+        Print_Number((int64) ovl->bread+1,br_wide,stdout);
         if (COMP(ovl->flags))
           printf(" c");
         else
           printf(" n");
         printf("   [");
-        Print_Number((int64) ovl->path.abpos,6,stdout);
+        Print_Number((int64) ovl->path.abpos,ai_wide,stdout);
         printf("..");
-        Print_Number((int64) ovl->path.aepos,6,stdout);
+        Print_Number((int64) ovl->path.aepos,ai_wide,stdout);
         printf("] x [");
-        Print_Number((int64) ovl->path.bbpos,6,stdout);
+        Print_Number((int64) ovl->path.bbpos,bi_wide,stdout);
         printf("..");
-        Print_Number((int64) ovl->path.bepos,6,stdout);
+        Print_Number((int64) ovl->path.bepos,bi_wide,stdout);
         printf("]");
 
         tps = ((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace);
-        if (ALIGN)
-          { if (small)
-              Decompress_TraceTo16(ovl);
-            aln->alen  = ovl->alen;
-            aln->blen  = ovl->blen;
+        if (ALIGN || CARTOON || REFERENCE)
+          { aln->alen  = db1->reads[ovl->aread].rlen;
+            aln->blen  = db2->reads[ovl->bread].rlen;
             aln->flags = ovl->flags;
-            Load_Read(db,ovl->aread,aln->aseq,0);
-            Load_Read(db,ovl->bread,aln->bseq,0);
-            if (COMP(aln->flags))
-              Complement_Seq(aln->bseq);
-            Compute_Trace_PTS(aln,work,tspace);
+            if (ALIGN || REFERENCE)
+              { if (small)
+                  Decompress_TraceTo16(ovl);
+                Load_Read(db1,ovl->aread,aln->aseq,0);
+                Load_Read(db2,ovl->bread,aln->bseq,0);
+                if (COMP(aln->flags))
+                  Complement_Seq(aln->bseq);
+                Compute_Trace_PTS(aln,work,tspace);
+              }
             if (CARTOON)
               { printf("  (");
-                Print_Number(tps,3,stdout);
+                Print_Number(tps,tp_wide,stdout);
                 printf(" trace pts)\n\n");
-                Print_ACartoon(stdout,aln,INDENT);
+                Print_ACartoon(stdout,aln,INDENT,mx_wide);
               }
             else
               { printf(" :   = ");
-                Print_Number((int64) ovl->path.diffs,6,stdout);
+                Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
                 printf(" diffs  (");
-                Print_Number(tps,3,stdout);
+                Print_Number(tps,tp_wide,stdout);
                 printf(" trace pts)\n");
               }
             if (REFERENCE)
-              Print_Reference(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,5);
-            else
-              Print_Alignment(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,5);
-          }
-        else if (CARTOON)
-          { printf("  (");
-            Print_Number(tps,3,stdout);
-            printf(" trace pts)\n\n");
-            Print_OCartoon(stdout,ovl,INDENT);
+              Print_Reference(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,mx_wide);
+            if (ALIGN)
+              Print_Alignment(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,mx_wide);
           }
         else
           { printf(" :   < ");
-            Print_Number((int64) ovl->path.diffs,6,stdout);
+            Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
             printf(" diffs  (");
-            Print_Number(tps,3,stdout);
+            Print_Number(tps,tp_wide,stdout);
             printf(" trace pts)\n");
           }
       }

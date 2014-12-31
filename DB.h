@@ -71,10 +71,6 @@ typedef double             float64;
 #define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
                             //    Undefine if you don't want this
 
-#define READMAX  65535      //  Maximum # of reads in a DB partition block
-
-typedef uint16   READIDX;   //  Reads can be no longer than 2^16
-
 
 /*******************************************************************************************
  *
@@ -159,6 +155,7 @@ char *Numbered_Suffix(char *left, int num, char *right);
 // DB-related utilities
 
 void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
+int  Number_Digits(int64 num);                        //  Return # of digits in printed number
 
 #define COMPRESSED_LEN(len)  (((len)+3) >> 2)
 
@@ -183,8 +180,8 @@ void Number_Read(char *s);    //  Convert read from letters to numbers
 
 typedef struct
   { int     origin; //  Well #
-    int     beg;    //  First pulse
-    int     end;    //  Last pulse
+    int     rlen;   //  Length of the sequence (Last pulse = fpulse + rlen)
+    int     fpulse; //  First pulse
     int64   boff;   //  Offset (in bytes) of compressed read in 'bases' file, or offset of
                     //    uncompressed bases in memory block
     int64   coff;   //  Offset (in bytes) of compressed quiva streams in 'quiva' file
@@ -277,10 +274,20 @@ typedef struct
   //    .DB.qvs, and files .DB.<track>.anno and DB.<track>.data where <track> is a track name
   //    (not containing a . !).
 
-  // Open the given database "path" into the supplied HITS_DB record "db", return nonzero
-  //   if the file could not be opened for any reason.  If the name has a part # in it then
-  //   just the part is opened.  The index array is allocated (for all or just the part) and
-  //   read in.
+  // A DAM is basically a DB except that:
+  //    1. there are no QV's, instead .coff points the '\0' terminated fasta header of the read
+  //          in the file .<dam>.hdr file
+  //    2. .origin contains the contig # of the read within a fasta entry (assembly sequences
+  //          contain N-separated contigs), and .fpulse the first base ofn the contig in the
+  //          fasta entry
+
+  // Open the given database or dam, "path" into the supplied HITS_DB record "db". If the name has
+  //   a part # in it then just the part is opened.  The index array is allocated (for all or
+  //   just the part) and read in.
+  // Return status of routine:
+  //    -1: The DB could not be opened for a reason reported by the routine to stderr
+  //     0: Open of DB proceeded without mishap
+  //     1: Open of DAM proceeded without mishap
 
 int Open_DB(char *path, HITS_DB *db);
 
@@ -304,6 +311,14 @@ void Load_QVs(HITS_DB *db);
   // Remove the QV pseudo track, all space associated with it, and close the .qvs file.
 
 void Close_QVs(HITS_DB *db);
+
+  // Look up the file and header in the file of the indicated track.  Return:
+  //     1: Track is for trimmed DB
+  //     0: Track is for untrimmed DB
+  //    -1: Track is not the right size of DB either trimmed or untrimmed
+  //    -2: Could not find the track
+
+int Check_Track(HITS_DB *db, char *track);
 
   // If track is not already in the db's track list, then allocate all the storage for it,
   //   read it in from the appropriate file, add it to the track list, and return a pointer
@@ -354,8 +369,8 @@ void   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
 
 void Read_All_Sequences(HITS_DB *db, int ascii);
 
-  // For the DB "path" = "prefix/root[.db]", find all the files for that DB, i.e. all those
-  //   of the form "prefix/[.]root.part" and call foreach with the complete path to each file
+  // For the DB or DAM "path" = "prefix/root[.db|.dam]", find all the files for that DB, i.e. all
+  //   those of the form "prefix/[.]root.part" and call foreach with the complete path to each file
   //   pointed at by path, and the suffix of the path by extension.  The . proceeds the root
   //   name if the defined constant HIDE_FILES is set.  Always the first call is with the
   //   path "prefix/root.db" and extension "db".  There will always be calls for

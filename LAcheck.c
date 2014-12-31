@@ -55,16 +55,16 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-vS] [-a:<db>] <align:las> ...";
+static char *Usage = "[-vS] (<source:db> | <source1:dam> <source2:db>) <align:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ HITS_DB   _db,  *db  = &_db;
-  HITS_READ *reads;
+{ HITS_DB   _db1,  *db1  = &_db1;
+  HITS_DB   _db2,  *db2  = &_db2;
   int        VERBOSE;
   int        SORTED;
-  int        RANGE;
+  int        ISDAM;
 
   //  Process options
 
@@ -73,26 +73,12 @@ int main(int argc, char *argv[])
 
     ARG_INIT("LAcheck")
 
-    RANGE = 0;
-    reads = NULL;
-
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
             ARG_FLAGS("vS")
-            break;
-          case 'a':
-            RANGE = 1;
-            if (argv[i][2] != ':')
-              { fprintf(stderr,"%s: Unrecognizable option %s\n",Prog_Name,argv[i]);
-                exit (1);
-              }
-            if (Open_DB(argv[i]+3,db))
-              exit (1);
-            Trim_DB(db);
-            reads = db->reads;
             break;
         }
       else
@@ -102,15 +88,54 @@ int main(int argc, char *argv[])
     VERBOSE = flags['v'];
     SORTED  = flags['S'];
 
-    if (argc < 2)
+    if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         exit (1);
       }
   }
 
-  { char  *iblock;
-    int64  bsize, ovlsize, ptrsize;
-    int    i, j;
+  //  Open trimmed DB
+
+  { int   status;
+
+    ISDAM  = 0;
+    status = Open_DB(argv[1],db1);
+    if (status < 0)
+      exit (1);
+    if (db1->part > 0)
+      { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[1]);
+        exit (1);
+      }
+    if (status == 1)
+      { ISDAM = 1;
+        if (argc <= 3)
+          { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+            exit (1);
+          }
+        status = Open_DB(argv[2],db2);
+        if (status < 0)
+          exit (1);
+        if (status == 1)
+          { fprintf(stderr,"%s: Second data set cannot be .dam index: %s\n",Prog_Name,argv[2]);
+            exit (1);
+          }
+        if (db2->part > 0)
+          { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[2]);
+            exit (1);
+          }
+      }
+    else
+      db2 = db1;
+    Trim_DB(db2);
+  }
+
+  { char      *iblock;
+    int64      bsize, ovlsize, ptrsize;
+    int        i, j;
+    HITS_READ *reads1  = db1->reads;
+    int        nreads1 = db1->nreads;
+    HITS_READ *reads2  = db2->reads;
+    int        nreads2 = db2->nreads;
 
     //  Setup IO buffers
 
@@ -124,7 +149,7 @@ int main(int argc, char *argv[])
 
     //  For each file do
 
-    for (i = 1; i < argc; i++)
+    for (i = 2+ISDAM; i < argc; i++)
       { char     *pwd, *root;
         FILE     *input;
         char     *iptr, *itop;
@@ -165,6 +190,7 @@ int main(int argc, char *argv[])
         //  For each record in file do
 
         last.aread = -1;
+        last.bread = -1;
         last.flags =  0;
         last.path.bbpos = last.path.abpos = 0;
         last.path.bepos = last.path.aepos = 0;
@@ -216,31 +242,29 @@ int main(int argc, char *argv[])
                   fprintf(stderr,"  %s: Read indices < 0\n",root);
                 goto error;
               }
-            if (ovl.path.abpos >= ovl.path.aepos || ovl.path.bbpos >= ovl.path.bepos ||
-                ovl.path.aepos >  ovl.alen       || ovl.path.bepos >  ovl.blen)
+            if (ovl.aread >= nreads1 || ovl.bread >= nreads2)
+              { if (VERBOSE)
+                  fprintf(stderr,"  %s: Read indices out of range\n",root);
+                goto error;
+              }
+
+            if (ovl.path.abpos >= ovl.path.aepos || ovl.path.aepos > reads1[ovl.aread].rlen ||
+                ovl.path.bbpos >= ovl.path.bepos || ovl.path.bepos > reads2[ovl.bread].rlen ||
+                ovl.path.abpos < 0               || ovl.path.bbpos < 0                       )
               { if (VERBOSE)
                   fprintf(stderr,"  %s: Non-sense alignment intervals\n",root);
                 goto error;
               }
 
+            if (ovl.path.diffs < 0 || ovl.path.diffs > reads1[ovl.aread].rlen ||
+                                      ovl.path.diffs > reads2[ovl.bread].rlen)
+              { if (VERBOSE)
+                  fprintf(stderr,"  %s: Non-sense number of differences\n",root);
+                goto error;
+              }
+
             if (Check_Trace_Points(&ovl,tspace,VERBOSE,root))
               goto error;
-
-            //  Range check is -a set
-
-            if (RANGE)
-              { if (ovl.aread >= db->nreads || ovl.bread >= db->nreads)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: Read indices out of range\n",root);
-                    goto error;
-                  }
-                if (ovl.alen != reads[ovl.aread].end - reads[ovl.aread].beg ||
-                    ovl.blen != reads[ovl.bread].end - reads[ovl.bread].beg)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: Read lengths corrupted\n",root);
-                    goto error;
-                  }
-              }
 
             //  Duplicate check and sort check if -S set
 
@@ -308,8 +332,9 @@ int main(int argc, char *argv[])
     free(iblock-ptrsize);
   }
 
-  if (RANGE)
-    Close_DB(db);
+  Close_DB(db1);
+  if (ISDAM)
+    Close_DB(db2);
 
   exit (0);
 }

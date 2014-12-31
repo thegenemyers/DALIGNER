@@ -88,13 +88,14 @@
 static char *Usage[] =
   { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
     "       [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-M<int>]",
-    "       <subject:file> <target:file> ...",
+    "       <subject:db|dam> <target:db> ...",
   };
 
 int     VERBOSE;   //   Globally visible to filter.c
 int     BIASED;
 int     MINOVER;
 int     HGAP_MIN;
+int     NOT_MAPPER;
 uint64  MEM_LIMIT;
 uint64  MEM_PHYSICAL;
 
@@ -174,30 +175,33 @@ static int64 getMemorySize( )
 #endif
 }
 
-static HITS_DB *read_DB(char *name, int dust)
+static HITS_DB *read_DB(char *name, int dust, int *isdam)
 { static HITS_DB  block;
   HITS_TRACK     *dtrack;
+  int             status;
 
-  if (Open_DB(name,&block))
+  status = Open_DB(name,&block);
+  if (status < 0)
     exit (1);
+  if (isdam == NULL)
+    { if (status == 1)
+        { fprintf(stderr,"%s: Only first argument can be a .dam index: %s\n",Prog_Name,name);
+          exit (1);
+        }
+    }
+  else
+    *isdam = 1-status;
 
   if (dust)
     dtrack = Load_Track(&block,"dust");
   else
     dtrack = NULL;
 
-  Trim_DB(&block);
+  if (status == 0)
+    Trim_DB(&block);
 
   if (block.totlen > 0x7fffffffll)
     { fprintf(stderr,"File (%s) is too large\n",name);
-      exit (1);
-    }
-  if (block.nreads > 0xffff)
-    { fprintf(stderr,"There are more than %d reads in file (%s)\n",0xffff,name);
-      exit (1);
-    }
-  if (block.maxlen > 0xffff)
-    { fprintf(stderr,"Reads are over %d bases long in file (%s)\n",0xffff,name);
       exit (1);
     }
 
@@ -246,7 +250,7 @@ static HITS_DB *complement_DB(HITS_DB *block)
   memcpy(seq,block->bases,block->reads[nreads].boff);
 
   for (i = 0; i < nreads; i++)
-    complement(seq+reads[i].boff,reads[i].end-reads[i].beg);
+    complement(seq+reads[i].boff,reads[i].rlen);
 
   cblock = *block;
   cblock.bases = (void *) seq;
@@ -284,7 +288,7 @@ static HITS_DB *complement_DB(HITS_DB *block)
 
         p = 0;
         for (i = 0; i < nreads; i++)
-          { rlen = (reads[i].end-reads[i].beg)-1;
+          { rlen = reads[i].rlen;
             for (j = tano[i+1]-1; j >= tano[i]; j--)
               data[p++] = rlen - tata[j];
           }
@@ -323,7 +327,7 @@ int main(int argc, char *argv[])
     SPACING   = 100;
     MINOVER   = 1000;    //   Globally visible to filter.c
 
-    MEM_PHYSICAL = getMemorySize() / sizeof(uint64);
+    MEM_PHYSICAL = getMemorySize();
     MEM_LIMIT    = MEM_PHYSICAL;
     if (MEM_PHYSICAL == 0)
       { fprintf(stderr,"\nWarning: Could not get physical memory size\n");
@@ -370,7 +374,7 @@ int main(int argc, char *argv[])
             { int limit;
 
               ARG_NON_NEGATIVE(limit,"Memory allocation (in Gb)")
-              MEM_LIMIT = limit * 134217728;
+              MEM_LIMIT = limit * 0x40000000ll;
               break;
             }
         }
@@ -399,9 +403,12 @@ int main(int argc, char *argv[])
   /* Read in the reads in A */
 
   afile  = argv[1];
-  aroot  = Root(afile,".db");
-  ablock = *read_DB(afile,DUSTED);
+  ablock = *read_DB(afile,DUSTED,&NOT_MAPPER);
   cblock = *complement_DB(&ablock);
+  if (NOT_MAPPER)
+    aroot  = Root(afile,".db");
+  else
+    aroot  = Root(afile,".dam");
 
   if (ablock.cutoff >= HGAP_MIN)
     HGAP_MIN = ablock.cutoff;
@@ -430,7 +437,7 @@ int main(int argc, char *argv[])
             Match_Filter(aroot,&cblock,broot,&ablock,1,1,asettings);
           }
         else
-          { bblock = *read_DB(bfile,DUSTED);
+          { bblock = *read_DB(bfile,DUSTED,NULL);
             Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
             Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
             Close_DB(&bblock);

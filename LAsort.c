@@ -120,7 +120,6 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         exit (1);
       }
-
   }
 
   //  For each file do

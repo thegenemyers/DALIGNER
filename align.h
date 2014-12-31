@@ -108,10 +108,10 @@
 
 typedef struct
   { void     *trace;
-    READIDX   tlen;
-    READIDX   diffs;
-    READIDX   abpos, bbpos;
-    READIDX   aepos, bepos;
+    int       tlen;
+    int       diffs;
+    int       abpos, bbpos;
+    int       aepos, bepos;
   } Path;
 
 
@@ -140,12 +140,12 @@ typedef struct
 #define COMP_FLAG 0x1
 
 typedef struct
-  { Path *path;
+  { Path   *path;
+    uint32  flags;        /* Pipeline status and complementation flags          */
     char   *aseq;         /* Pointer to A sequence                              */
     char   *bseq;         /* Pointer to B sequence                              */
-    READIDX alen;         /* Length of A sequence                               */
-    READIDX blen;         /* Length of B sequence                               */
-    int     flags;        /* Pipeline status and complementation flags          */
+    int     alen;         /* Length of A sequence                               */
+    int     blen;         /* Length of B sequence                               */
   } Alignment;
 
 void Complement_Seq(char *a);
@@ -197,8 +197,8 @@ void Complement_Seq(char *a);
 
   /* Local_Alignment finds the longest significant local alignment between the sequences in
      'align' subject to the alignment criterion given by the Align_Spec 'spec' that passes
-     through the point '(x,y)' within the underlying dynamic programming matrix.  The path
-     record of 'align' has its 'trace' filled from the point of view of an overlap between
+     through one of the points '(xlow-xhgh,y)' within the underlying dynamic programming matrix.
+     The path record of 'align' has its 'trace' filled from the point of view of an overlap between
      the aread and the bread.  In addition a Path record from the point of view of the bread
      versus the aread is returned by the function, with this Path's 'trace' filled in
      appropriately.  The space for the returned path and the two 'trace's are in the
@@ -207,7 +207,8 @@ void Complement_Seq(char *a);
      must be copied to user-allocated storage before calling the routine again.
   */
 
-  Path *Local_Alignment(Alignment *align, Align_Spec *spec, Work_Data *work, int x, int y);
+  Path *Local_Alignment(Alignment *align, Work_Data *work, Align_Spec *spec,
+                        int xlow, int xhgh, int y);
 
   /* Given a legitimate Alignment object, Compute_Trace_X computes an exact trace for the alignment.
      If 'path.trace' is non-NULL, then it is assumed to be a sequence of pass-through points
@@ -232,14 +233,16 @@ void Complement_Seq(char *a);
   void Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing);
 
   /* Print_Acartoon prints an ASCII representation of the overlap relationhip between the
-     two reads of 'align' to the given 'file' indented by 'indent' space.
+     two reads of 'align' to the given 'file' indented by 'indent' space.  Coord controls
+     the display width of numbers, it must be not less than the width of any number to be
+     displayed.
 
      If the alignment trace is an exact trace, then one can ask Print_Alignment to print an
      ASCII representation of the alignment 'align' to the file 'file'.  Indent the display
      by "indent" spaces and put "width" columns per line in the display.  Show "border"
      characters of sequence on each side of the aligned region.  If upper is non-zero then
      display bases in upper case.  If coord is greater than 0, then the positions of the
-     first character in A and B in the given rwo is displayed with a field width given by
+     first character in A and B in the given row is displayed with a field width given by
      coord's value.
 
      Print_Reference is like Print_Alignment but rather than printing exaclty "width" columns
@@ -248,7 +251,7 @@ void Complement_Seq(char *a);
      A as segments are guaranteed to cover the same interval of A in a segment.
   */
 
-  void Print_ACartoon(FILE *file, Alignment *align, int indent);
+  void Print_ACartoon(FILE *file, Alignment *align, int indent, int coord);
 
   void Print_Alignment(FILE *file, Alignment *align, Work_Data *work,
                        int indent, int width, int border, int upper, int coord);
@@ -260,19 +263,18 @@ void Complement_Seq(char *a);
 /*** OVERLAP ABSTRACTION:
 
      Externally, between modules an Alignment is modeled by an "Overlap" record, which
-     replaces the pointers to the two sequences with their ID's in the HITS data bases,
-     and contains its path as a subrecord rather than as a pointer (indeed, typically the
+     (a) replaces the pointers to the two sequences with their ID's in the HITS data bases,
+     (b) does not contain the length of the 2 sequences (must fetch from DB), and
+     (c) contains its path as a subrecord rather than as a pointer (indeed, typically the
      corresponding Alignment record points at the Overlap's path sub-record).  One can read
-     and write binary records of an "Overlap" and produce an ASCI print-outs of them.
+     and write binary records of an "Overlap".
 ***/
 
 typedef struct {
   Path    path;         /* Path: begin- and end-point of alignment + diffs    */
+  uint32  flags;        /* Pipeline status and complementation flags          */
   int     aread;        /* Id # of A sequence                                 */
   int     bread;        /* Id # of B sequence                                 */
-  READIDX alen;         /* Length of A sequence                               */
-  READIDX blen;         /* Length of B sequence                               */
-  int     flags;        /* Pipeline status and complementation flags          */
 } Overlap;
 
   /* Read_Overlap reads the next Overlap record from stream 'input', not including the trace
@@ -293,8 +295,6 @@ typedef struct {
      of the b-read displacements equals the b-read alignment interval, assuming the trace
      spacing is 'tspace'.  It reports an error message if there is a problem and 'verbose'
      is non-zero.  The 'ovl' came from the file names 'fname'.
-
-     Print_OCartoon is the same as Print_ACartoon except it takes an Overlap pointer.
   */
 
   int Read_Overlap(FILE *input, Overlap *ovl);
@@ -307,7 +307,5 @@ typedef struct {
   void Decompress_TraceTo16(Overlap *ovl);
 
   int  Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname);
-
-  void Print_OCartoon(FILE *file, Overlap *ovl, int indent);
 
 #endif // _A_MODULE

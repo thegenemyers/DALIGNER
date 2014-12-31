@@ -232,15 +232,43 @@ void Print_Number(int64 num, int width, FILE *out)
     { if (num < 1000ll)
         fprintf(out,"%*lld",width,num);
       else if (num < 1000000ll)
-        fprintf(out,"%*lld%c%03lld",width-4,num/1000ll,COMMA,num%1000ll);
+        { if (width <= 4)
+            fprintf(out,"%lld%c%03lld",num/1000ll,COMMA,num%1000ll);
+          else
+            fprintf(out,"%*lld%c%03lld",width-4,num/1000ll,COMMA,num%1000ll);
+        }
       else if (num < 1000000000ll)
-        fprintf(out,"%*lld%c%03lld%c%03lld",width-8,num/1000000ll,COMMA,(num%1000000ll)/1000ll,
-                                            COMMA,num%1000ll);
+        { if (width <= 8)
+            fprintf(out,"%lld%c%03lld%c%03lld",num/1000000ll,COMMA,(num%1000000ll)/1000ll,
+                                               COMMA,num%1000ll);
+          else
+            fprintf(out,"%*lld%c%03lld%c%03lld",width-8,num/1000000ll,COMMA,(num%1000000ll)/1000ll,
+                                                COMMA,num%1000ll);
+        }
       else
-        fprintf(out,"%*lld%c%03lld%c%03lld%c%03lld",width-12,num/1000000000ll,COMMA,
-                                                        (num%1000000000ll)/1000000ll,COMMA,
-                                                        (num%1000000ll)/1000ll,COMMA,num%1000ll);
+        { if (width <= 12)
+            fprintf(out,"%lld%c%03lld%c%03lld%c%03lld",num/1000000000ll,COMMA,
+                                                       (num%1000000000ll)/1000000ll,COMMA,
+                                                       (num%1000000ll)/1000ll,COMMA,num%1000ll);
+          else
+            fprintf(out,"%*lld%c%03lld%c%03lld%c%03lld",width-12,num/1000000000ll,COMMA,
+                                                            (num%1000000000ll)/1000000ll,COMMA,
+                                                            (num%1000000ll)/1000ll,COMMA,num%1000ll);
+        }
     }
+}
+
+//  Return the number of digits, base 10, of num
+
+int  Number_Digits(int64 num)
+{ int digit;
+
+  digit = 0;
+  while (num >= 1)
+    { num /= 10;
+      digit += 1;
+    }
+  return (digit);
 }
 
 
@@ -350,21 +378,30 @@ void Number_Read(char *s)
  *
  ********************************************************************************************/
 
-// Open the given database "root" into the supplied HITS_DB record "db"
-//   The index array is allocated and read in, the 'bases' file is open for reading.
+
+// Open the given database or dam, "path" into the supplied HITS_DB record "db". If the name has
+//   a part # in it then just the part is opened.  The index array is allocated (for all or
+//   just the part) and read in.
+// Return status of routine:
+//    -1: The DB could not be opened for a reason reported by the routine to stderr
+//     0: Open of DB proceeded without mishap
+//     1: Open of DAM proceeded without mishap
 
 int Open_DB(char* path, HITS_DB *db)
-{ char *root, *pwd, *bptr, *fptr;
+{ char *root, *pwd, *bptr, *fptr, *cat;
   int   nreads;
   FILE *index, *dbvis;
-  int   status;
+  int   status, plen, isdam;
   int   part, cutoff, all;
   int   ofirst, bfirst, olast;
 
-  status = 0;
 
-  root = Root(path,".db");
-  pwd  = PathTo(path);
+  plen = strlen(path);
+  if (strcmp(path+(plen-3),".dam") == 0)
+    root = Root(path,".dam");
+  else
+    root = Root(path,".db");
+  pwd = PathTo(path);
 
   bptr = rindex(root,'.');
   if (bptr != NULL && bptr[1] != '\0' && bptr[1] != '-')
@@ -377,13 +414,24 @@ int Open_DB(char* path, HITS_DB *db)
   else
     part = 0;
 
-  if ((dbvis = Fopen(Catenate(pwd,"/",root,".db"),"r")) == NULL)
-    { status = 1;
-      goto exit;
+  isdam = 0;
+  cat = Catenate(pwd,"/",root,".db");
+  if (cat == NULL)
+    exit (1);
+  if ((dbvis = fopen(cat,"r")) == NULL)
+    { cat = Catenate(pwd,"/",root,".dam");
+      if (cat == NULL)
+        exit (1);
+      if ((dbvis = fopen(cat,"r")) == NULL)
+        { status = -1;
+          fprintf(stderr,"%s: Could not open database %s\n",Prog_Name,path);
+          goto exit;
+        }
+      isdam = 1;
     }
 
   if ((index = Fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
-    { status = 1;
+    { status = -1;
       goto exit1;
     }
   if (fread(db,sizeof(HITS_DB),1,index) != 1)
@@ -408,7 +456,7 @@ int Open_DB(char* path, HITS_DB *db)
       else
         { fprintf(stderr,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
                          Prog_Name,root);
-          status = 1;
+          status = -1;
           goto exit2;
         }
     else
@@ -416,7 +464,7 @@ int Open_DB(char* path, HITS_DB *db)
           SYSTEM_ERROR
         if (part > nblocks)
           { fprintf(stderr,"%s: DB %s has only %d blocks\n",Prog_Name,root,nblocks);
-            status = 1;
+            status = -1;
             goto exit2;
           }
       }
@@ -462,7 +510,7 @@ int Open_DB(char* path, HITS_DB *db)
       totlen = 0;
       maxlen = 0;
       for (i = 0; i < nreads; i++)
-        { r = reads[i].end - reads[i].beg;
+        { r = reads[i].rlen;
           totlen += r;
           if (r > maxlen)
             maxlen = r;
@@ -477,6 +525,8 @@ int Open_DB(char* path, HITS_DB *db)
   db->path   = Strdup(Catenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
   db->bases  = NULL;
   db->loaded = 0;
+
+  status = isdam;
 
 exit2:
   fclose(index);
@@ -524,7 +574,7 @@ void Trim_DB(HITS_DB *db)
 
         j = 0;
         for (i = 0; i < db->nreads; i++)
-          if ((reads[i].flags & DB_BEST) >= allflag && reads[i].end - reads[i].beg >= cutoff)
+          if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
             table[j++] = table[i];
       }
     else
@@ -538,7 +588,7 @@ void Trim_DB(HITS_DB *db)
           { anno = (char *) record->anno;
             j = 0;
             for (i = r = 0; i < db->nreads; i++, r += size)
-              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].end - reads[i].beg >= cutoff)
+              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
                 { memmove(anno+j,anno+r,size);
                   j += size;
                 }
@@ -550,7 +600,7 @@ void Trim_DB(HITS_DB *db)
             anno4 = (int *) (record->anno);
             j = anno4[0] = 0;
             for (i = 0; i < db->nreads; i++)
-              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].end - reads[i].beg >= cutoff)
+              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
                 { ai = anno4[i];
                   anno4[j+1] = anno4[j] + (anno4[i+1]-ai);
                   memmove(data+anno4[j],data+ai,anno4[i+1]-ai);
@@ -564,7 +614,7 @@ void Trim_DB(HITS_DB *db)
             anno8 = (int64 *) (record->anno);
             j = anno8[0] = 0;
             for (i = 0; i < db->nreads; i++)
-              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].end - reads[i].beg >= cutoff)
+              if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
                 { ai = anno8[i];
                   anno8[j+1] = anno8[j] + (anno8[i+1]-ai);
                   memmove(data+anno8[j],data+ai,anno8[i+1]-ai);
@@ -577,7 +627,7 @@ void Trim_DB(HITS_DB *db)
 
   totlen = maxlen = 0;
   for (j = i = 0; i < nreads; i++)
-    { r = reads[i].end - reads[i].beg;
+    { r = reads[i].rlen;
       if ((reads[i].flags & DB_BEST) >= allflag && r >= cutoff)
         { totlen += r;
           if (r > maxlen)
@@ -829,6 +879,33 @@ void Close_QVs(HITS_DB *db)
  *
  ********************************************************************************************/
 
+//  Return status of track:
+//     1: Track is for trimmed DB
+//     0: Track is for untrimmed DB
+//    -1: Track is not the right size of DB either trimmed or untrimmed
+//    -2: Could not find the track 
+
+int Check_Track(HITS_DB *db, char *track)
+{ FILE       *afile;
+  int         tracklen;
+
+  afile = fopen(Catenate(db->path,".",track,".anno"),"r");
+  if (afile == NULL)
+    return (-2);
+
+  if (fread(&tracklen,sizeof(int),1,afile) != 1)
+    SYSTEM_ERROR
+
+  fclose(afile);
+
+  if (tracklen == db->breads)
+    return (1);
+  else if (tracklen == db->oreads)
+    return (0);
+  else
+    return (-1);
+}
+
 // If track is not already in the db's track list, then allocate all the storage for it,
 //   read it in from the appropriate file, add it to the track list, and return a pointer
 //   to the newly created HITS_TRACK record.  If the track does not exist or cannot be
@@ -1013,7 +1090,7 @@ void Load_Read(HITS_DB *db, int i, char *read, int ascii)
     }
 
   off = r[i].boff;
-  len = r[i].end - r[i].beg;
+  len = r[i].rlen;
 
   if (ftello(bases) != off)
     fseeko(bases,off,SEEK_SET);
@@ -1081,7 +1158,7 @@ void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
 
   reads = db->reads;
   quiva = Active_QV->quiva;
-  rlen  = reads[i].end-reads[i].beg;
+  rlen  = reads[i].rlen;
 
   fseeko(quiva,reads[i].coff,SEEK_SET);
   Uncompress_Next_QVentry(quiva,entry,Active_QV->coding+Active_QV->table[i],rlen);
@@ -1144,7 +1221,7 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
 
   o = 0;
   for (i = 0; i < nreads; i++)
-    { len = reads[i].end - reads[i].beg;
+    { len = reads[i].rlen;
       off = reads[i].boff;
       if (ftello(bases) != off)
         fseeko(bases,off,SEEK_SET);
@@ -1170,6 +1247,7 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
 int List_DB_Files(char *path, void foreach(char *path, char *extension))
 { int            status, rlen, dlen;
   char          *root, *pwd, *name;
+  int            isdam;
   DIR           *dirp;
   struct dirent *dp;
 
@@ -1188,12 +1266,22 @@ int List_DB_Files(char *path, void foreach(char *path, char *extension))
       goto exit;
     }
 
+  isdam = 0;
   while ((dp = readdir(dirp)) != NULL)     //   Get case dependent root name (if necessary)
     { name = dp->d_name;
       if (strcmp(name,Catenate("","",root,".db")) == 0)
         break;
+      if (strcmp(name,Catenate("","",root,".dam")) == 0)
+        { isdam = 1;
+          break;
+        }
       if (strcasecmp(name,Catenate("","",root,".db")) == 0)
         { strncpy(root,name,rlen);
+          break;
+        }
+      if (strcasecmp(name,Catenate("","",root,".dam")) == 0)
+        { strncpy(root,name,rlen);
+          isdam = 1;
           break;
         }
     }
@@ -1203,7 +1291,10 @@ int List_DB_Files(char *path, void foreach(char *path, char *extension))
       goto exit;
     }
 
-  foreach(Catenate(pwd,"/",root,".db"),"db");
+  if (isdam)
+    foreach(Catenate(pwd,"/",root,".dam"),"dam");
+  else
+    foreach(Catenate(pwd,"/",root,".db"),"db");
 
   rewinddir(dirp);                         //   Report each auxiliary file
   while ((dp = readdir(dirp)) != NULL)
