@@ -423,9 +423,10 @@ static void *tuple_thread(void *arg)
 
   if (TA_dust != NULL)
     { HITS_READ *reads = TA_block->reads;
-      int       *anno1 = ((int *) (TA_dust->anno)) + 1;
+      int64     *anno1 = ((int64 *) (TA_dust->anno)) + 1;
       int       *point = (int *) (TA_dust->data);
-      int        a, b, f, q;
+      int64      a, b, f; 
+      int        q;
 
       f = anno1[i-1];
       for (m = (c * (tnum+1)) >> NSHIFT; i < m; i++)
@@ -506,9 +507,10 @@ static void *biased_tuple_thread(void *arg)
 
   if (TA_dust != NULL)
     { HITS_READ *reads = TA_block->reads;
-      int       *anno1 = ((int *) (TA_dust->anno)) + 1;
+      int64     *anno1 = ((int64 *) (TA_dust->anno)) + 1;
       int       *point = (int *) (TA_dust->data);
-      int        j, b, f, q;
+      int64      j, b, f; 
+      int        q;
 
       f = anno1[i-1];
       for (m = (c * (tnum+1)) >> NSHIFT; i < m; i++)

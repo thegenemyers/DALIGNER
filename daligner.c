@@ -208,7 +208,7 @@ static HITS_DB *read_DB(char *name, int dust, int *isdam)
   Read_All_Sequences(&block,0);
 
   if (dtrack != NULL)
-    { int *anno = (int *) (dtrack->anno); 
+    { int64 *anno = (int64 *) (dtrack->anno); 
       int  i;
 
       for (i = 0; i <= block.nreads; i++)
@@ -264,14 +264,15 @@ static HITS_DB *complement_DB(HITS_DB *block)
   cblock.freq[2] = x;
 
   { HITS_TRACK *t, *dust;
-    int        *data, *tano, *tata;
-    int         j, p, rlen;
+    int        *data, *tata;
+    int         p, rlen;
+    int64       j, *tano;
 
     for (t = block->tracks; t != NULL; t++)
       if (strcmp(t->name,"dust") == 0)
         break;
     if (t != NULL)
-      { tano = (int *) t->anno;
+      { tano = (int64 *) t->anno;
         tata = (int *) t->data;
 
         data = (int *) Malloc(sizeof(int)*tano[nreads],"Allocating dazzler .dust index");
