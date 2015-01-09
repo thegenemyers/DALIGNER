@@ -63,7 +63,7 @@ static char *Usage[] =
   { "[-vbd] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-H<int>]",
     "       [-e<double(.85)] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
     "       [-dal<int(4)>] [-mrg<int(25)>]",
-    "       <ref:dam> <reads:db> [<first:int>[-<last:int>]]"
+    "       <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]"
   };
 
 static int power(int base, int exp)
@@ -208,15 +208,21 @@ int main(int argc, char *argv[])
 
   //  Make sure DAM and DB exist and the DB is partitioned, get number of blocks in partition
 
-  pwd1  = PathTo(argv[1]);
-  root1 = Root(argv[1],".dam");
+  pwd1   = PathTo(argv[1]);
+  if (strcmp(argv[1]+(strlen(argv[1])-4),".dam") == 0)
+    root1 = Root(argv[1],".dam");
+  else
+    root1 = Root(argv[1],".db");
 
   { int i, nfiles;
     FILE *dbvis;
 
-    dbvis = Fopen(Catenate(pwd1,"/",root1,".dam"),"r");
+    dbvis = fopen(Catenate(pwd1,"/",root1,".dam"),"r");
     if (dbvis == NULL)
-      exit (1);
+      { dbvis = Fopen(Catenate(pwd1,"/",root1,".db"),"r");
+        if (dbvis == NULL)
+          exit (1);
+      }
 
     if (fscanf(dbvis,"files = %d\n",&nfiles) != 1)
       SYSTEM_ERROR
@@ -236,15 +242,27 @@ int main(int argc, char *argv[])
     fclose(dbvis);
   }
 
-  pwd2  = PathTo(argv[2]);
-  root2 = Root(argv[2],".db");
+  pwd2   = PathTo(argv[2]);
+  if (strcmp(argv[2]+(strlen(argv[2])-4),".dam") == 0)
+    root2 = Root(argv[2],".dam");
+  else
+    root2 = Root(argv[2],".db");
+
+  if (strcmp(root2,root1) == 0 && strcmp(pwd1,pwd2) == 0)
+    { fprintf(stderr,"%s: Comparing the same data base %s/%s against itself, use HPCdaligner\n",
+                     Prog_Name,pwd1,root1);
+      exit (1);
+    }
 
   { int i, nfiles;
     FILE *dbvis;
 
-    dbvis = Fopen(Catenate(pwd2,"/",root2,".db"),"r");
+    dbvis = fopen(Catenate(pwd2,"/",root2,".dam"),"r");
     if (dbvis == NULL)
-      exit (1);
+      { dbvis = Fopen(Catenate(pwd2,"/",root2,".db"),"r");
+        if (dbvis == NULL)
+          exit (1);
+      }
 
     if (fscanf(dbvis,"files = %d\n",&nfiles) != 1)
       SYSTEM_ERROR
@@ -352,7 +370,7 @@ int main(int argc, char *argv[])
             printf(LSF_ALIGN,jobid++);
             printf(" \"");
 #endif
-            printf("daligner");
+            printf("daligner -A");
             if (VON)
               printf(" -v");
             if (BON)

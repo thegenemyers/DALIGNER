@@ -343,7 +343,15 @@ char *New_Read_Buffer(HITS_DB *db);
   //   otherwise.  A '\0' (or 4) is prepended and appended to the string so it has a delimeter
   //   for traversals in either direction.
 
-void Load_Read(HITS_DB *db, int i, char *read, int ascii);
+void  Load_Read(HITS_DB *db, int i, char *read, int ascii);
+
+  // Load into 'read' the subread [beg,end] of the i'th read in 'db' and return a pointer to the
+  //   the start of the subinterval (not necessarily = to read !!! ).  As a lower case ascii
+  //   string if ascii is 1, an upper case ascii string if ascii is 2, and a numeric string
+  //   over 0(A), 1(C), 2(G), and 3(T) otherwise.  A '\0' (or 4) is prepended and appended to
+  //   the string holding the substring so it has a delimeter for traversals in either direction.
+
+char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii);
 
   // Allocate a set of 5 vectors large enough to hold the longest QV stream that will occur
   //   in the database.  

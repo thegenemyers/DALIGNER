@@ -56,7 +56,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "<align:las> (<parts:int> | <path:db>) < <source>.las";
+static char *Usage = "<align:las> (<parts:int> | <path:db|dam>) < <source>.las";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -83,12 +83,18 @@ int main(int argc, char *argv[])
     parts = strtol(argv[2],&eptr,10);
     if (*eptr != '\0')
       { pwd   = PathTo(argv[2]);
-        root  = Root(argv[2],".db");
-        dbvis = fopen(Catenate(pwd,"/",root,".db"),"r");
+        if (strcmp(argv[2]+(strlen(argv[2])-4),".dam") == 0)
+          root  = Root(argv[2],".dam");
+        else
+          root  = Root(argv[2],".db");
+        dbvis = fopen(Catenate(pwd,"/",root,".dam"),"r");
         if (dbvis == NULL)
-          { fprintf(stderr,"%s: Second argument '%s' is not an integer or a DB\n",
-                           Prog_Name,argv[2]);
-            exit (1);
+          { dbvis = fopen(Catenate(pwd,"/",root,".db"),"r");
+            if (dbvis == NULL)
+              { fprintf(stderr,"%s: Second argument '%s' is not an integer or a DB\n",
+                               Prog_Name,argv[2]);
+                exit (1);
+              }
           }
         free(pwd);
         free(root);

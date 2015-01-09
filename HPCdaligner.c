@@ -60,10 +60,10 @@
 #undef  LSF  //  define if want a directly executable LSF script
 
 static char *Usage[] =
-  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "       [-e<double(.70)] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
-    "       [-dal<int(4)>] [-mrg<int(25)>]",
-    "       <path:db> [<block:int>[-<range:int>]"
+  { "[-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
+    "         [-e<double(.70)] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
+    "         [-dal<int(4)>] [-mrg<int(25)>]",
+    "         <path:db|dam> [<block:int>[-<range:int>]"
   };
 
 static int power(int base, int exp)
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
   char *pwd, *root;
 
   int    MUNIT, DUNIT;
-  int    VON, BON, DON;
+  int    VON, BON, DON, AON, ION;
   int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
   double EREL;
 
@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
         switch (argv[i][1])
         { default:
           optflags:
-            ARG_FLAGS("vbd");
+            ARG_FLAGS("vbdAI");
             break;
           case 'k':
             ARG_POSITIVE(KINT,"K-mer length")
@@ -195,6 +195,8 @@ int main(int argc, char *argv[])
     VON = flags['v'];
     BON = flags['b'];
     DON = flags['d'];
+    AON = flags['A'];
+    ION = flags['I'];
 
     if (argc < 2 || argc > 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
@@ -207,15 +209,21 @@ int main(int argc, char *argv[])
 
   //  Make sure DB exists and is partitioned, get number of blocks in partition
 
-  pwd  = PathTo(argv[1]);
-  root = Root(argv[1],".db");
+  pwd = PathTo(argv[1]);
+  if (strcmp(argv[1]+(strlen(argv[1])-4),".dam") == 0)
+    root = Root(argv[1],".dam");
+  else
+    root = Root(argv[1],".db");
 
   { int i, nfiles;
     FILE *dbvis;
 
-    dbvis = Fopen(Catenate(pwd,"/",root,".db"),"r");
+    dbvis = fopen(Catenate(pwd,"/",root,".dam"),"r");
     if (dbvis == NULL)
-      exit (1);
+      { dbvis = Fopen(Catenate(pwd,"/",root,".db"),"r");
+        if (dbvis == NULL)
+          exit (1);
+      }
 
     if (fscanf(dbvis,"files = %d\n",&nfiles) != 1)
       SYSTEM_ERROR
@@ -319,6 +327,10 @@ int main(int argc, char *argv[])
               printf(" -b");
             if (DON)
               printf(" -d");
+            if (AON)
+              printf(" -A");
+            if (ION)
+              printf(" -I");
             if (KINT != 14)
               printf(" -k%d",KINT);
             if (WINT != 6)

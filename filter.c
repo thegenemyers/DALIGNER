@@ -74,7 +74,7 @@
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
 #define TEST_HIT              //  When off, just tuple filtering alone, no check
-#undef  TEST_GATHER
+#define TEST_GATHER
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
 #define   ALIGN_WIDTH    80   //     Parameters for alignment
@@ -94,7 +94,7 @@ typedef struct
     uint64 p2;
   } Double;
 
-#ifdef __ORDER_LITTLE_ENDIAN__
+#if __ORDER_LITTLE_ENDIAN__ == __BYTE_ORDER__
 
 typedef struct
   { uint64 code;
@@ -112,16 +112,16 @@ typedef struct
 #else
 
 typedef struct
-  { int    read;
+  { uint64 code;
+    int    read;
     int    rpos;
-    uint64 code;
   } KmerPos;
 
 typedef struct
-  { int    bread;
-    int    aread;
-    int    apos;
+  { int    apos;
     int    bpos;
+    int    bread;
+    int    aread;
   } SeedPair;
 
 #endif
@@ -939,12 +939,23 @@ static void *count_thread(void *arg)
               ct = 0;
               jb = ib;
               db = cb;
-              do
-                { ar = asort[ia].read;
-                  while (db == cb && bsort[ib].read < ar)
-                    db = bsort[++ib].code;
-                  ct += (ib-jb);
-                }
+              if (IDENTITY)
+                do
+                  { ar = asort[ia].read;
+                    while (db == cb && bsort[ib].read < ar)
+                      db = bsort[++ib].code;
+                    while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < asort[ia].rpos)
+                      db = bsort[++ib].code;
+                    ct += (ib-jb);
+                  }
+                while ((da = asort[++ia].code) == ca);
+              else
+                do
+                  { ar = asort[ia].read;
+                    while (db == cb && bsort[ib].read < ar)
+                      db = bsort[++ib].code;
+                    ct += (ib-jb);
+                  }
               while ((da = asort[++ia].code) == ca);
               while (db == cb)
                 db = bsort[++ib].code;
@@ -1025,35 +1036,67 @@ static void *merge_thread(void *arg)
               ja = ia;
               jb = ib;
               db = cb;
-              do
-                { ar = asort[ia].read;
-                  while (db == cb && bsort[ib].read < ar)
-                    db = bsort[++ib].code;
-                  ct += (ib-jb);
-                }
-              while ((da = asort[++ia].code) == ca);
+              if (IDENTITY)
+                do
+                  { ar = asort[ia].read;
+                    ap = asort[ia].rpos;
+                    while (db == cb && bsort[ib].read < ar)
+                      db = bsort[++ib].code;
+                    while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
+                      db = bsort[++ib].code;
+                    ct += (ib-jb);
+                  }
+                while ((da = asort[++ia].code) == ca);
+              else
+                do
+                  { ar = asort[ia].read;
+                    while (db == cb && bsort[ib].read < ar)
+                      db = bsort[++ib].code;
+                    ct += (ib-jb);
+                  }
+                while ((da = asort[++ia].code) == ca);
               while (db == cb)
                 db = bsort[++ib].code;
 
               if (ct < limit)
                 { ib = jb;
                   db = cb;
-                  for (a = ja; a < ia; a++)
-                    { ap = asort[a].rpos;
-                      ar = asort[a].read;
-                      while (db == cb && bsort[ib].read < ar)
-                        db = bsort[++ib].code;
-                      if ((d = ib-jb) > 0)
-                        { kptr[ap & BMASK] += d;
-                          for (b = jb; b < ib; b++)
-                            { hits[nhits].bread = bsort[b].read;
-                              hits[nhits].aread = ar;
-                              hits[nhits].apos  = ap; 
-                              hits[nhits].bpos  = bsort[b].rpos;
-                              nhits += 1;
-                            }
-                        }
-                    }
+                  if (IDENTITY)
+                    for (a = ja; a < ia; a++)
+                      { ap = asort[a].rpos;
+                        ar = asort[a].read;
+                        while (db == cb && bsort[ib].read < ar)
+                          db = bsort[++ib].code;
+                        while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
+                          db = bsort[++ib].code;
+                        if ((d = ib-jb) > 0)
+                          { kptr[ap & BMASK] += d;
+                            for (b = jb; b < ib; b++)
+                              { hits[nhits].bread = bsort[b].read;
+                                hits[nhits].aread = ar;
+                                hits[nhits].apos  = ap; 
+                                hits[nhits].bpos  = bsort[b].rpos;
+                                nhits += 1;
+                              }
+                          }
+                      }
+                  else
+                    for (a = ja; a < ia; a++)
+                      { ap = asort[a].rpos;
+                        ar = asort[a].read;
+                        while (db == cb && bsort[ib].read < ar)
+                          db = bsort[++ib].code;
+                        if ((d = ib-jb) > 0)
+                          { kptr[ap & BMASK] += d;
+                            for (b = jb; b < ib; b++)
+                              { hits[nhits].bread = bsort[b].read;
+                                hits[nhits].aread = ar;
+                                hits[nhits].apos  = ap; 
+                                hits[nhits].bpos  = bsort[b].rpos;
+                                nhits += 1;
+                              }
+                          }
+                      }
                   while (db == cb)
                     db = bsort[++ib].code;
                 }
@@ -1267,7 +1310,7 @@ static void *report_thread(void *arg)
                           { Write_Overlap(ofile1,ovla,tbytes);
                             ahits += 1;
                           }
-                        if (blen >= HGAP_MIN && NOT_MAPPER)
+                        if (blen >= HGAP_MIN && SYMMETRIC)
                           { Write_Overlap(ofile2,ovlb,tbytes);
                             bhits += 1;
                           }
@@ -1362,6 +1405,13 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   atot = ablock->totlen;
   btot = bblock->totlen;
+
+#if __ORDER_LITTLE_ENDIAN__ == __BYTE_ORDER__
+printf("Little\n"); fflush(stdout);
+#else
+printf("Big\n"); fflush(stdout);
+#endif
+
 
   if (comp)
     { asort = Csort;
@@ -1609,7 +1659,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     MR_bblock = bblock;
     MR_hits   = khit;
     MR_comp   = comp;
-    MR_two    = ! self && NOT_MAPPER;
+    MR_two    = ! self && SYMMETRIC;
 
     parmr[0].beg = 0;
     for (i = 1; i < NTHREADS; i++)
@@ -1645,7 +1695,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           exit (1);
         if (self)
           parmr[i].ofile2 = parmr[i].ofile1;
-        else if (NOT_MAPPER)
+        else if (SYMMETRIC)
           { parmr[i].ofile2 = 
                 Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
             if (parmr[i].ofile2 == NULL)

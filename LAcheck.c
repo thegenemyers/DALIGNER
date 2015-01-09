@@ -55,7 +55,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-vS] (<source:db> | <source1:dam> <source2:db>) <align:las> ...";
+static char *Usage = "[-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
   HITS_DB   _db2,  *db2  = &_db2;
   int        VERBOSE;
   int        SORTED;
-  int        ISDAM;
+  int        ISTWO;
 
   //  Process options
 
@@ -97,8 +97,10 @@ int main(int argc, char *argv[])
   //  Open trimmed DB
 
   { int   status;
+    char *pwd, *root;
+    FILE *input;
 
-    ISDAM  = 0;
+    ISTWO  = 0;
     status = Open_DB(argv[1],db1);
     if (status < 0)
       exit (1);
@@ -106,8 +108,11 @@ int main(int argc, char *argv[])
       { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[1]);
         exit (1);
       }
-    if (status == 1)
-      { ISDAM = 1;
+
+    pwd    = PathTo(argv[2]);
+    root   = Root(argv[2],".las");
+    if ((input = fopen(Catenate(pwd,"/",root,".las"),"r")) == NULL)
+      { ISTWO = 1;
         if (argc <= 3)
           { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
             exit (1);
@@ -115,18 +120,20 @@ int main(int argc, char *argv[])
         status = Open_DB(argv[2],db2);
         if (status < 0)
           exit (1);
-        if (status == 1)
-          { fprintf(stderr,"%s: Second data set cannot be .dam index: %s\n",Prog_Name,argv[2]);
-            exit (1);
-          }
         if (db2->part > 0)
           { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[2]);
             exit (1);
           }
+        Trim_DB(db2);
       }
     else
-      db2 = db1;
-    Trim_DB(db2);
+      { fclose(input);
+        db2 = db1;
+      }
+    Trim_DB(db1);
+
+    free(root);
+    free(pwd);
   }
 
   { char      *iblock;
@@ -149,7 +156,7 @@ int main(int argc, char *argv[])
 
     //  For each file do
 
-    for (i = 2+ISDAM; i < argc; i++)
+    for (i = 2+ISTWO; i < argc; i++)
       { char     *pwd, *root;
         FILE     *input;
         char     *iptr, *itop;
@@ -333,7 +340,7 @@ int main(int argc, char *argv[])
   }
 
   Close_DB(db1);
-  if (ISDAM)
+  if (ISTWO)
     Close_DB(db2);
 
   exit (0);

@@ -78,10 +78,10 @@
      array of integers (if computed by a Compute_Trace routine), or an array of unsigned
      short integers (if computed by Local_Alignment).
 
-     If computed by Local_Alignment 'trace' points at a list of 'tlen' (= n+1) short
+     If computed by Local_Alignment 'trace' points at a list of 'tlen' (always even) short
      values:
 
-            b_0, b_1, ... b_n-1, b_n
+            d_0, b_0, d_1, b_1, ... d_n-1, b_n-1, d_n, b_n
 
      to be interpreted as follows.  The alignment from (abpos,bbpos) to (aepos,bepos)
      passes through the n trace points for i in [1,n]:
@@ -92,9 +92,12 @@
      where also let a_0,b_0 = abpos,bbpos and a_(n+1),b_(n+1) = aepos,bepos.  That is, the
      interior (i.e. i != 0 and i != n+1) trace points pass through every TS'th position of
      the aread where TS is the "trace spacing" employed when finding the alignment (see
-     New_Align_Spec).  Typically TS is 100.  These trace points allow the Compute_Trace
-     routines to efficiently compute the exact alignment between the two reads by efficiently
-     computing exact alignments between consecutive pairs of trace points.
+     New_Align_Spec).  Typically TS is 100.  Then d_i is the number of differences in the
+     portion of the alignment between (a_i,b_i) and (a_i+1,b_i+1).  These trace points allow
+     the Compute_Trace routines to efficiently compute the exact alignment between the two
+     reads by efficiently computing exact alignments between consecutive pairs of trace points.
+     Moreover, the diff values give one an idea of the quality of the alignment along every
+     segment of TS symbols of the aread.
 
      If computed by a Compute_Trace routine, 'trace' points at a list of 'tlen' integers
      < i1, i2, ... in > that encodes an exact alignment as follows.  A negative number j
@@ -131,8 +134,8 @@ typedef struct
      If the alignment record shows the B sequence as complemented, *** THEN IT IS THE
      RESPONSIBILITY OF THE CALLER *** to make sure that bseq points at a complement of
      the sequence before calling Compute_Trace or Print_Alignment.  Complement_Seq complements
-     the sequence a.  The operation does the complementation/reversal in place.  Calling it a
-     second time on a given fragment restores it to its original state.
+     the sequence a of length n.  The operation does the complementation/reversal in place.
+     Calling it a second time on a given fragment restores it to its original state.
 ***/
 
 #define COMP(x)  ((x) & 0x1)
@@ -148,7 +151,7 @@ typedef struct
     int     blen;         /* Length of B sequence                               */
   } Alignment;
 
-void Complement_Seq(char *a);
+void Complement_Seq(char *a, int n);
 
   /* Many routines like Local_Alignment, Compute_Trace, and Print_Alignment need working
      storage that is more efficiently reused with each call, rather than being allocated anew
@@ -232,7 +235,7 @@ void Complement_Seq(char *a);
   void Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing);
   void Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing);
 
-  /* Print_Acartoon prints an ASCII representation of the overlap relationhip between the
+  /* Alignment_Cartoon prints an ASCII representation of the overlap relationhip between the
      two reads of 'align' to the given 'file' indented by 'indent' space.  Coord controls
      the display width of numbers, it must be not less than the width of any number to be
      displayed.
@@ -249,15 +252,21 @@ void Complement_Seq(char *a);
      per segment, it prints "block" characters of the A sequence in each segment.  This results
      in segments of different lengths, but is convenient when looking at two alignments involving
      A as segments are guaranteed to cover the same interval of A in a segment.
+
+     Flip_Alignment modifies align so the roles of A and B are reversed.  If full is off then
+     the trace is ignored, otherwise the trace must be to a full alignment trace and this trace
+     is also appropriately inverted.
   */
 
-  void Print_ACartoon(FILE *file, Alignment *align, int indent, int coord);
+  void Alignment_Cartoon(FILE *file, Alignment *align, int indent, int coord);
 
   void Print_Alignment(FILE *file, Alignment *align, Work_Data *work,
                        int indent, int width, int border, int upper, int coord);
 
   void Print_Reference(FILE *file, Alignment *align, Work_Data *work,
                        int indent, int block, int border, int upper, int coord);
+
+  void Flip_Alignment(Alignment *align, int full);
 
 
 /*** OVERLAP ABSTRACTION:
@@ -266,8 +275,9 @@ void Complement_Seq(char *a);
      (a) replaces the pointers to the two sequences with their ID's in the HITS data bases,
      (b) does not contain the length of the 2 sequences (must fetch from DB), and
      (c) contains its path as a subrecord rather than as a pointer (indeed, typically the
-     corresponding Alignment record points at the Overlap's path sub-record).  One can read
-     and write binary records of an "Overlap".
+     corresponding Alignment record points at the Overlap's path sub-record).  The trace pointer
+     is always to a sequence of trace points and can be either compressed (uint8) or
+     uncompressed (uint16).  One can read and write binary records of an "Overlap".
 ***/
 
 typedef struct {
@@ -277,16 +287,18 @@ typedef struct {
   int     bread;        /* Id # of B sequence                                 */
 } Overlap;
 
+
   /* Read_Overlap reads the next Overlap record from stream 'input', not including the trace
      (if any), and without modifying 'ovl's trace pointer.  Read_Trace reads the ensuing trace
      into the memory pointed at by the trace field of 'ovl'.  It is assumed to be big enough to
-     accommodate the trace where each value take 'tbytes' bytes.
+     accommodate the trace where each value take 'tbytes' bytes (1 if uint8 or 2 if uint16).
 
      Write_Overlap write 'ovl' to stream 'output' followed by its trace vector (if any) that
      occupies 'tbytes' bytes per value.  
 
      Print_Overlap prints an ASCII version of the contents of 'ovl' to stream 'output'
-     indented from the left margin by 'indent' spaces.
+     where the trace occupes 'tbytes' per value and the print out is indented from the left
+     margin by 'indent' spaces.
 
      Compress_TraceTo8 converts a trace fo 16-bit values to 8-bit values in place, and
      Decompress_TraceTo16 does the reverse conversion.
@@ -301,7 +313,7 @@ typedef struct {
   int Read_Trace(FILE *innput, Overlap *ovl, int tbytes);
 
   void Write_Overlap(FILE *output, Overlap *ovl, int tbytes);
-  void Print_Overlap(FILE *output, Overlap *ovl, int indent);
+  void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent);
 
   void Compress_TraceTo8(Overlap *ovl);
   void Decompress_TraceTo16(Overlap *ovl);

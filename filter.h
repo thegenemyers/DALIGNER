@@ -55,7 +55,8 @@ extern int    BIASED;
 extern int    VERBOSE;
 extern int    MINOVER;
 extern int    HGAP_MIN;
-extern int    NOT_MAPPER;
+extern int    SYMMETRIC;
+extern int    IDENTITY;
 
 extern uint64 MEM_LIMIT;
 extern uint64 MEM_PHYSICAL;

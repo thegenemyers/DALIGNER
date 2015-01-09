@@ -86,16 +86,17 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "       [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-M<int>]",
-    "       <subject:db|dam> <target:db> ...",
+  { "[-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
+    "         [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-M<int>]",
+    "         <subject:db|dam> <target:db|dam> ...",
   };
 
 int     VERBOSE;   //   Globally visible to filter.c
 int     BIASED;
 int     MINOVER;
 int     HGAP_MIN;
-int     NOT_MAPPER;
+int     SYMMETRIC;
+int     IDENTITY;
 uint64  MEM_LIMIT;
 uint64  MEM_PHYSICAL;
 
@@ -183,22 +184,13 @@ static HITS_DB *read_DB(char *name, int dust, int *isdam)
   status = Open_DB(name,&block);
   if (status < 0)
     exit (1);
-  if (isdam == NULL)
-    { if (status == 1)
-        { fprintf(stderr,"%s: Only first argument can be a .dam index: %s\n",Prog_Name,name);
-          exit (1);
-        }
-    }
-  else
-    *isdam = 1-status;
 
   if (dust)
     dtrack = Load_Track(&block,"dust");
   else
     dtrack = NULL;
 
-  if (status == 0)
-    Trim_DB(&block);
+  Trim_DB(&block);
 
   if (block.totlen > 0x7fffffffll)
     { fprintf(stderr,"File (%s) is too large\n",name);
@@ -215,6 +207,7 @@ static HITS_DB *read_DB(char *name, int dust, int *isdam)
         anno[i] /= sizeof(int);
     }
 
+  *isdam = status;
   return (&block);
 }
 
@@ -304,6 +297,7 @@ int main(int argc, char *argv[])
   char       *afile,  *bfile;
   char       *aroot,  *broot;
   Align_Spec *asettings;
+  int         isdam;
 
   int    DUSTED;
   int    KMER_LEN;
@@ -340,7 +334,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vbd")
+            ARG_FLAGS("vbdAI")
             break;
           case 'k':
             ARG_POSITIVE(KMER_LEN,"K-mer length")
@@ -383,9 +377,11 @@ int main(int argc, char *argv[])
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];   //  Globally declared in filter.h
-    BIASED  = flags['b'];   //  Globally declared in filter.h
-    DUSTED  = flags['d'];
+    VERBOSE   = flags['v'];   //  Globally declared in filter.h
+    BIASED    = flags['b'];   //  Globally declared in filter.h
+    DUSTED    = flags['d'];
+    SYMMETRIC = 1-flags['A'];
+    IDENTITY  = flags['I'];
 
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
@@ -404,12 +400,12 @@ int main(int argc, char *argv[])
   /* Read in the reads in A */
 
   afile  = argv[1];
-  ablock = *read_DB(afile,DUSTED,&NOT_MAPPER);
+  ablock = *read_DB(afile,DUSTED,&isdam);
   cblock = *complement_DB(&ablock);
-  if (NOT_MAPPER)
-    aroot  = Root(afile,".db");
+  if (isdam)
+    aroot = Root(afile,".dam");
   else
-    aroot  = Root(afile,".dam");
+    aroot = Root(afile,".db");
 
   if (ablock.cutoff >= HGAP_MIN)
     HGAP_MIN = ablock.cutoff;
@@ -432,13 +428,16 @@ int main(int argc, char *argv[])
 
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
-        broot = Root(bfile,".db");
         if (strcmp(afile,bfile) == 0)
-          { Match_Filter(aroot,&ablock,broot,&ablock,1,0,asettings);
-            Match_Filter(aroot,&cblock,broot,&ablock,1,1,asettings);
+          { Match_Filter(aroot,&ablock,aroot,&ablock,1,0,asettings);
+            Match_Filter(aroot,&cblock,aroot,&ablock,1,1,asettings);
           }
         else
-          { bblock = *read_DB(bfile,DUSTED,NULL);
+          { bblock = *read_DB(bfile,DUSTED,&isdam);
+            if (isdam)
+              broot = Root(bfile,".dam");
+            else
+              broot = Root(bfile,".db");
             Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
             Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
             Close_DB(&bblock);

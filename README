@@ -73,19 +73,18 @@ in the data set.  The alignment records are parsimonious in that they do not rec
 alignment but simply a set of trace points, typically every 100bp or so, that allow the
 efficient reconstruction of alignments on demand.
 
-1. daligner [-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                   [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
-                   [-H<int>] [-M<int>] <subject:db|dam> <target:db> ...
+1. daligner [-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
+                     [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
+                     [-H<int>] [-M<int>] <subject:db|dam> <target:db|dam> ...
 
 Compare sequences in the trimmed <subject> block against those in the list of <target>
 blocks searching for local alignments involving at least -l base pairs (default 1000)
 or more, that have an average correlation rate of -e (default 70%).  The local
 alignments found will be output in a sparse encoding where a trace point on the
-alignment is recorded every -s base pairs of the a-read (default 100bp). The subject
-reads are compared in both orientations against each target read and local alignments
-meeting the criteria are output to one of several created files described below.  The
--v option turns on a verbose reporting mode that gives statistics on each major step of
-the computation.  
+alignment is recorded every -s base pairs of the a-read (default 100bp). Reads are
+compared in both orientations and local alignments meeting the criteria are output to
+one of several created files described below.  The -v option turns on a verbose
+reporting mode that gives statistics on each major step of the computation.  
 
 The options -k, -h, and -w control the initial filtration search for possible matches
 between reads.  Specifically, our search code looks for a pair of diagonal bands of
@@ -111,33 +110,39 @@ use less, say only 8Gb on a 24Gb HPC cluster node because you want to run 3 dali
 jobs on the node, then specify -M8.  Specifying -M0 basically indicates that you do not
 want daligner to self adjust k-mer suppression to fit within a given amount of memory.
 
-For each subject, target pair of blocks, say X and Y, the program produces files
-containing alignments with the names X.Y.[C|N]#.las and if X !≠ Y and the subject is
-not a DAM, then also files Y.X.[C|N]#.las, where C indicates that the b-reads are
-complemented and N indicates they are not (both comparisons are performed) and # is
-the thread that detected and wrote out the collection of overlaps.  For example, if
-the defined constant NTHREAD (in file filter.h) is 4 (the default) when the program
-is compiled, then 8 or 16 files are output for each subject,target pair depending on
-the type of the subjectd and whether or not the subject and target are the same block.
-Each found alignment is recorded as -- a[ab,ae] x b^o[bb,be] -- where a and b are the
+For each subject, target pair of blocks, say X and Y, the program reports alignments
+where the a-read is in X and the b-read is in Y, and vice versa.  However, if the -A
+option is set ("A" for "asymmetric") then just overlaps where the a-read is in X and
+the b-read is in Y are reported, and if X = Y, then it further reports only those
+overlaps where the a-read index is less than the b-read index.  In either case, if the
+-I option is set ("I" for "identity") then when X = Y, overlaps between different
+portions of the same read will also be found and reported.
+
+Each found alignment is recorded as -- a[ab,ae] x bo[bb,be] -- where a and b are the
 indices (in the trimmed DB) of the reads that overlap, o indicates whether the b-read
 is from the same or opposite strand, and [ab,ae] and [bb,be] are the intervals of a
-and b^o, respectively, that align.  The file X.Y.O#.las contains the alignments
-produced by thread # for which the a-read is from X and the b-read is from Y and in
-orientation O.
+and bo, respectively, that align.  The program places these alignment records in files
+whose name is of the form X.Y.[C|N]#.las where C indicates that the b-reads are
+complemented and N indicates they are not (both comparisons are performed) and # is
+the thread that detected and wrote out the collection of alignments contained in the
+file.  That is the file X.Y.O#.las contains the alignments produced by thread # for
+which the a-read is from X and the b-read is from Y and in orientation O.  The command
+"daligner -A X Y" produces 2*NTHREAD thread files X.Y.?.las and "daligner X Y"
+produces 4*NTHREAD files X.Y.?.las and Y.X.?.las (unless X=Y in which case only
+NTHREAD files, X.X.?.las, are produced).
 
 By default daligner compares all overlaps between reads in the database that are
-greater than the minimum cutoff set when the DB is split, typically 1 or 2 Kbp.
-However, the HGAP assembly pipeline only wants to correct large reads, say 8Kbp or
-over, and so needs only the overlaps where the a-read is one of the large reads.
-By setting the -H parameter to say N, one alters daligner so that it only reports
-overlaps where the a-read is over N base-pairs long.  This parameter is ignored if
-the subject is a DAM.
+greater than the minimum cutoff set when the DB or DBs were split, typically 1 or
+2 Kbp.  However, the HGAP assembly pipeline only wants to correct large reads, say
+8Kbp or over, and so needs only the overlaps where the a-read is one of the large
+reads.  By setting the -H parameter to say N, one alters daligner so that it only
+reports overlaps where the a-read is over N base-pairs long.
 
 While the default parameter settings are good for raw Pacbio data, daligner can be used
 for efficiently finding alignments in corrected reads or other less noisy reads. For
-example, after error correction, we run "daligner -k25 -w5 -h60 -e.95 -s500" on
-the corrected reads and at these settings it is very fast.
+example, for mapping applications against .dams we run "daligner -k20 -h60 -e.85" and
+on corrected reads, we typically run "daligner -k25 -w5 -h60 -e.95 -s500" and at
+these settings it is very fast.
 
 
 2. LAsort [-v] <align:las> ...
@@ -165,28 +170,26 @@ the alignments for a given read can operate in simple sequential scans of these
 sorted files.
 
 
-4. LAshow [-carU] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
-          (<src:db> | <src1:dam> <src2:db>) <align:las> [ <reads:range> ... ]
+4. LAshow [-carUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
+          <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:range> ... ]
 
 LAshow produces a printed listing of the local alignments contained in the specified
-.las file, where the A- and B-reads come from src or from src1 and scr2, respectively.
+.las file, where the a- and b-reads come from src1 or from src1 and scr2, respectively.
 If a list of read ranges is given then only the overlaps for which the a-read is in
 the set specified by the list are displayed. See DBshow for an explanation of how the
-list of read ranges is interpreted.
+list of read ranges is interpreted.  If the -F option is set then the roles of the
+a- and b- reads are reversed in the display.
 
 If the -c option is given then a cartoon rendering is displayed, and if -a or -r option
-is set then an alignment of the local alignment is displayed. If both are set then the
-cartoon is first, and if neither are set then a simple one line summary of the local
-alignment is displayed. To display alignments the name of the database containing the
-reads must be given (and it must refer to the whole database, not a block thereof).
-The -a option puts exactly -w columns per segment of the display, whereas the -r option
-puts exactly -w a-read symbols in each segment of the display.  The -r display mode is
-useful when one wants to visually compare two alignments involving the same a-read.
-The -i option sets the indent for the cartoon and/or alignment if they are requested.
-The -w option sets the width of an alignment, the -b sets the number of symbols on
-either side of the aligned segments to display, and -U specifies that uppercase should
-be used for DNA sequence instead of the default lowercase. If the -o option is set then
-only proper overlaps are shown.
+is set then an alignment of the local alignment is displayed.  The -a option puts exactly
+-w columns per segment of the display, whereas the -r option puts exactly -w a-read
+symbols in each segment of the display.  The -r display mode is useful when one wants
+to visually compare two alignments involving the same a-read.  If a combination of the
+-c, -a, and -r flags is set, then the cartoon comes first, then the -a alignment, and
+lastly the -r alignment.  The -i option sets the indent for the cartoon and/or alignment
+displays, if they are requested.  The -b option sets the number of symbols on either side
+of the aligned segments in an alignment display, and -U specifies that uppercase should
+be used for DNA sequence instead of the default lowercase.
 
 
 5. LAcat <source:las> > <target>.las
@@ -197,7 +200,7 @@ concatenate these files in order into a single .las file and pipe the result
 to the standard output.
 
 
-6. LAsplit <target:las> (<parts:int> | <path:db>) < <source>.las
+6. LAsplit <target:las> (<parts:int> | <path:db|dam>) < <source>.las
 
 If the second argument is an integer n, then divide the alignment file <source>, piped
 in through the standard input, as evenly as possible into n alignment files with the
@@ -209,23 +212,23 @@ divide the input alignment file into block .las files where all records whose a-
 in <path>.i.db are in <align>.i.las.
 
 
-7. LAcheck [-vS] (<src:db> | <src1:dam> <src2:db>) <align:las> ...
+7. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
 
-LAcheck checks each .las file for structural integrity, where the A- and B-reads come
-from src or from src1 and scr2, respectively.  That is, it makes sure each file makes
-sense as a plausible .las file, e.g. values are not out of bound, the number of records
-is correct, the number of trace points for a record is correct, and so on.  If the -S
-option is set then it further checks that the alignments are in sorted order.  If the
--v option is set then a line is output for each .las file saying either the file is OK
-or reporting the first error.  If the -v option is not set then the program runs
-silently.  The exit status is 0 if every file is deemed good, and 1 if at least one
-of the files looks corrupted.
+LAcheck checks each .las file for structural integrity, where the a- and b-sequences
+come from src1 or from src1 and scr2, respectively.  That is, it makes sure each file
+makes sense as a plausible .las file, e.g. values are not out of bound, the number of
+records is correct, the number of trace points for a record is correct, and so on.  If
+the -S option is set then it further checks that the alignments are in sorted order.
+If the -v option is set then a line is output for each .las file saying either the
+file is OK or reporting the first error.  If the -v option is not set then the program
+runs silently.  The exit status is 0 if every file is deemed good, and 1 if at least
+one of the files looks corrupted.
 
 
-8. HPCdaligner [-vbd] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                      [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
-                      [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
-                      <path:db> [<first:int>[-<last:int>]]
+8. HPCdaligner [-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
+                        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
+                        [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
+                        <path:db|dam> [<first:int>[-<last:int>]]
 
 HPCdaligner writes a UNIX shell script to the standard output that consists of a
 sequence of commands that effectively run daligner on all pairs of blocks of a split
@@ -272,15 +275,16 @@ convenience.
 9. HPCmapper [-vbd] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>]
                     [-e<double(.85)] [-l<int(1000)] [-s<int(100)>]
                     [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
-                    <ref:dam> <reads:db> [<first:int>[-<last:int>]]
+                    <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]
 
 HPCmapper writes a UNIX shell script to the standard output that consists of a
-sequence of commands that effectively maps every read in the DB "reads" against a
-reference assembly in the DAM "ref", recording all the found local alignments in
-the sequence of files <ref>.<reads>.1.las, <ref>.<reads>.2.las, ... where
+sequence of commands that effectively "maps" every read in the DB <reads> against a
+reference set of sequences in the DB <ref>, recording all the found local alignments
+in the sequence of files <ref>.<reads>.1.las, <ref>.<reads>.2.las, ... where
 <ref>.<reads>.k.las contains the alignments between all of <ref> and the k'th
-block of the DB <reads>.  The parameters are exactly the same as for HPCdaligner
-save that the -k, -h, and -e defaults are set appropriately for mapping.
+block of <reads>.  The parameters are exactly the same as for HPCdaligner save that
+the -k, -h, and -e defaults are set appropriately for mapping, and the -A and -I
+options make no sense as <ref> and <reads> are expected to be distinct data sets.
 
 If the integers <first> and <last> are missing then the script produced is for every
 block in the database <reads>.  If <first> is present then HPCmapper produces an
