@@ -181,15 +181,15 @@ list of read ranges is interpreted.  If the -F option is set then the roles of t
 a- and b- reads are reversed in the display.
 
 If the -c option is given then a cartoon rendering is displayed, and if -a or -r option
-is set then an alignment of the local alignment is displayed.  The -a option puts exactly
--w columns per segment of the display, whereas the -r option puts exactly -w a-read
-symbols in each segment of the display.  The -r display mode is useful when one wants
-to visually compare two alignments involving the same a-read.  If a combination of the
--c, -a, and -r flags is set, then the cartoon comes first, then the -a alignment, and
-lastly the -r alignment.  The -i option sets the indent for the cartoon and/or alignment
-displays, if they are requested.  The -b option sets the number of symbols on either side
-of the aligned segments in an alignment display, and -U specifies that uppercase should
-be used for DNA sequence instead of the default lowercase.
+is set then an alignment of the local alignment is displayed.  The -a option puts
+exactly -w columns per segment of the display, whereas the -r option puts exactly -w
+a-read symbols in each segment of the display.  The -r display mode is useful when one
+wants to visually compare two alignments involving the same a-read.  If a combination of
+the -c, -a, and -r flags is set, then the cartoon comes first, then the -a alignment,
+and lastly the -r alignment.  The -i option sets the indent for the cartoon and/or
+alignment displays, if they are requested.  The -b option sets the number of symbols on
+either side of the aligned segments in an alignment display, and -U specifies that
+uppercase should be used for DNA sequence instead of the default lowercase.
 
 
 5. LAcat <source:las> > <target>.las
