@@ -59,8 +59,8 @@
 #include "align.h"
 
 static char *Usage[] =
-    { "[-carUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
-      "         [<src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:range> ... ]"
+    { "[-carUFM] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
+      "          <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <intput:FILE> | <reads:range> ... ]"
     };
 
 #define LAST_READ_SYMBOL  '$'
@@ -81,10 +81,12 @@ int main(int argc, char *argv[])
   int64   novl;
   int     tspace, tbytes, small;
   int     reps, *pts;
+  int     input_pts;
 
   int     ALIGN, CARTOON, REFERENCE, FLIP;
   int     INDENT, WIDTH, BORDER, UPPERCASE;
   int     ISTWO;
+  int     MAP;
 
   //  Process options
 
@@ -103,7 +105,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("carUF")
+            ARG_FLAGS("carUFM")
             break;
           case 'i':
             ARG_NON_NEGATIVE(INDENT,"Indent")
@@ -124,6 +126,7 @@ int main(int argc, char *argv[])
     REFERENCE = flags['r'];
     CARTOON   = flags['c'];
     FLIP      = flags['F'];
+    MAP       = flags['M'];
 
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
@@ -174,72 +177,128 @@ int main(int argc, char *argv[])
 
   //  Process read index arguments into a sorted list of read ranges
 
-  pts  = (int *) Malloc(sizeof(int)*2*argc,"Allocating read parameters");
-  if (pts == NULL)
-    exit (1);
+  input_pts = 0;
+  if (argc == ISTWO+4)
+    { if (argv[ISTWO+3][0] != LAST_READ_SYMBOL || argv[ISTWO+3][1] != '\0')
+        { char *eptr, *fptr;
+          int   b, e;
 
-  reps = 0;
-  if (argc > 3+ISTWO)
-    { int   c, b, e;
-      char *eptr, *fptr;
-
-      for (c = 3+ISTWO; c < argc; c++)
-        { if (argv[c][0] == LAST_READ_SYMBOL)
-            { b = db1->nreads;
-              eptr = argv[c]+1;
+          b = strtol(argv[ISTWO+3],&eptr,10);
+          if (eptr > argv[ISTWO+3] && b > 0)
+            { if (*eptr == '-')
+                { if (eptr[1] != LAST_READ_SYMBOL || eptr[2] != '\0')
+                    { e = strtol(eptr+1,&fptr,10);
+                      input_pts = (fptr <= eptr+1 || *fptr != '\0' || e <= 0);
+                    }
+                }
+              else
+                input_pts = (*eptr != '\0');
             }
           else
-            b = strtol(argv[c],&eptr,10);
-          if (eptr > argv[c])
-            { if (b == 0)
-                { fprintf(stderr,"%s: 0 is not a valid index\n",Prog_Name);
-                  exit (1);
-                }
-              if (*eptr == '\0')
-                { pts[reps++] = b;
-                  pts[reps++] = b;
-                  continue;
-                }
-              else if (*eptr == '-')
-                { if (eptr[1] == LAST_READ_SYMBOL)
-                    { e = INT32_MAX;
-                      fptr = eptr+2;
-                    }
-                  else
-                    e = strtol(eptr+1,&fptr,10);
-                  if (fptr > eptr+1 && *fptr == 0 && eptr[1] != '-')
-                    { pts[reps++] = b;
-                      pts[reps++] = e;
-                      if (b > e)
-                        { fprintf(stderr,"%s: Empty range '%s'\n",Prog_Name,argv[c]);
-                          exit (1);
-                        }
-                      continue;
-                    }
-                }
-            }
-          fprintf(stderr,"%s: argument '%s' is not an integer range\n",Prog_Name,argv[c]);
-          exit (1);
+            input_pts = 1;
         }
+    }
 
-      qsort(pts,reps/2,sizeof(int64),ORDER);
+  if (input_pts)
+    { int v, x;
+      FILE *input;
 
-      b = 0;
-      for (c = 0; c < reps; c += 2)
-        if (b > 0 && pts[b-1] >= pts[c]-1) 
-          { if (pts[c+1] > pts[b-1])
-              pts[b-1] = pts[c+1];
+      input = Fopen(argv[ISTWO+3],"r");
+      if (input == NULL)
+        exit (1);
+
+      reps = 0;
+      while ((v = fscanf(input," %d",&x)) != EOF)
+        if (v == 0)
+          { fprintf(stderr,"%s: %d'th item of input file %s is not an integer\n",
+                           Prog_Name,reps+1,argv[2]);
+            exit (1);
           }
         else
-          { pts[b++] = pts[c];
-            pts[b++] = pts[c+1];
-          }
-      pts[b++] = INT32_MAX;
-      reps = b;
+          reps += 1;
+
+      reps *= 2;
+      pts   = (int *) Malloc(sizeof(int)*reps,"Allocating read parameters");
+      if (pts == NULL)
+        exit (1);
+
+      rewind(input);
+      for (v = 0; v < reps; v += 2)
+        { fscanf(input," %d",&x);
+          pts[v] = pts[v+1] = x;
+        }
+
+      fclose(input);
     }
+
   else
-    { pts[reps++] = 1;
-      pts[reps++] = INT32_MAX;
+    { pts  = (int *) Malloc(sizeof(int)*2*argc,"Allocating read parameters");
+      if (pts == NULL)
+        exit (1);
+
+      reps = 0;
+      if (argc > 3+ISTWO)
+        { int   c, b, e;
+          char *eptr, *fptr;
+
+          for (c = 3+ISTWO; c < argc; c++)
+            { if (argv[c][0] == LAST_READ_SYMBOL)
+                { b = db1->nreads;
+                  eptr = argv[c]+1;
+                }
+              else
+                b = strtol(argv[c],&eptr,10);
+              if (eptr > argv[c])
+                { if (b <= 0)
+                    { fprintf(stderr,"%s: %d is not a valid index\n",Prog_Name,b);
+                      exit (1);
+                    }
+                  if (*eptr == '\0')
+                    { pts[reps++] = b;
+                      pts[reps++] = b;
+                      continue;
+                    }
+                  else if (*eptr == '-')
+                    { if (eptr[1] == LAST_READ_SYMBOL)
+                        { e = INT32_MAX;
+                          fptr = eptr+2;
+                        }
+                      else
+                        e = strtol(eptr+1,&fptr,10);
+                      if (fptr > eptr+1 && *fptr == 0 && e > 0)
+                        { pts[reps++] = b;
+                          pts[reps++] = e;
+                          if (b > e)
+                            { fprintf(stderr,"%s: Empty range '%s'\n",Prog_Name,argv[c]);
+                              exit (1);
+                            }
+                          continue;
+                        }
+                    }
+                }
+              fprintf(stderr,"%s: argument '%s' is not an integer range\n",Prog_Name,argv[c]);
+              exit (1);
+            }
+
+          qsort(pts,reps/2,sizeof(int64),ORDER);
+
+          b = 0;
+          for (c = 0; c < reps; c += 2)
+            if (b > 0 && pts[b-1] >= pts[c]-1) 
+              { if (pts[c+1] > pts[b-1])
+                  pts[b-1] = pts[c+1];
+              }
+            else
+              { pts[b++] = pts[c];
+                pts[b++] = pts[c+1];
+              }
+          pts[b++] = INT32_MAX;
+          reps = b;
+        }
+      else
+        { pts[reps++] = 1;
+          pts[reps++] = INT32_MAX;
+        }
     }
 
   //  Initiate file reading and read (novl, tspace) header
@@ -289,6 +348,7 @@ int main(int argc, char *argv[])
     int        ai_wide, bi_wide;
     int        mn_wide, mx_wide;
     int        tp_wide;
+    int        blast, match, seen, lhalf, rhalf;
 
     aln->path = &(ovl->path);
     if (ALIGN || REFERENCE)
@@ -340,6 +400,10 @@ int main(int argc, char *argv[])
 
     //  For each record do
 
+    blast = -1;
+    match = 0;
+    seen  = 0;
+    lhalf = rhalf = 0;
     for (j = 0; j < novl; j++)
 
        //  Read it in
@@ -386,6 +450,31 @@ int main(int argc, char *argv[])
         aln->blen  = db2->reads[ovl->bread].rlen;
         aln->flags = ovl->flags;
         tps        = ((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace);
+
+        if (MAP)
+          { while (ovl->bread != blast)
+              { if (!match && seen && !(lhalf && rhalf))
+                  { printf("Missing ");
+                    Print_Number((int64) blast+1,br_wide+1,stdout);
+                    printf(" %d ->%lld\n",db2->reads[blast].rlen,db2->reads[blast].coff);
+                  }
+                match = 0;
+                seen  = 0; 
+                lhalf = rhalf = 0;
+                blast += 1;
+              }
+            seen = 1;
+            if (ovl->path.abpos == 0)
+              rhalf = 1;
+            if (ovl->path.aepos == aln->alen)
+              lhalf = 1;
+            if (ovl->path.bbpos != 0 || ovl->path.bepos != aln->blen)
+              continue;
+            match = 1;
+          }
+            
+        // printf(" %7d %7d\n",ovl->path.abpos,ovl->path.aepos);
+        // continue;
 
         if (ALIGN || CARTOON || REFERENCE)
           printf("\n");

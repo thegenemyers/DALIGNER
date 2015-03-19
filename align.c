@@ -50,8 +50,6 @@
  *
  ********************************************************************************************/
 
-// align1: Derived from the original BOA aligner
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -2465,7 +2463,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
 
 #define BLOCK(x,y)							\
 { int u, v;								\
-  if (i%block == 1 && i != s0 && x != 7 && o > 0)			\
+  if (i%block == 1 && i != s0 && x < 4 && o > 0)			\
     { fprintf(file,"\n");						\
       fprintf(file,"%*s",indent,"");					\
       if (coord > 0)							\

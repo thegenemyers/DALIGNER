@@ -74,7 +74,7 @@
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
 #define TEST_HIT              //  When off, just tuple filtering alone, no check
-#define TEST_GATHER
+#undef  TEST_GATHER
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
 #define   ALIGN_WIDTH    80   //     Parameters for alignment
@@ -397,7 +397,7 @@ static int  LogBase[4];
 
 static HITS_DB    *TA_block;
 static KmerPos    *TA_list;
-static HITS_TRACK *TA_dust;
+static HITS_TRACK *TA_track;
 
 typedef struct
   { int    tnum;
@@ -421,10 +421,10 @@ static void *tuple_thread(void *arg)
   s  = ((char *) (TA_block->bases)) + n;
   n -= Kmer*i;
 
-  if (TA_dust != NULL)
+  if (TA_track != NULL)
     { HITS_READ *reads = TA_block->reads;
-      int64     *anno1 = ((int64 *) (TA_dust->anno)) + 1;
-      int       *point = (int *) (TA_dust->data);
+      int64     *anno1 = ((int64 *) (TA_track->anno)) + 1;
+      int       *point = (int *) (TA_track->data);
       int64      a, b, f; 
       int        q;
 
@@ -505,10 +505,10 @@ static void *biased_tuple_thread(void *arg)
   s  = ((char *) (TA_block->bases)) + n;
   n -= Kmer*i;
 
-  if (TA_dust != NULL)
+  if (TA_track != NULL)
     { HITS_READ *reads = TA_block->reads;
-      int64     *anno1 = ((int64 *) (TA_dust->anno)) + 1;
-      int       *point = (int *) (TA_dust->data);
+      int64     *anno1 = ((int64 *) (TA_track->anno)) + 1;
+      int       *point = (int *) (TA_track->data);
       int64      j, b, f; 
       int        q;
 
@@ -731,15 +731,7 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
 
   TA_block = block;
   TA_list  = src;
-  
-  { HITS_TRACK *t;
-
-    TA_dust = NULL;
-    for (t = block->tracks; t != NULL; t++)
-      if (strcmp(t->name,"dust") == 0)
-        break;
-    TA_dust = t;
-  }
+  TA_track = block->tracks;
 
   for (i = 0; i < NTHREADS; i++)
     { parmt[i].tnum = i;
@@ -766,7 +758,7 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
     }
 
   rez = (KmerPos *) lex_sort(mersort,(Double *) src,(Double *) trg,parmx);
-  if (BIASED || TA_dust != NULL)
+  if (BIASED || TA_track != NULL)
     for (i = 0; i < NTHREADS; i++)
       kmers -= parmt[i].fill;
   rez[kmers].code = Kpowr;
@@ -984,7 +976,9 @@ static void *count_thread(void *arg)
               jb = ib++;
               while ((db = bsort[ib].code) == cb)
                 ib += 1;
-              ct = (ia-ja)*(ib-jb);
+
+              ct  = (ia-ja);
+              ct *= (ib-jb);
 
               nhits += ct;
               ca = da;
@@ -1017,7 +1011,7 @@ static void *merge_thread(void *arg)
   uint64 ca, cb;
   uint64 da, db;
   int    ar, ap;
-  int    a, b, d;
+  int    a, b;
 
   ia = data->abeg;
   ca = asort[ia].code;
@@ -1069,8 +1063,8 @@ static void *merge_thread(void *arg)
                           db = bsort[++ib].code;
                         while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
                           db = bsort[++ib].code;
-                        if ((d = ib-jb) > 0)
-                          { kptr[ap & BMASK] += d;
+                        if ((ct = ib-jb) > 0)
+                          { kptr[ap & BMASK] += ct;
                             for (b = jb; b < ib; b++)
                               { hits[nhits].bread = bsort[b].read;
                                 hits[nhits].aread = ar;
@@ -1086,8 +1080,8 @@ static void *merge_thread(void *arg)
                         ar = asort[a].read;
                         while (db == cb && bsort[ib].read < ar)
                           db = bsort[++ib].code;
-                        if ((d = ib-jb) > 0)
-                          { kptr[ap & BMASK] += d;
+                        if ((ct = ib-jb) > 0)
+                          { kptr[ap & BMASK] += ct;
                             for (b = jb; b < ib; b++)
                               { hits[nhits].bread = bsort[b].read;
                                 hits[nhits].aread = ar;
@@ -1119,11 +1113,11 @@ static void *merge_thread(void *arg)
               jb = ib++;
               while ((db = bsort[ib].code) == cb)
                 ib += 1;
-              d = ib-jb;
-              if ((ia-ja)*d < limit)
+              ct = ib-jb;
+              if ((ia-ja)*ct < limit)
                 { for (a = ja; a < ia; a++)
                     { ap = asort[a].rpos;
-                      kptr[ap & BMASK] += d;
+                      kptr[ap & BMASK] += ct;
                       for (b = jb; b < ib; b++)
                         { hits[nhits].bread = bsort[b].read;
                           hits[nhits].aread = asort[a].read;
@@ -1177,8 +1171,8 @@ static void *report_thread(void *arg)
   Align_Spec  *aspec  = data->aspec;
   FILE        *ofile1 = data->ofile1;
   FILE        *ofile2 = data->ofile2;
-  int          afirst = MR_ablock->bfirst;
-  int          bfirst = MR_bblock->bfirst;
+  int          afirst = MR_ablock->tfirst;
+  int          bfirst = MR_bblock->tfirst;
 
   Overlap     _ovla, *ovla = &_ovla;
   Overlap     _ovlb, *ovlb = &_ovlb;
@@ -1405,13 +1399,6 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   atot = ablock->totlen;
   btot = bblock->totlen;
-
-#if __ORDER_LITTLE_ENDIAN__ == __BYTE_ORDER__
-printf("Little\n"); fflush(stdout);
-#else
-printf("Big\n"); fflush(stdout);
-#endif
-
 
   if (comp)
     { asort = Csort;

@@ -73,9 +73,9 @@ in the data set.  The alignment records are parsimonious in that they do not rec
 alignment but simply a set of trace points, typically every 100bp or so, that allow the
 efficient reconstruction of alignments on demand.
 
-1. daligner [-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                     [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
-                     [-H<int>] [-M<int>] <subject:db|dam> <target:db|dam> ...
+1. daligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
+                    [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
+                    [-m<track>]+ <subject:db|dam> <target:db|dam> ...
 
 Compare sequences in the trimmed <subject> block against those in the list of <target>
 blocks searching for local alignments involving at least -l base pairs (default 1000)
@@ -94,9 +94,13 @@ k-mer hits is h (default 35). k cannot be larger than 32 in the current implemen
 If the -b option is set, then the daligner assumes the data has a strong compositional
 bias (e.g. >65% AT rich), and at the cost of a bit more time, dynamically adjusts k-mer
 sizes depending on compositional bias, so that the mers used have an effective
-specificity of 4^k. If the -d option is set, then the daligner looks for a ".dust"
-track produced by DBdust and if it finds it, then it ignores k-mers that contain any
-bases from a low-complexity interval annotated by DBdust.
+specificity of 4^k.
+
+If there are one or more masks set with the -m option, then the read intervals
+specified by the masks are soft masked, that is any k-mers that contain any bases in
+the masked intervals are ignored for the purposes of seeding a match.  A mask is a
+track, such as the "dust" track created by DBdust that encodes a set of intervals
+over either the untrimmed or trimmed DB.
 
 Invariably, some k-mers are significantly over-represented (e.g. homopolymer runs).
 These k-mers create an excessive number of matching k-mer pairs and left unaddressed
@@ -171,14 +175,14 @@ sorted files.
 
 
 4. LAshow [-carUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
-          <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:range> ... ]
+      <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]
 
 LAshow produces a printed listing of the local alignments contained in the specified
 .las file, where the a- and b-reads come from src1 or from src1 and scr2, respectively.
-If a list of read ranges is given then only the overlaps for which the a-read is in
-the set specified by the list are displayed. See DBshow for an explanation of how the
-list of read ranges is interpreted.  If the -F option is set then the roles of the
-a- and b- reads are reversed in the display.
+If a file or list of read ranges is given then only the overlaps for which the a-read
+is in the set specified by the file or list are displayed. See DBshow for an explanation
+of how the file or list of read ranges are interpreted.  If the -F option is set then
+the roles of the a- and b- reads are reversed in the display.
 
 If the -c option is given then a cartoon rendering is displayed, and if -a or -r option
 is set then an alignment of the local alignment is displayed.  The -a option puts
@@ -225,10 +229,10 @@ runs silently.  The exit status is 0 if every file is deemed good, and 1 if at l
 one of the files looks corrupted.
 
 
-8. HPCdaligner [-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>]
-                        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>]
-                        [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
-                        <path:db|dam> [<first:int>[-<last:int>]]
+8. HPCdaligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
+                       [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
+                       [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
+                       <path:db|dam> [<first:int>[-<last:int>]]
 
 HPCdaligner writes a UNIX shell script to the standard output that consists of a
 sequence of commands that effectively run daligner on all pairs of blocks of a split
@@ -240,22 +244,22 @@ Moreover, all overlaps for a given a-read are guaranteed to not be split across 
 so one can run artifact analyzers or error correction on each sorted file in parallel.
 
 The data base must have been previously split by DBsplit and all the parameters, except
--v, -dal, and -mrg, are passed through to the calls to daligner. The defaults for these
+-v, -dal, and -deg, are passed through to the calls to daligner. The defaults for these
 parameters are as for daligner. The -v flag, for verbose-mode, is also passed to all
-calls to LAsort and LAmerge. -dal and -mrg options are described later. For a database
+calls to LAsort and LAmerge. -dal and -deg options are described later. For a database
 divided into N sub-blocks, the calls to daligner will produce in total 2TN^2 .las files
 assuming daligner runs with T threads. These will then be sorted and merged into N^2
-sorted .las files, one for each block pair. These are then merged in ceil(log_mrg N)
-phases where the number of files decreases geometrically in -mrg until there is 1 file
+sorted .las files, one for each block pair. These are then merged in ceil(log_deg N)
+phases where the number of files decreases geometrically in -deg until there is 1 file
 per row of the N x N block matrix. So at the end one has N sorted .las files that when
 concatenated would give a single large sorted overlap file.
 
 The -dal option (default 4) gives the desired number of block comparisons per call to
 daligner. Some must contain dal-1 comparisons, and the first dal-2 block comparisons
 even less, but the HPCdaligner "planner" does the best it can to give an average load
-of dal block comparisons per command. The -mrg option (default 25) gives the maximum
+of dal block comparisons per command. The -deg option (default 25) gives the maximum
 number of files that will be merged in a single LAmerge command. The planner makes the
-most even k-ary tree of merges, where the number of levels is ceil(log_mrg N).
+most even k-ary tree of merges, where the number of levels is ceil(log_deg N).
 
 If the integers <first> and <last> are missing then the script produced is for every
 block in the database.  If <first> is present then HPCdaligner produces an incremental
@@ -272,10 +276,10 @@ Each of these phases is separated by an informative comment line for your script
 convenience.
 
 
-9. HPCmapper [-vbd] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>]
-                    [-e<double(.85)] [-l<int(1000)] [-s<int(100)>]
-                    [-H<int>] [-M<int>] [-dal<int(4)>] [-mrg<int(25)>]
-                    <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]
+9. HPCmapper [-vb] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>]
+                   [-e<double(.85)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
+                   [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
+                   <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]
 
 HPCmapper writes a UNIX shell script to the standard output that consists of a
 sequence of commands that effectively "maps" every read in the DB <reads> against a
@@ -304,11 +308,11 @@ size =        11 cutoff =         0 all = 0
          0         0
       1024      1024
       1862      1862
-> HPCplanner -d -t5 G | csh -v   // Run the HPCdazzler script
+> HPCdaligner -mdust -t5 G | csh -v   // Run the HPCdaligner script
 
 # Dazzler jobs (2)
-dazzler -d -t5 G.1 G.1
-dazzler -d -t5 G.2 G.1 G.2
+dazzler -d -t5 -mdust G.1 G.1
+dazzler -d -t5 -mdust G.2 G.1 G.2
 # Initial sort jobs (4)
 LAsort G.1.G.1.*.las && LAmerge G.L1.1.1 G.1.G.1.*.S.las && rm G.1.G.1.*.S.las
 LAsort G.1.G.2.*.las && LAmerge G.L1.1.2 G.1.G.2.*.S.las && rm G.1.G.2.*.S.las
@@ -347,8 +351,8 @@ G.1: 34,510 records
 
 ...
 
-> LAcat G >G.las   //  Combine G.1.las & G.2.las into a single .las file
-> LAshow G | more    //   Take another look, now at G.las
+> LAcat G >G.las       //  Combine G.1.las & G.2.las into a single .las file
+> LAshow G G | more    //   Take another look, now at G.las
 
 G: 62,654 records
    1    9 c   [     0.. 1,876] x [ 9,017..10,825] :   <    398 diffs  ( 18 trace pts)

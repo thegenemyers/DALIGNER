@@ -60,10 +60,10 @@
 #undef  LSF  //  define if want a directly executable LSF script
 
 static char *Usage[] =
-  { "[-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "         [-e<double(.70)] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
-    "         [-dal<int(4)>] [-mrg<int(25)>]",
-    "         <path:db|dam> [<block:int>[-<range:int>]"
+  { "[-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]",
+    "        [-e<double(.70)] [-l<int(1000)>] [-s<int(100)] [-H<int>]",
+    "        [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]",
+    "        <path:db|dam> [<block:int>[-<range:int>]"
   };
 
 static int power(int base, int exp)
@@ -89,9 +89,11 @@ int main(int argc, char *argv[])
   char *pwd, *root;
 
   int    MUNIT, DUNIT;
-  int    VON, BON, DON, AON, ION;
+  int    VON, BON, AON, ION;
   int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
   double EREL;
+  int    MMAX, MTOP;
+  char **MASK;
 
   { int    i, j, k;         //  Process options
     int    flags[128];
@@ -111,13 +113,18 @@ int main(int argc, char *argv[])
     SINT  = 100;
     MINT  = -1;
 
+    MTOP = 0;
+    MMAX = 10;
+    MASK = (char **) Malloc(MMAX*sizeof(char *),"Allocating mask track array");
+    if (MASK == NULL)
+      exit (1);
+
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-          optflags:
-            ARG_FLAGS("vbdAI");
+            ARG_FLAGS("vbAI");
             break;
           case 'k':
             ARG_POSITIVE(KINT,"K-mer length")
@@ -151,7 +158,16 @@ int main(int argc, char *argv[])
             ARG_NON_NEGATIVE(MINT,"Memory allocation (in Gb)")
             break;
           case 'm':
-            if (argv[i][2] == 'r' && argv[i][3] == 'g')
+            if (MTOP >= MMAX)
+              { MMAX = 1.2*MTOP + 10;
+                MASK = (char **) Realloc(MASK,MMAX*sizeof(char *),"Reallocating mask track array");
+                if (MASK == NULL)
+                  exit (1);
+              }
+            MASK[MTOP++] = argv[i]+2;
+            break;
+          case 'd':
+            if (argv[i][2] == 'e' && argv[i][3] == 'g')
               { MUNIT = strtol(argv[i]+4,&eptr,10);
                 if (*eptr != '\0' || argv[i][4] == '\0')
                   { fprintf(stderr,"%s: -mrg argument is not an integer\n",Prog_Name);
@@ -168,11 +184,7 @@ int main(int argc, char *argv[])
                     exit (1);
                   }
               }
-            else
-              goto optflags;
-            break;
-          case 'd':
-            if (argv[i][2] == 'a' && argv[i][3] == 'l')
+            else if (argv[i][2] == 'a' && argv[i][3] == 'l')
               { DUNIT = strtol(argv[i]+4,&eptr,10);
                 if (*eptr != '\0' || argv[i][4] == '\0')
                   { fprintf(stderr,"%s: -dal argument is not an integer\n",Prog_Name);
@@ -185,7 +197,9 @@ int main(int argc, char *argv[])
                   }
               }
             else
-              goto optflags;
+              { fprintf(stderr,"%s: -%.3s is an illegal option\n",Prog_Name,argv[i]+1);
+                exit (1);
+              }
             break;
         }
       else
@@ -194,7 +208,6 @@ int main(int argc, char *argv[])
 
     VON = flags['v'];
     BON = flags['b'];
-    DON = flags['d'];
     AON = flags['A'];
     ION = flags['I'];
 
@@ -325,8 +338,6 @@ int main(int argc, char *argv[])
               printf(" -v");
             if (BON)
               printf(" -b");
-            if (DON)
-              printf(" -d");
             if (AON)
               printf(" -A");
             if (ION)
@@ -349,6 +360,8 @@ int main(int argc, char *argv[])
               printf(" -s%d",SINT);
             if (MINT >= 0)
               printf(" -M%d",MINT);
+            for (k = 0; k < MTOP; k++)
+              printf(" -m%s",MASK[k]);
             if (useblock)
               if (usepath)
                 printf(" %s/%s.%d",pwd,root,i);

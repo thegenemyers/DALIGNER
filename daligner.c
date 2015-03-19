@@ -86,9 +86,9 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vbdAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-H<int>]",
-    "         [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-M<int>]",
-    "         <subject:db|dam> <target:db|dam> ...",
+  { "[-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]",
+    "        [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-H<int>]",
+    "        [-m<track>]+ <subject:db|dam> <target:db|dam> ...",
   };
 
 int     VERBOSE;   //   Globally visible to filter.c
@@ -176,38 +176,257 @@ static int64 getMemorySize( )
 #endif
 }
 
-static HITS_DB *read_DB(char *name, int dust, int *isdam)
+typedef struct
+  { int *ano;
+    int *end;
+    int  idx;
+    int  out;
+  } Event;
+
+static void reheap(int s, Event **heap, int hsize)
+{ int      c, l, r;
+  Event   *hs, *hr, *hl;
+
+  c  = s;
+  hs = heap[s];
+  while ((l = 2*c) <= hsize)
+    { r  = l+1;
+      hl = heap[l];
+      hr = heap[r];
+      if (hr->idx > hl->idx)
+        { if (hs->idx > hl->idx)
+            { heap[c] = hl;
+              c = l;
+            }
+          else
+            break;
+        }
+      else
+        { if (hs->idx > hr->idx)
+            { heap[c] = hr;
+              c = r;
+            }
+          else
+            break;
+        }
+    }
+  if (c != s)
+    heap[c] = hs;
+}
+
+int64 Merge_Size(HITS_DB *block, int mtop)
+{ Event       ev[mtop+1];
+  Event      *heap[mtop+2];
+  int         r, mhalf;
+  int64       nsize;
+
+  { HITS_TRACK *track;
+    int         i;
+
+    track = block->tracks;
+    for (i = 0; i < mtop; i++)
+      { ev[i].ano = ((int *) (track->data)) + ((int64 *) (track->anno))[0];
+        ev[i].out = 1;
+        heap[i+1] = ev+i;
+        track = track->next;
+      }
+    ev[mtop].idx = INT32_MAX;
+    heap[mtop+1] = ev+mtop;
+  }
+
+  mhalf = mtop/2;
+
+  nsize = 0;
+  for (r = 0; r < block->nreads; r++)
+    { int         i, level, hsize;
+      HITS_TRACK *track;
+
+      track = block->tracks;
+      for (i = 0; i < mtop; i++)
+        { ev[i].end = ((int *) (track->data)) + ((int64 *) (track->anno))[r+1];
+          if (ev[i].ano < ev[i].end)
+            ev[i].idx = *(ev[i].ano);
+          else
+            ev[i].idx = INT32_MAX;
+          track = track->next;
+        }
+      hsize = mtop;
+
+      for (i = mhalf; i > 1; i--)
+        reheap(i,heap,hsize);
+
+      level = 0;
+      while (1)
+        { Event *p;
+
+          reheap(1,heap,hsize);
+
+          p = heap[1];
+          if (p->idx == INT32_MAX) break;
+
+          p->out = 1-p->out;
+          if (p->out)
+            { level -= 1;
+              if (level == 0)
+                nsize += 1;
+            }
+          else
+            { if (level == 0)
+                nsize += 1;
+              level += 1;
+            }
+          p->ano += 1;
+          if (p->ano >= p->end)
+            p->idx = INT32_MAX;
+          else
+            p->idx = *(p->ano);
+        }
+    }
+
+  return (nsize);
+}
+
+HITS_TRACK *Merge_Tracks(HITS_DB *block, int mtop, int64 nsize)
+{ HITS_TRACK *ntrack;
+  Event       ev[mtop+1];
+  Event      *heap[mtop+2];
+  int         r, mhalf;
+  int64      *anno;
+  int        *data;
+
+  ntrack = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),"Allocating merged track");
+  if (ntrack == NULL)
+    exit (1);
+  ntrack->name = Strdup("merge","Allocating merged track");
+  ntrack->anno = anno = (int64 *) Malloc(sizeof(int64)*(block->nreads+1),"Allocating merged track");
+  ntrack->data = data = (int *) Malloc(sizeof(int)*nsize,"Allocating merged track");
+  ntrack->size = sizeof(int);
+  ntrack->next = NULL;
+  if (anno == NULL || data == NULL || ntrack->name == NULL)
+    exit (1);
+
+  { HITS_TRACK *track;
+    int         i;
+
+    track = block->tracks;
+    for (i = 0; i < mtop; i++)
+      { ev[i].ano = ((int *) (track->data)) + ((int64 *) (track->anno))[0];
+        ev[i].out = 1;
+        heap[i+1] = ev+i;
+        track = track->next;
+      }
+    ev[mtop].idx = INT32_MAX;
+    heap[mtop+1] = ev+mtop;
+  }
+
+  mhalf = mtop/2;
+
+  nsize = 0;
+  for (r = 0; r < block->nreads; r++)
+    { int         i, level, hsize;
+      HITS_TRACK *track;
+
+      anno[r] = nsize;
+
+      track = block->tracks;
+      for (i = 0; i < mtop; i++)
+        { ev[i].end = ((int *) (track->data)) + ((int64 *) (track->anno))[r+1];
+          if (ev[i].ano < ev[i].end)
+            ev[i].idx = *(ev[i].ano);
+          else
+            ev[i].idx = INT32_MAX;
+          track = track->next;
+        }
+      hsize = mtop;
+
+      for (i = mhalf; i > 1; i--)
+        reheap(i,heap,hsize);
+
+      level = 0;
+      while (1)
+        { Event *p;
+
+          reheap(1,heap,hsize);
+
+          p = heap[1];
+          if (p->idx == INT32_MAX) break;
+
+          p->out = 1-p->out;
+          if (p->out)
+            { level -= 1;
+              if (level == 0)
+                data[nsize++] = p->idx;
+            }
+          else
+            { if (level == 0)
+                data[nsize++] = p->idx;
+              level += 1;
+            }
+          p->ano += 1;
+          if (p->ano >= p->end)
+            p->idx = INT32_MAX;
+          else
+            p->idx = *(p->ano);
+        }
+    }
+  anno[r] = nsize;
+
+  return (ntrack);
+}
+
+static HITS_DB *read_DB(char *name, char **mask, int mtop, int *isdam)
 { static HITS_DB  block;
-  HITS_TRACK     *dtrack;
-  int             status;
+  int             i, status, stop;
 
   status = Open_DB(name,&block);
   if (status < 0)
     exit (1);
+  *isdam = status;
 
-  if (dust)
-    dtrack = Load_Track(&block,"dust");
-  else
-    dtrack = NULL;
+  for (i = 0; i < mtop; i++)
+    { status = Check_Track(&block,mask[i]);
+      if (status == -2)
+        printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,mask[i]);
+      else if (status == -1)
+        printf("%s: Warning: %s track not sync'd with db.\n",Prog_Name,mask[i]);
+      else if (status == 0)
+        Load_Track(&block,mask[i]);
+    }
 
   Trim_DB(&block);
 
-  if (block.totlen > 0x7fffffffll)
-    { fprintf(stderr,"File (%s) is too large\n",name);
-      exit (1);
+  stop = 0;
+  for (i = 0; i < mtop; i++)
+    { HITS_TRACK *track;
+      int64      *anno;
+      int         j;
+
+      status = Check_Track(&block,mask[i]);
+      if (status < 0)
+        continue;
+      stop += 1;
+      track = Load_Track(&block,mask[i]);
+
+      anno = (int64 *) (track->anno); 
+      for (j = 0; j <= block.nreads; j++)
+        anno[j] /= sizeof(int);
+    }
+
+  if (stop > 1)
+    { int64       nsize;
+      HITS_TRACK *track;
+
+      nsize = Merge_Size(&block,stop);
+      track = Merge_Tracks(&block,stop,nsize);
+
+      while (block.tracks != NULL)
+        Close_Track(&block,block.tracks->name);
+
+      block.tracks = track;
     }
 
   Read_All_Sequences(&block,0);
 
-  if (dtrack != NULL)
-    { int64 *anno = (int64 *) (dtrack->anno); 
-      int  i;
-
-      for (i = 0; i <= block.nreads; i++)
-        anno[i] /= sizeof(int);
-    }
-
-  *isdam = status;
   return (&block);
 }
 
@@ -261,10 +480,7 @@ static HITS_DB *complement_DB(HITS_DB *block)
     int         p, rlen;
     int64       j, *tano;
 
-    for (t = block->tracks; t != NULL; t++)
-      if (strcmp(t->name,"dust") == 0)
-        break;
-    if (t != NULL)
+    for (t = block->tracks; t != NULL; t = t->next)
       { tano = (int64 *) t->anno;
         tata = (int *) t->data;
 
@@ -298,8 +514,9 @@ int main(int argc, char *argv[])
   char       *aroot,  *broot;
   Align_Spec *asettings;
   int         isdam;
+  int         MMAX, MTOP;
+  char      **MASK;
 
-  int    DUSTED;
   int    KMER_LEN;
   int    BIN_SHIFT;
   int    MAX_REPS;
@@ -329,12 +546,18 @@ int main(int argc, char *argv[])
         fflush(stderr);
       }
 
-    j = 1;
+    MTOP = 0;
+    MMAX = 10;
+    MASK = (char **) Malloc(MMAX*sizeof(char *),"Allocating mask track array");
+    if (MASK == NULL)
+      exit (1);
+
+    j    = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vbdAI")
+            ARG_FLAGS("vbAI")
             break;
           case 'k':
             ARG_POSITIVE(KMER_LEN,"K-mer length")
@@ -372,6 +595,15 @@ int main(int argc, char *argv[])
               MEM_LIMIT = limit * 0x40000000ll;
               break;
             }
+          case 'm':
+            if (MTOP >= MMAX)
+              { MMAX = 1.2*MTOP + 10;
+                MASK = (char **) Realloc(MASK,MMAX*sizeof(char *),"Reallocating mask track array");
+                if (MASK == NULL)
+                  exit (1);
+              }
+            MASK[MTOP++] = argv[i]+2;
+            break;
         }
       else
         argv[j++] = argv[i];
@@ -379,7 +611,6 @@ int main(int argc, char *argv[])
 
     VERBOSE   = flags['v'];   //  Globally declared in filter.h
     BIASED    = flags['b'];   //  Globally declared in filter.h
-    DUSTED    = flags['d'];
     SYMMETRIC = 1-flags['A'];
     IDENTITY  = flags['I'];
 
@@ -400,7 +631,7 @@ int main(int argc, char *argv[])
   /* Read in the reads in A */
 
   afile  = argv[1];
-  ablock = *read_DB(afile,DUSTED,&isdam);
+  ablock = *read_DB(afile,MASK,MTOP,&isdam);
   cblock = *complement_DB(&ablock);
   if (isdam)
     aroot = Root(afile,".dam");
@@ -433,7 +664,7 @@ int main(int argc, char *argv[])
             Match_Filter(aroot,&cblock,aroot,&ablock,1,1,asettings);
           }
         else
-          { bblock = *read_DB(bfile,DUSTED,&isdam);
+          { bblock = *read_DB(bfile,MASK,MTOP,&isdam);
             if (isdam)
               broot = Root(bfile,".dam");
             else
@@ -441,8 +672,8 @@ int main(int argc, char *argv[])
             Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
             Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
             Close_DB(&bblock);
+            free(broot);
           }
-        free(broot);
       }
   }
 

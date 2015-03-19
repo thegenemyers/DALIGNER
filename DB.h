@@ -223,8 +223,8 @@ typedef struct
 //    is always a HITS_QV pseudo-track (if the QVs have been loaded).
 
 typedef struct
-  { int         oreads;     //  Total number of reads in DB
-    int         breads;     //  Total number of reads in trimmed DB (if trimmed set)
+  { int         ureads;     //  Total number of reads in untrimmed DB
+    int         treads;     //  Total number of reads in trimmed DB
     int         cutoff;     //  Minimum read length in block (-1 if not yet set)
     int         all;        //  Consider multiple reads from a given well
     float       freq[4];    //  frequency of A, C, G, T, respectively
@@ -237,14 +237,20 @@ typedef struct
     int         nreads;     //  # of reads in actively loaded portion of DB
     int         trimmed;    //  DB has been trimmed by cutoff/all
     int         part;       //  DB block (if > 0), total DB (if == 0)
-    int         ofirst;     //  Index of first read in block (without trimming)
-    int         bfirst;     //  Index of first read in block (with trimming)
+    int         ufirst;     //  Index of first read in block (without trimming)
+    int         tfirst;     //  Index of first read in block (with trimming)
 
-    char       *path;       //  Root name of DB for .bps and tracks
+       //  In order to avoid forcing users to have to rebuild all thier DBs to accommodate
+       //    the addition of fields for the size of the actively loaded trimmed and untrimmed
+       //    blocks, an additional read record is allocated in "reads" when a DB is loaded into
+       //    memory (reads[-1]) and the two desired fields are crammed into the first two
+       //    integer spaces of the record.
+
+    char       *path;       //  Root name of DB for .bps, .qvs, and tracks
     int         loaded;     //  Are reads loaded in memory?
     void       *bases;      //  file pointer for bases file (to fetch reads from),
                             //    or memory pointer to uncompressed block of all sequences.
-    HITS_READ  *reads;      //  Array [0..nreads] of HITS_READ
+    HITS_READ  *reads;      //  Array [-1..nreads] of HITS_READ
     HITS_TRACK *tracks;     //  Linked list of loaded tracks
   } HITS_DB; 
 
