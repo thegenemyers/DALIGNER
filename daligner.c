@@ -374,7 +374,7 @@ HITS_TRACK *Merge_Tracks(HITS_DB *block, int mtop, int64 nsize)
   return (ntrack);
 }
 
-static HITS_DB *read_DB(char *name, char **mask, int mtop, int *isdam)
+static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int *isdam)
 { static HITS_DB  block;
   int             i, status, stop;
 
@@ -385,11 +385,9 @@ static HITS_DB *read_DB(char *name, char **mask, int mtop, int *isdam)
 
   for (i = 0; i < mtop; i++)
     { status = Check_Track(&block,mask[i]);
-      if (status == -2)
-        printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,mask[i]);
-      else if (status == -1)
-        printf("%s: Warning: %s track not sync'd with db.\n",Prog_Name,mask[i]);
-      else if (status == 0)
+      if (status > mstat[i])
+        mstat[i] = status;
+      if (status == 0)
         Load_Track(&block,mask[i]);
     }
 
@@ -514,7 +512,7 @@ int main(int argc, char *argv[])
   char       *aroot,  *broot;
   Align_Spec *asettings;
   int         isdam;
-  int         MMAX, MTOP;
+  int         MMAX, MTOP, *MSTAT;
   char      **MASK;
 
   int    KMER_LEN;
@@ -546,10 +544,11 @@ int main(int argc, char *argv[])
         fflush(stderr);
       }
 
-    MTOP = 0;
-    MMAX = 10;
-    MASK = (char **) Malloc(MMAX*sizeof(char *),"Allocating mask track array");
-    if (MASK == NULL)
+    MTOP  = 0;
+    MMAX  = 10;
+    MASK  = (char **) Malloc(MMAX*sizeof(char *),"Allocating mask track array");
+    MSTAT = (int *) Malloc(MMAX*sizeof(int),"Allocating mask status array");
+    if (MASK == NULL || MSTAT == NULL)
       exit (1);
 
     j    = 1;
@@ -597,11 +596,13 @@ int main(int argc, char *argv[])
             }
           case 'm':
             if (MTOP >= MMAX)
-              { MMAX = 1.2*MTOP + 10;
-                MASK = (char **) Realloc(MASK,MMAX*sizeof(char *),"Reallocating mask track array");
-                if (MASK == NULL)
+              { MMAX  = 1.2*MTOP + 10;
+                MASK  = (char **) Realloc(MASK,MMAX*sizeof(char *),"Reallocating mask track array");
+                MSTAT = (int *) Realloc(MSTAT,MMAX*sizeof(int),"Reallocating mask status array");
+                if (MASK == NULL || MSTAT == NULL)
                   exit (1);
               }
+            MSTAT[MTOP]  = -2;
             MASK[MTOP++] = argv[i]+2;
             break;
         }
@@ -631,7 +632,7 @@ int main(int argc, char *argv[])
   /* Read in the reads in A */
 
   afile  = argv[1];
-  ablock = *read_DB(afile,MASK,MTOP,&isdam);
+  ablock = *read_DB(afile,MASK,MSTAT,MTOP,&isdam);
   cblock = *complement_DB(&ablock);
   if (isdam)
     aroot = Root(afile,".dam");
@@ -643,33 +644,43 @@ int main(int argc, char *argv[])
 
   asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock.freq);
 
-  /* Build indices for A and A complement */
-
-  if (VERBOSE)
-    printf("\nBuilding index for %s\n",aroot);
-  Build_Table(&ablock);
-
-  if (VERBOSE)
-    printf("\nBuilding index for c(%s)\n",aroot);
-  Build_Table(&cblock);
-
   /* Compare against reads in B in both orientations */
 
-  { int i;
+  { int i, j;
 
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
+        if (strcmp(afile,bfile) != 0)
+          { bblock = *read_DB(bfile,MASK,MSTAT,MTOP,&isdam);
+            if (isdam)
+              broot = Root(bfile,".dam");
+            else
+              broot = Root(bfile,".db");
+          }
+
+        if (i == 2)
+          { for (j = 0; j < MTOP; j++)
+              { if (MSTAT[j] == -2)
+                  printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,MASK[i]);
+                else if (MSTAT[j] == -1)
+                  printf("%s: Warning: %s track not sync'd with relevant db.\n",Prog_Name,MASK[i]);
+              }
+
+            if (VERBOSE)
+              printf("\nBuilding index for %s\n",aroot);
+            Build_Table(&ablock);
+
+            if (VERBOSE)
+              printf("\nBuilding index for c(%s)\n",aroot);
+            Build_Table(&cblock);
+          }
+      
         if (strcmp(afile,bfile) == 0)
           { Match_Filter(aroot,&ablock,aroot,&ablock,1,0,asettings);
             Match_Filter(aroot,&cblock,aroot,&ablock,1,1,asettings);
           }
         else
-          { bblock = *read_DB(bfile,MASK,MTOP,&isdam);
-            if (isdam)
-              broot = Root(bfile,".dam");
-            else
-              broot = Root(bfile,".db");
-            Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
+          { Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
             Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
             Close_DB(&bblock);
             free(broot);

@@ -96,11 +96,12 @@ bias (e.g. >65% AT rich), and at the cost of a bit more time, dynamically adjust
 sizes depending on compositional bias, so that the mers used have an effective
 specificity of 4^k.
 
-If there are one or more masks set with the -m option, then the read intervals
-specified by the masks are soft masked, that is any k-mers that contain any bases in
-the masked intervals are ignored for the purposes of seeding a match.  A mask is a
-track, such as the "dust" track created by DBdust that encodes a set of intervals
-over either the untrimmed or trimmed DB.
+If there are one or more interval tracks specified with the -m option, then the reads
+of the DB or DB's to which the mask applies are soft masked with the union of the
+intervals of all the interval tracks that apply, that is any k-mers that contain any
+bases in any of the masked intervals are ignored for the purposes of seeding a match.
+An interval track is a track, such as the "dust" track created by DBdust, that encodes
+a set of intervals over either the untrimmed or trimmed DB.
 
 Invariably, some k-mers are significantly over-represented (e.g. homopolymer runs).
 These k-mers create an excessive number of matching k-mer pairs and left unaddressed
@@ -181,7 +182,7 @@ LAshow produces a printed listing of the local alignments contained in the speci
 .las file, where the a- and b-reads come from src1 or from src1 and scr2, respectively.
 If a file or list of read ranges is given then only the overlaps for which the a-read
 is in the set specified by the file or list are displayed. See DBshow for an explanation
-of how the file or list of read ranges are interpreted.  If the -F option is set then
+of how the file and list of read ranges are interpreted.  If the -F option is set then
 the roles of the a- and b- reads are reversed in the display.
 
 If the -c option is given then a cartoon rendering is displayed, and if -a or -r option
