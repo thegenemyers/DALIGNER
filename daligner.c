@@ -374,7 +374,7 @@ HITS_TRACK *Merge_Tracks(HITS_DB *block, int mtop, int64 nsize)
   return (ntrack);
 }
 
-static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int *isdam)
+static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int kmer, int *isdam)
 { static HITS_DB  block;
   int             i, status, stop;
 
@@ -421,6 +421,15 @@ static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int *isda
         Close_Track(&block,block.tracks->name);
 
       block.tracks = track;
+    }
+
+  if (block.cutoff < kmer)
+    { for (i = 0; i < block.nreads; i++)
+        if (block.reads[i].rlen < kmer)
+          { fprintf(stderr,"%s: Block %s contains reads < %dbp long !  Run DBsplit.\n",
+                           Prog_Name,name,kmer);
+            exit (1);
+          }
     }
 
   Read_All_Sequences(&block,0);
@@ -632,7 +641,7 @@ int main(int argc, char *argv[])
   /* Read in the reads in A */
 
   afile  = argv[1];
-  ablock = *read_DB(afile,MASK,MSTAT,MTOP,&isdam);
+  ablock = *read_DB(afile,MASK,MSTAT,MTOP,KMER_LEN,&isdam);
   cblock = *complement_DB(&ablock);
   if (isdam)
     aroot = Root(afile,".dam");
@@ -651,7 +660,7 @@ int main(int argc, char *argv[])
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
         if (strcmp(afile,bfile) != 0)
-          { bblock = *read_DB(bfile,MASK,MSTAT,MTOP,&isdam);
+          { bblock = *read_DB(bfile,MASK,MSTAT,MTOP,KMER_LEN,&isdam);
             if (isdam)
               broot = Root(bfile,".dam");
             else
