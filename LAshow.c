@@ -449,7 +449,7 @@ int main(int argc, char *argv[])
         aln->alen  = db1->reads[ovl->aread].rlen;
         aln->blen  = db2->reads[ovl->bread].rlen;
         aln->flags = ovl->flags;
-        tps        = ((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace);
+        tps        = ovl->path.tlen/2;
 
         if (MAP)
           { while (ovl->bread != blast)
@@ -473,9 +473,6 @@ int main(int argc, char *argv[])
             match = 1;
           }
             
-        // printf(" %7d %7d\n",ovl->path.abpos,ovl->path.aepos);
-        // continue;
-
         if (ALIGN || CARTOON || REFERENCE)
           printf("\n");
         if (FLIP)

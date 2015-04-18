@@ -189,7 +189,7 @@ typedef struct
   } HITS_READ;
 
 //  A track can be of 3 types:
-//    data == NULL: there are nreads+1 'anno' records of size 'size'.
+//    data == NULL: there are nreads 'anno' records of size 'size'.
 //    data != NULL && size == 4: anno is an array of nreads+1 int's and data[anno[i]..anno[i+1])
 //                                    contains the variable length data
 //    data != NULL && size == 8: anno is an array of nreads+1 int64's and data[anno[i]..anno[i+1])
@@ -284,7 +284,7 @@ typedef struct
   //    1. there are no QV's, instead .coff points the '\0' terminated fasta header of the read
   //          in the file .<dam>.hdr file
   //    2. .origin contains the contig # of the read within a fasta entry (assembly sequences
-  //          contain N-separated contigs), and .fpulse the first base ofn the contig in the
+  //          contain N-separated contigs), and .fpulse the first base of the contig in the
   //          fasta entry
 
   // Open the given database or dam, "path" into the supplied HITS_DB record "db". If the name has
@@ -297,7 +297,7 @@ typedef struct
 
 int Open_DB(char *path, HITS_DB *db);
 
-  // Trim the DB or part thereof and all loaded tracks according to the cuttof and all settings
+  // Trim the DB or part thereof and all loaded tracks according to the cutoff and all settings
   //   of the current DB partition.  Reallocate smaller memory blocks for the information kept
   //   for the retained reads.
 

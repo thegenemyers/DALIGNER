@@ -909,7 +909,7 @@ void QVcoding_Scan(FILE *input)
         }
       slash = index(Read+1,'/');
       if (slash == NULL)
-  	    { fprintf(stderr,"%s: Line %d: Header line incorrectly formatted ?\n",
+        { fprintf(stderr,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
           exit (1);
         }

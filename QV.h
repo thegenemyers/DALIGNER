@@ -78,7 +78,7 @@ void     QVcoding_Scan(FILE *input);
 
   // Given QVcoding_Scan has been called at least once, create an encoding scheme based on
   //   the accumulated statistics and return a pointer to it.  The returned encoding object
-  //   is *statically allocated within the routine.  If lossy is set then use a lossy scaling
+  //   is *statically* allocated within the routine.  If lossy is set then use a lossy scaling
   //   for the insertion and merge streams.
 
 QVcoding *Create_QVcoding(int lossy);
@@ -99,7 +99,7 @@ void      Free_QVcoding(QVcoding *coding);
 
 void      Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy);
 
-  //  Assuming the input is position just beyond the compressed encoding of an entry header,
+  //  Assuming the input is positioned just beyond the compressed encoding of an entry header,
   //    read the set of compressed encodings for the ensuing 5 QV vectors, decompress them,
   //    and place their decompressed values into entry which is a 5 element array of character
   //    pointers.  The parameter rlen computed from the preceeding header line, critically

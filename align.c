@@ -61,8 +61,6 @@
 #include "DB.h"
 #include "align.h"
 
-#define   DELTAS
-
 #undef    DEBUG_PASSES     //  Show forward / backward extension termini for Local_Alignment
 #undef    DEBUG_POINTS     //  Show trace points
 #undef    DEBUG_WAVE       //  Show waves of Local_Alignment
@@ -344,9 +342,7 @@ static void print_wave(int *V, int *M, int low, int hgh, int besta)
 typedef struct
   { int ptr;
     int diag;
-#ifdef DELTAS
     int diff;
-#endif
     int mark;
   } Pebble;
 
@@ -474,9 +470,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         pb = cells+avail;
         pb->ptr  = -1;
         pb->diag = k;
-#ifdef DELTAS
         pb->diff = 0;
-#endif
         pb->mark = na;
         ha  = avail++;
         na += TRACE_SPACE;
@@ -488,9 +482,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         pb = cells+avail;
         pb->ptr  = -1;
         pb->diag = k;
-#ifdef DELTAS
         pb->diff = 0;
-#endif
         pb->mark = nb;
         hb  = avail++;
         nb += TRACE_SPACE;
@@ -528,9 +520,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
             pb = cells+avail;
             pb->ptr  = ha;
             pb->diag = k;
-#ifdef DELTAS
             pb->diff = 0;
-#endif
             pb->mark = na;
             ha  = avail++;
             na += TRACE_SPACE;
@@ -548,9 +538,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
             pb = cells+avail;
             pb->ptr  = hb;
             pb->diag = k;
-#ifdef DELTAS
             pb->diff = 0;
-#endif
             pb->mark = nb;
             hb  = avail++;
             nb += TRACE_SPACE;
@@ -722,9 +710,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
                   pb = cells+avail;
                   pb->ptr  = ha;
                   pb->diag = k;
-#ifdef DELTAS
                   pb->diff = dif;
-#endif
                   pb->mark = NA[k];
                   ha = avail++;
                 }
@@ -746,9 +732,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
                   pb = cells+avail;
                   pb->ptr  = hb;
                   pb->diag = k;
-#ifdef DELTAS
                   pb->diff = dif;
-#endif
                   pb->mark = NB[k];
                   hb = avail++;
                 }
@@ -841,9 +825,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
     int     atlen, btlen;
     int     trimx;
     int     a, b, k, h;
-#ifdef DELTAS
     int     d, e;
-#endif
 
     if (morem >= 0)
       { trimx  = morea-morey;
@@ -864,8 +846,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         a = h;
       }
     h = a;
-
-#ifdef DELTAS
 
     k = cells[h].diag;
     b = (mida-k)/2;
@@ -900,37 +880,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
 #endif
       }
 
-#else    //  DELTAS
-
-    k = cells[h].diag;
-    b = (mida-k)/2;
-#ifdef SHOW_TRAIL
-    printf("  A path = (%5d,%5d)\n",(mida+k)/2,b); fflush(stdout);
-#endif
-    for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
-      { k = cells[h].diag;
-        a = cells[h].mark - k;
-        atrace[atlen++] = (uint16) (a-b);
-#ifdef SHOW_TRAIL
-        printf("     %4d: (%5d,%5d): %3d\n",h,a+k,a,a-b); fflush(stdout);
-#endif
-        b = a;
-      }
-    if (b+k != trimx)
-      { atrace[atlen++] = (uint16) (trimy-b);
-#ifdef SHOW_TRAIL
-        printf("           (%5d,%5d): %3d\n",trimx,trimy,trimy-b); fflush(stdout);
-#endif
-      }
-    else if (b != trimy)
-      { atrace[atlen-1] = (uint16) (atrace[atlen-1] + (trimy-b));
-#ifdef SHOW_TRAIL
-        printf("         @ (%5d,%5d): %3d\n",trimx,trimy,trimy-b); fflush(stdout);
-#endif
-      }
-
-#endif   //  DELTAS
-
     a = -1;
     for (h = trimhb; h >= 0; h = b)
       { b = cells[h].ptr; 
@@ -938,8 +887,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         a = h;
       }
     h = a;
-
-#ifdef DELTAS
 
     k = cells[h].diag;
     b = (mida+k)/2;
@@ -974,38 +921,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
         printf("         @ (%5d,%5d): %3d / %3d\n",trimx,trimy,trimd-e,trimx-b); fflush(stdout);
 #endif
       }
-
-#else  //  DELTAS
-
-    k = cells[h].diag;
-    b = (mida+k)/2;
-    low = k;
-#ifdef SHOW_TRAIL
-    printf("  B path = (%5d,%5d)\n",b,(mida-k)/2); fflush(stdout);
-#endif
-    for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
-      { k = cells[h].diag;
-        a = cells[h].mark + k;
-        btrace[btlen++] = (uint16) (a-b);
-#ifdef SHOW_TRAIL
-        printf("     %4d: (%5d,%5d): %3d\n",h,a,a-k,a-b); fflush(stdout);
-#endif
-        b = a;
-      }
-    if (b-k != trimy)
-      { btrace[btlen++] = (uint16) (trimx-b);
-#ifdef SHOW_TRAIL
-        printf("           (%5d,%5d): %3d\n",trimx,trimy,trimx-b); fflush(stdout);
-#endif
-      }
-    else if (b != trimx)
-      { btrace[btlen-1] = (uint16) (btrace[btlen-1] + (trimx-b));
-#ifdef SHOW_TRAIL
-        printf("         @ (%5d,%5d): %3d\n",trimx,trimy,trimx-b); fflush(stdout);
-#endif
-      }
-
-#endif   //  DELTAS
 
     apath->aepos = trimx;
     apath->bepos = trimy;
@@ -1152,9 +1067,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
         pb = cells+avail;
         pb->ptr  = -1;
         pb->diag = k;
-#ifdef DELTAS
         pb->diff = 0;
-#endif
         pb->mark = y+k;
         ha  = avail++;
 
@@ -1165,9 +1078,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
         pb = cells+avail;
         pb->ptr  = -1;
         pb->diag = k;
-#ifdef DELTAS
         pb->diff = 0;
-#endif
         pb->mark = y;
         hb  = avail++;
 
@@ -1204,9 +1115,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
             pb = cells+avail;
             pb->ptr  = ha;
             pb->diag = k;
-#ifdef DELTAS
             pb->diff = 0;
-#endif
             pb->mark = na;
             ha  = avail++;
             na -= TRACE_SPACE;
@@ -1224,9 +1133,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
             pb = cells+avail;
             pb->ptr  = hb;
             pb->diag = k;
-#ifdef DELTAS
             pb->diff = 0;
-#endif
             pb->mark = nb;
             hb  = avail++;
             nb -= TRACE_SPACE;
@@ -1396,9 +1303,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
                   pb = cells+avail;
                   pb->ptr  = ha;
                   pb->diag = k;
-#ifdef DELTAS
                   pb->diff = dif;
-#endif
                   pb->mark = NA[k];
                   ha = avail++;
                 }
@@ -1419,9 +1324,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
                   pb = cells+avail;
                   pb->ptr  = hb;
                   pb->diag = k;
-#ifdef DELTAS
                   pb->diff = dif;
-#endif
                   pb->mark = NB[k];
                   hb = avail++;
                 }
@@ -1514,9 +1417,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
     int     atlen, btlen;
     int     trimx;
     int     a, b, k, h;
-#ifdef DELTAS
     int     d, e;
-#endif
 
     if (morem >= 0)
       { trimx  = morea-morey;
@@ -1537,8 +1438,6 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
         a = h;
       }
     h = a;
-
-#ifdef DELTAS
 
     k = cells[h].diag;
     b = cells[h].mark - k;
@@ -1600,56 +1499,6 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
           }
       }
 
-#else   //  DELTAS
-
-    k = cells[h].diag;
-    b = cells[h].mark - k;
-#ifdef SHOW_TRAIL
-    printf("  A path = (%5d,%5d)\n",b+k,b); fflush(stdout);
-#endif
-    if ((b+k)%TRACE_SPACE != 0)
-      { h = cells[h].ptr;
-        if (h < 0)
-          a = trimy;
-        else
-          { k = cells[h].diag;
-            a = cells[h].mark - k;
-          }
-#ifdef SHOW_TRAIL
-        printf("    +%4d: (%5d,%5d): %3d\n",h,a+k,a,b-a); fflush(stdout);
-#endif
-        if (apath->tlen == 0)
-          atrace[--atlen] = (uint16) (b-a);
-        else
-          atrace[0] = (uint16) (atrace[0] + (b-a));
-        b = a;
-      }
-    if (h >= 0)
-      { for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
-          { k = cells[h].diag;
-            a = cells[h].mark - k;
-            atrace[--atlen] = (uint16) (b-a);
-#ifdef SHOW_TRAIL
-            printf("     %4d: (%5d,%5d): %3d\n",h,a+k,a,b-a); fflush(stdout);
-#endif
-            b = a;
-          }
-        if (b+k != trimx)
-          { atrace[--atlen] = (uint16) (b-trimy);
-#ifdef SHOW_TRAIL
-            printf("           (%5d,%5d): %3d\n",trimx,trimy,b-trimy); fflush(stdout);
-#endif
-          }
-        else if (b != trimy)
-          { atrace[atlen] = (uint16) (atrace[atlen] + (b-trimy));
-#ifdef SHOW_TRAIL
-            printf("         @ (%5d,%5d): %3d\n",trimx,trimy,b-trimy); fflush(stdout);
-#endif
-          }
-      }
-
-#endif     // DELTAS
-
     a = -1;
     for (h = trimhb; h >= 0; h = b)
       { b = cells[h].ptr; 
@@ -1657,8 +1506,6 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
         a = h;
       }
     h = a;
-
-#ifdef DELTAS
 
     k = cells[h].diag;
     b = cells[h].mark + k;
@@ -1721,57 +1568,6 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
           }
       }
 
-#else //  DELTAS
-
-    k = cells[h].diag;
-    b = cells[h].mark + k;
-#ifdef SHOW_TRAIL
-    printf("  B path = (%5d,%5d)\n",b,b-k); fflush(stdout);
-#endif
-    if ((b-k)%TRACE_SPACE != boff)
-      { h = cells[h].ptr;
-        if (h < 0)
-          a = trimx;
-        else
-          { k = cells[h].diag;
-            a = cells[h].mark + k;
-          }
-#ifdef SHOW_TRAIL
-        printf("    +%4d: (%5d,%5d): %3d\n",h,a,a-k,b-a); fflush(stdout);
-#endif
-        if (bpath->tlen == 0)
-          btrace[--btlen] = (uint16) (b-a);
-        else
-          btrace[0] = (uint16) (btrace[0] + (b-a));
-        b = a;
-      }
-
-    if (h >= 0)
-      { for (h = cells[h].ptr; h >= 0; h = cells[h].ptr)
-          { k = cells[h].diag;
-            a = cells[h].mark + k;
-            btrace[--btlen] = (uint16) (b-a);
-#ifdef SHOW_TRAIL
-            printf("     %4d: (%5d,%5d): %3d\n",h,a,a-k,b-a); fflush(stdout);
-#endif
-            b = a;
-          }
-        if (b-k != trimy)
-          { btrace[--btlen] = (uint16) (b-trimx);
-#ifdef SHOW_TRAIL
-            printf("           (%5d,%5d): %3d\n",trimx,trimy,b-trimx); fflush(stdout);
-#endif
-          }
-        else if (b != trimx)
-          { btrace[btlen] = (uint16) (btrace[btlen] + (b-trimx));
-#ifdef SHOW_TRAIL
-            printf("         @ (%5d,%5d): %3d\n",trimx,trimy,b-trimx); fflush(stdout);
-#endif
-          }
-      }
-
-#endif   // DELTAS
-
     apath->abpos = trimx;
     apath->bbpos = trimy;
     apath->diffs = apath->diffs + trimd;
@@ -1805,12 +1601,12 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   _Align_Spec *spec = (_Align_Spec *) espec;
 
   Path *apath, *bpath;
+  int alen, blen;
 
-  { int alen, blen;
-    int maxtp, wsize;
+  alen = align->alen;
+  blen = align->blen;
 
-    alen = align->alen;
-    blen = align->blen;
+  { int maxtp, wsize;
 
     wsize = (6*sizeof(int) + sizeof(BVEC))*(alen+blen+3);
     if (wsize >= work->vecmax)
@@ -1840,6 +1636,14 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
     l = xlow-ycnt;
     h = xhgh-ycnt;
     a = (xlow+xhgh)/2+ycnt;
+    if (a < h)
+      a = h;
+    if (a < -l)
+      a = -l;
+    if (a > 2*alen - h)
+      a = 2*alen-h;
+    if (a > 2*blen + l)
+      a = 2*blen+l;
 
     l = forward_wave(work,spec,align,bpath,l,h,a);
 #ifdef DEBUG_PASSES
@@ -1857,7 +1661,6 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
       uint16  p;
       int     i, j;
 
-#ifdef DELTAS
       i = bpath->tlen-2;
       j = 0;
       while (j < i)
@@ -1870,17 +1673,6 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
           i -= 2;
           j += 2;
         }
-#else
-      i = bpath->tlen-1;
-      j = 0;
-      while (j < i)
-        { p = trace[i];
-          trace[i] = trace[j];
-          trace[j] = p;
-          i -= 1;
-          j += 1;
-        }
-#endif
     }
 
 #ifdef DEBUG_POINTS
@@ -1890,20 +1682,12 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
     printf("\nA-path (%d,%d)->(%d,%d)",apath->abpos,apath->bbpos,apath->aepos,apath->bepos);
     printf(" %c\n",(COMP(align->flags) ? 'c' : 'n'));
     a = apath->bbpos;
-#ifdef DELTAS
     for (h = 1; h < apath->tlen; h += 2)
       { int dif = trace[h-1];
         int del = trace[h];
         a += del;
         printf("      %d / %d (%d)\n",dif,del,a);
       }
-#else
-    for (h = 0; h < apath->tlen; h++)
-      { int del = trace[h];
-        a += del;
-        printf("      %d (%d)\n",del,a);
-      }
-#endif
   }
 
   { uint16 *trace = (uint16 *) bpath->trace;
@@ -1912,20 +1696,12 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
     printf("\nB-path (%d,%d)->(%d,%d)",bpath->abpos,bpath->bbpos,bpath->aepos,bpath->bepos);
     printf(" %c [%d,%d]\n",(COMP(align->flags) ? 'c' : 'n'),align->blen,align->alen);
     a = bpath->bbpos;
-#ifdef DELTAS
     for (h = 1; h < bpath->tlen; h += 2)
       { int dif = trace[h-1];
         int del = trace[h];
         a += del;
         printf("      %d / %d (%d)\n",dif,del,a);
       }
-#else
-    for (h = 0; h < bpath->tlen; h++)
-      { int del = trace[h];
-        a += del;
-        printf("      %d (%d)\n",del,a);
-      }
-#endif
   }
 #endif
 
@@ -1994,7 +1770,6 @@ void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent)
   if (tbytes == 1)
     { uint8 *trace = (uint8 *) (ovl->path.trace);
       if (trace != NULL)
-#ifdef DELTAS
         { int p = ovl->path.bbpos + trace[1];
           fprintf(output,"%*sTrace: %3d/%5d",indent,"",trace[0],p);
           for (i = 3; i < ovl->path.tlen; i += 2)
@@ -2003,23 +1778,12 @@ void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent)
               p += trace[i];
               fprintf(output," %3d/%5d",trace[i-1],p);
             }
-#else
-        { int p = ovl->path.bbpos + trace[0];
-          fprintf(output,"%*sTrace: %5d",indent,"",p);
-          for (i = 1; i < ovl->path.tlen; i++)
-            { if (i%10 == 0)
-                fprintf(output,"\n%*s",indent+6,"");
-              p += trace[i];
-              fprintf(output," %5d",p);
-            }
-#endif
           fprintf(output,"\n");
         }
     }
   else
     { uint16 *trace = (uint16 *) (ovl->path.trace);
       if (trace != NULL)
-#ifdef DELTAS
         { int p = ovl->path.bbpos + trace[1];
           fprintf(output,"%*sTrace: %3d/%5d",indent,"",trace[0],p);
           for (i = 3; i < ovl->path.tlen; i += 2)
@@ -2028,16 +1792,6 @@ void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent)
               p += trace[i];
               fprintf(output," %3d/%5d",trace[i-1],p);
             }
-#else
-        { int p = ovl->path.bbpos + trace[0];
-          fprintf(output,"%*sTrace: %5d",indent,"",p);
-          for (i = 1; i < ovl->path.tlen; i++)
-            { if (i%10 == 0)
-                fprintf(output,"\n%*s",indent+6,"");
-              p += trace[i];
-              fprintf(output," %5d",p);
-            }
-#endif
           fprintf(output,"\n");
         }
     }
@@ -2046,11 +1800,7 @@ void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent)
 int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
 { int     i, p; 
 
-#ifdef DELTAS
   if (((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace)*2 != ovl->path.tlen-2)
-#else
-  if ((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace != ovl->path.tlen-1)
-#endif
     { if (verbose) 
         fprintf(stderr,"  %s: Wrong number of trace points\n",fname);
       return (1);
@@ -2058,20 +1808,12 @@ int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
   p = ovl->path.bbpos;
   if (tspace <= TRACE_XOVR)
     { uint8 *trace8 = (uint8 *) ovl->path.trace;
-#ifdef DELTAS
       for (i = 1; i < ovl->path.tlen; i += 2)
-#else
-      for (i = 0; i < ovl->path.tlen; i++)
-#endif
         p += trace8[i];
     }
   else      
     { uint16 *trace16 = (uint16 *) ovl->path.trace;
-#ifdef DELTAS
       for (i = 1; i < ovl->path.tlen; i += 2)
-#else
-      for (i = 0; i < ovl->path.tlen; i++)
-#endif
         p += trace16[i];
     }
   if (p != ovl->path.bepos)
@@ -3609,26 +3351,17 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
       enlarge_trace(work,s);
 
     nmax = 0;
-#ifdef DELTAS
     dmax = 0;
     for (d = 1; d < tlen; d += 2)
       { if (points[d-1] > dmax)
           dmax = points[d-1];
-#else
-    for (d = 0; d < tlen; d++)
-      {
-#endif
         if (points[d] > nmax)
           nmax = points[d];
       }
     if (tlen <= 1)
       nmax = N;
-#ifdef DELTAS
     if (points[d-1] > dmax)
       dmax = points[d-1];
-#else
-    dmax = nmax;
-#endif
 
     s = (dmax+3)*2*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
@@ -3657,13 +3390,8 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
     ab = path->abpos;
     ae = (ab/trace_spacing)*trace_spacing;
     bb = path->bbpos;
-#ifdef DELTAS
     tlen -= 2;
     for (i = 1; i < tlen; i += 2)
-#else
-    tlen -= 1;
-    for (i = 0; i < tlen; i++)
-#endif
       { ae = ae + trace_spacing;
         be = bb + points[i];
         diffs += iter_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave);
@@ -3714,26 +3442,17 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
       enlarge_trace(work,s);
 
     nmax = 0;
-#ifdef DELTAS
     dmax = 0;
     for (d = 1; d < tlen; d += 2)
       { if (points[d-1] > dmax)
           dmax = points[d-1];
-#else
-    for (d = 0; d < tlen; d++)
-      {
-#endif
         if (points[d] > nmax)
           nmax = points[d];
       }
     if (tlen <= 1)
       nmax = N;
-#ifdef DELTAS
     if (points[d-1] > dmax)
       dmax = points[d-1];
-#else
-    dmax = nmax;
-#endif
 
     s = (dmax+3)*4*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
@@ -3764,13 +3483,8 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
     ab = as = af = path->abpos;
     ae = (ab/trace_spacing)*trace_spacing;
     bb = bs = bf = path->bbpos;
-#ifdef DELTAS
     tlen -= 2;
     for (i = 1; i < tlen; i += 2) 
-#else
-    tlen -= 1;
-    for (i = 0; i < tlen; i++) 
-#endif
       { ae = ae + trace_spacing;
         be = bb + points[i];
         if (middle_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave))
