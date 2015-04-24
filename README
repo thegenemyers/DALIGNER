@@ -194,7 +194,9 @@ the -c, -a, and -r flags is set, then the cartoon comes first, then the -a align
 and lastly the -r alignment.  The -i option sets the indent for the cartoon and/or
 alignment displays, if they are requested.  The -b option sets the number of symbols on
 either side of the aligned segments in an alignment display, and -U specifies that
-uppercase should be used for DNA sequence instead of the default lowercase.
+uppercase should be used for DNA sequence instead of the default lowercase.  If the
+-o option is set then only alignments that are proper overlaps (a sequence end occurs
+at the each end of the alignment) are displayed.
 
 
 5. LAcat <source:las> > <target>.las

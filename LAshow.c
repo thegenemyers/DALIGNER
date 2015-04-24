@@ -59,7 +59,7 @@
 #include "align.h"
 
 static char *Usage[] =
-    { "[-caroUFM] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
+    { "[-caroUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
       "    <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]"
     };
 
