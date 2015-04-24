@@ -59,7 +59,7 @@
 #include "align.h"
 
 static char *Usage[] =
-    { "[-carUFM] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
+    { "[-caroUFM] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>] ",
       "    <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]"
     };
 
@@ -83,10 +83,10 @@ int main(int argc, char *argv[])
   int     reps, *pts;
   int     input_pts;
 
-  int     ALIGN, CARTOON, REFERENCE, FLIP;
+  int     ALIGN, CARTOON, REFERENCE, OVERLAP;
+  int     FLIP, MAP;
   int     INDENT, WIDTH, BORDER, UPPERCASE;
   int     ISTWO;
-  int     MAP;
 
   //  Process options
 
@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("carUFM")
+            ARG_FLAGS("caroUFM")
             break;
           case 'i':
             ARG_NON_NEGATIVE(INDENT,"Indent")
@@ -121,10 +121,11 @@ int main(int argc, char *argv[])
         argv[j++] = argv[i];
     argc = j;
 
-    UPPERCASE = flags['U'];
+    CARTOON   = flags['c'];
     ALIGN     = flags['a'];
     REFERENCE = flags['r'];
-    CARTOON   = flags['c'];
+    OVERLAP   = flags['o'];
+    UPPERCASE = flags['U'];
     FLIP      = flags['F'];
     MAP       = flags['M'];
 
@@ -444,12 +445,21 @@ int main(int argc, char *argv[])
         if (!in)
           continue;
 
-        //  Display it
+        //  If -o check display only overlaps
 
         aln->alen  = db1->reads[ovl->aread].rlen;
         aln->blen  = db2->reads[ovl->bread].rlen;
         aln->flags = ovl->flags;
         tps        = ovl->path.tlen/2;
+
+        if (OVERLAP)
+          { if (ovl->path.abpos != 0 && ovl->path.bbpos != 0)
+              continue;
+            if (ovl->path.aepos != aln->alen && ovl->path.bepos != aln->blen)
+              continue;
+          }
+
+        //  If -M option then check the completeness of the implied mapping
 
         if (MAP)
           { while (ovl->bread != blast)
@@ -472,6 +482,8 @@ int main(int argc, char *argv[])
               continue;
             match = 1;
           }
+
+        //  Display it
             
         if (ALIGN || CARTOON || REFERENCE)
           printf("\n");
