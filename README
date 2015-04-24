@@ -175,7 +175,7 @@ the alignments for a given read can operate in simple sequential scans of these
 sorted files.
 
 
-4. LAshow [-carUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
+4. LAshow [-caroUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
       <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]
 
 LAshow produces a printed listing of the local alignments contained in the specified
