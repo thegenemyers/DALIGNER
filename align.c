@@ -87,7 +87,7 @@
 \****************************************************************************************/
 
 typedef struct            //  Hidden from the user, working space for each thread
-  { int     vecmax;
+  { int64   vecmax;
     void   *vector;
     int     celmax;
     void   *cells;
@@ -114,8 +114,8 @@ Work_Data *New_Work_Data()
   return ((Work_Data *) work);
 }
 
-static void enlarge_vector(_Work_Data *work, int newmax)
-{ work->vecmax = ((int) (newmax*1.2)) + 10000;
+static void enlarge_vector(_Work_Data *work, int64 newmax)
+{ work->vecmax = ((int64) (newmax*1.2)) + 10000;
   work->vector = Realloc(work->vector,work->vecmax,"Enlarging DP vector");
   if (work->vector == NULL)
     exit (1);
@@ -1606,7 +1606,8 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   alen = align->alen;
   blen = align->blen;
 
-  { int maxtp, wsize;
+  { int maxtp; 
+    int64 wsize;
 
     wsize = (6*sizeof(int) + sizeof(BVEC))*(alen+blen+3);
     if (wsize >= work->vecmax)
