@@ -58,6 +58,20 @@
 
 #define _A_MODULE
 
+/*** INTERACTIVE vs BATCH version
+
+     The defined constant INTERACTIVE (set in DB.h) determines whether an interactive or
+       batch version of the routines in this library are compiled.  In batch mode, routines
+       print an error message and exit.  In interactive mode, the routines place the error
+       message in EPLACE (also defined in DB.h) and return an error value, typically NULL
+       if the routine returns a pointer, and an unusual integer value if the routine returns
+       an integer.
+     Below when an error return is described, one should understand that this value is returned
+       only if the routine was compiled in INTERACTIVE mode.
+
+***/
+
+
 /*** PATH ABSTRACTION:
 
      Coordinates are *between* characters where 0 is the tick just before the first char,
@@ -157,8 +171,8 @@ void Complement_Seq(char *a, int n);
      storage that is more efficiently reused with each call, rather than being allocated anew
      with each call.  Each *thread* can create a Work_Data object with New_Work_Data and this
      object holds and retains the working storage for routines of this module between calls
-     to the routines.  Free_Work_Data frees a Work_Data object and all working storage
-     held by it.
+     to the routines.  If enough memory for a Work_Data is not available then NULL is returned.
+     Free_Work_Data frees a Work_Data object and all working storage held by it.
   */
 
   typedef void Work_Data;
@@ -182,7 +196,8 @@ void Complement_Seq(char *a, int n);
      If an alignment cannot reach the boundary of the d.p. matrix with this condition (i.e.
      overlap), then the last/first 30 columns of the alignment are guaranteed to be
      suffix/prefix positive at correlation ave_corr * g(freq) where g is an empirically
-     measured function that increases from 1 as the entropy of freq decreases.
+     measured function that increases from 1 as the entropy of freq decreases.  If memory is
+     unavailable or the freq distribution is too skewed then NULL is returned.
 
      You can get back the original parameters used to create an Align_Spec with the simple
      utility functions below.
@@ -199,19 +214,27 @@ void Complement_Seq(char *a, int n);
   float *Base_Frequencies   (Align_Spec *spec);
 
   /* Local_Alignment finds the longest significant local alignment between the sequences in
-     'align' subject to the alignment criterion given by the Align_Spec 'spec' that passes
-     through one of the points '(xlow-xhgh,y)' within the underlying dynamic programming matrix.
-     The path record of 'align' has its 'trace' filled from the point of view of an overlap between
-     the aread and the bread.  In addition a Path record from the point of view of the bread
-     versus the aread is returned by the function, with this Path's 'trace' filled in
-     appropriately.  The space for the returned path and the two 'trace's are in the
-     working storage supplied by the Work_Data packet and this space is reused with each call,
-     so if one wants to retain the bread-path and the two trace point sequences, then they
-     must be copied to user-allocated storage before calling the routine again.
+     'align' subject to:
+
+       (a) the alignment criterion given by the Align_Spec 'spec',
+       (b) it passes through one of the points (anti+k)/2,(anti-k)/2 for k in [low,hgh] within
+             the underlying dynamic programming matrix (i.e. the points on diagonals low to hgh
+             on anti-diagonal anti or anti-1 (depending on whether the diagonal is odd or even)),
+       (c) if lbord >= 0, then the alignment is always above diagonal low-lbord, and
+       (d) if hbord >= 0, then the alignment is always below diagonal hgh+hbord.
+
+     The path record of 'align' has its 'trace' filled from the point of view of an overlap
+     between the aread and the bread.  In addition a Path record from the point of view of the
+     bread versus the aread is returned by the function, with this Path's 'trace' filled in
+     appropriately.  The space for the returned path and the two 'trace's are in the working
+     storage supplied by the Work_Data packet and this space is reused with each call, so if
+     one wants to retain the bread-path and the two trace point sequences, then they must be
+     copied to user-allocated storage before calling the routine again.  NULL is returned in
+     the event of an error.
   */
 
   Path *Local_Alignment(Alignment *align, Work_Data *work, Align_Spec *spec,
-                        int xlow, int xhgh, int y);
+                        int low, int hgh, int anti, int lbord, int hbord);
 
   /* Given a legitimate Alignment object, Compute_Trace_X computes an exact trace for the alignment.
      If 'path.trace' is non-NULL, then it is assumed to be a sequence of pass-through points
@@ -228,12 +251,13 @@ void Complement_Seq(char *a, int n);
      but at the tradeoff of not necessarily being optimal as pass-through points are not all
      perfect.  Compute_Trace_MID computes a trace by computing the trace between the mid-points
      of alignments between two adjacent pairs of pass through points.  It is generally twice as
-     slow as Compute_Trace_PTS, but it produces nearer optimal alignments.
+     slow as Compute_Trace_PTS, but it produces nearer optimal alignments.  All these routines
+     return 1 if an error occurred and 0 otherwise.
   */
 
-  void Compute_Trace_ALL(Alignment *align, Work_Data *work);
-  void Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing);
-  void Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing);
+  int Compute_Trace_ALL(Alignment *align, Work_Data *work);
+  int Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing);
+  int Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing);
 
   /* Alignment_Cartoon prints an ASCII representation of the overlap relationhip between the
      two reads of 'align' to the given 'file' indented by 'indent' space.  Coord controls
@@ -253,6 +277,8 @@ void Complement_Seq(char *a, int n);
      in segments of different lengths, but is convenient when looking at two alignments involving
      A as segments are guaranteed to cover the same interval of A in a segment.
 
+     Both Print routines return 1 if an error occurred (not enough memory), and 0 otherwise.
+
      Flip_Alignment modifies align so the roles of A and B are reversed.  If full is off then
      the trace is ignored, otherwise the trace must be to a full alignment trace and this trace
      is also appropriately inverted.
@@ -260,10 +286,10 @@ void Complement_Seq(char *a, int n);
 
   void Alignment_Cartoon(FILE *file, Alignment *align, int indent, int coord);
 
-  void Print_Alignment(FILE *file, Alignment *align, Work_Data *work,
+  int  Print_Alignment(FILE *file, Alignment *align, Work_Data *work,
                        int indent, int width, int border, int upper, int coord);
 
-  void Print_Reference(FILE *file, Alignment *align, Work_Data *work,
+  int  Print_Reference(FILE *file, Alignment *align, Work_Data *work,
                        int indent, int block, int border, int upper, int coord);
 
   void Flip_Alignment(Alignment *align, int full);

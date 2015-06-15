@@ -67,13 +67,15 @@
                        //     <= 4 ^ -(kmer-MAX_BIAS)
 #define MAXGRAM 10000  //  Cap on k-mer count histogram (in count_thread, merge_thread)
 
+#define PANEL_SIZE     50000   //  Size to break up very long A-reads
+#define PANEL_OVERLAP  10000   //  Overlap of A-panels
+
 #undef  TEST_LSORT
 #undef  TEST_KSORT
 #undef  TEST_PAIRS
 #undef  TEST_CSORT
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
-#define TEST_HIT              //  When off, just tuple filtering alone, no check
 #undef  TEST_GATHER
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
@@ -103,7 +105,7 @@ typedef struct
   } KmerPos;
 
 typedef struct
-  { int    bpos;
+  { int    diag;
     int    apos;
     int    aread;
     int    bread;
@@ -119,7 +121,7 @@ typedef struct
 
 typedef struct
   { int    apos;
-    int    bpos;
+    int    diag;
     int    bread;
     int    aread;
   } SeedPair;
@@ -1069,7 +1071,7 @@ static void *merge_thread(void *arg)
                               { hits[nhits].bread = bsort[b].read;
                                 hits[nhits].aread = ar;
                                 hits[nhits].apos  = ap; 
-                                hits[nhits].bpos  = bsort[b].rpos;
+                                hits[nhits].diag  = ap - bsort[b].rpos;
                                 nhits += 1;
                               }
                           }
@@ -1086,7 +1088,7 @@ static void *merge_thread(void *arg)
                               { hits[nhits].bread = bsort[b].read;
                                 hits[nhits].aread = ar;
                                 hits[nhits].apos  = ap; 
-                                hits[nhits].bpos  = bsort[b].rpos;
+                                hits[nhits].diag  = ap - bsort[b].rpos;
                                 nhits += 1;
                               }
                           }
@@ -1122,7 +1124,7 @@ static void *merge_thread(void *arg)
                         { hits[nhits].bread = bsort[b].read;
                           hits[nhits].aread = asort[a].read;
                           hits[nhits].apos  = ap;
-                          hits[nhits].bpos  = bsort[b].rpos;
+                          hits[nhits].diag  = ap - bsort[b].rpos;
                           nhits += 1;
                         }
                     }
@@ -1137,6 +1139,37 @@ static void *merge_thread(void *arg)
 }
 
 
+void Diagonal_Span(Path *path, int tspace, int *mind, int *maxd)
+{ uint16 *points;
+  int     i, tlen;
+  int     dd, low, hgh;
+
+  points = (uint16 *) path->trace;
+  tlen   = path->tlen;
+
+  dd = path->bbpos - path->abpos;
+  low = hgh = dd;
+
+  dd = path->bepos - path->aepos;
+  if (dd < low)
+    low = dd;
+  else if (dd > hgh)
+    hgh = dd;
+
+  dd = path->bbpos - (path->abpos/tspace)*tspace;
+  tlen -= 2;
+  for (i = 1; i < tlen; i += 2)
+    { dd += points[i]-tspace;
+      if (dd < low)
+        low = dd;
+      else if (dd > hgh)
+        hgh = dd;
+    }
+
+  *mind = (low >> Binshift)-1;
+  *maxd = (hgh >> Binshift)+1;
+}
+
 static HITS_DB  *MR_ablock;
 static HITS_DB  *MR_bblock;
 static SeedPair *MR_hits;
@@ -1147,6 +1180,7 @@ typedef struct
   { int64       beg, end;
     int        *score;
     int        *lastp;
+    int        *lasta;
     Work_Data  *work;
     Align_Spec *aspec;
     FILE       *ofile1;
@@ -1164,22 +1198,23 @@ static void *report_thread(void *arg)
   HITS_READ   *aread  = MR_ablock->reads;
   HITS_READ   *bread  = MR_bblock->reads;
   int         *score  = data->score;
+  int         *scorp  = data->score + 1;
+  int         *scorm  = data->score - 1;
   int         *lastp  = data->lastp;
-#ifdef TEST_HIT
+  int         *lasta  = data->lasta;
   Work_Data   *work   = data->work;
-#endif
   Align_Spec  *aspec  = data->aspec;
   FILE        *ofile1 = data->ofile1;
   FILE        *ofile2 = data->ofile2;
   int          afirst = MR_ablock->tfirst;
   int          bfirst = MR_bblock->tfirst;
+  int          maxdiag = ( MR_ablock->maxlen >> Binshift);
+  int          mindiag = (-MR_bblock->maxlen >> Binshift);
 
   Overlap     _ovla, *ovla = &_ovla;
   Overlap     _ovlb, *ovlb = &_ovlb;
   Alignment   _align, *align = &_align;
-#ifdef TEST_HIT
   Path        *apath;
-#endif
   Path        *bpath = &(ovlb->path);
   int64        nfilt = 0;
   int64        ahits = 0;
@@ -1188,9 +1223,8 @@ static void *report_thread(void *arg)
 
   Double *hitc;
   int     minhit;
-
-  uint64 p, q;
-  int64  g, h, f, end;
+  uint64  cpair, npair;
+  int64   nidx, eidx;
 
   //  In ovl and align roles of A and B are reversed, as the B sequence must be the
   //    complemented sequence !!
@@ -1217,60 +1251,77 @@ static void *report_thread(void *arg)
 
   minhit = (Hitmin-1)/Kmer + 1;
   hitc   = hitd + (minhit-1);
-  end    = data->end - minhit;
-  h      = data->beg;
-  for (p = hitd[h].p2; h < end; p = q)
-    if (hitc[h].p2 != p)
-      { h += 1;
-        while ((q = hitd[h].p2) == p)
-          h += 1;
+  eidx   = data->end - minhit;
+  nidx   = data->beg;
+  for (cpair = hitd[nidx].p2; nidx < eidx; cpair = npair)
+    if (hitc[nidx].p2 != cpair)
+      { nidx += 1;
+        while ((npair = hitd[nidx].p2) == cpair)
+          nidx += 1;
       }
     else
-      { int   apos, bpos, diag;
-        int   lasta, lastd;
-        int   ar, br;
+      { int   ar, br;
         int   alen, blen;
+        int   setaln, amark, amark2;
+        int   apos, bpos, diag;
+        int64 lidx, sidx;
+        int64 f, h2;
 
-        ar = hits[h].aread;
-        br = hits[h].bread;
+        ar = hits[nidx].aread;
+        br = hits[nidx].bread;
         alen = aread[ar].rlen;
         blen = bread[br].rlen;
         if (alen < HGAP_MIN && blen < HGAP_MIN)
-          { do
-              q = hitd[++h].p2;
-            while (q == p);
+          { nidx += 1;
+            while ((npair = hitd[nidx].p2) == cpair)
+              nidx += 1;
             continue;
           }
-          
-        g = h;
-        do
-          { bpos = hits[h].bpos;
-            apos = hits[h].apos;
-            diag = (apos - bpos) >> Binshift;
-            if (apos - lastp[diag] >= Kmer)
-              score[diag] += Kmer;
-            else
-              score[diag] += apos - lastp[diag];
-            lastp[diag] = apos;
-            q = hitd[++h].p2;
-          }
-        while (q == p);
 
 #ifdef TEST_GATHER
-        printf("%5d vs %5d : %3lld",br+bfirst,ar+afirst,h-g);
+        printf("%5d vs %5d : %5d x %5d\n",br+bfirst,ar+afirst,blen,alen);
+#endif
+        setaln = 1;
+        amark2 = 0;
+        for (sidx = nidx; hitd[nidx].p2 == cpair; nidx = h2)
+          { amark  = amark2 + PANEL_SIZE;
+            amark2 = amark  - PANEL_OVERLAP;
+
+            h2 = lidx = nidx;
+            do
+              { apos  = hits[nidx].apos;
+                npair = hitd[++nidx].p2;
+                if (apos <= amark2)
+                  h2 = nidx;
+              }
+            while (npair == cpair && apos <= amark);
+
+            if (nidx-lidx < minhit) continue;
+
+            for (f = lidx; f < nidx; f++)
+              { apos = hits[f].apos;
+                diag = hits[f].diag >> Binshift;
+                if (apos - lastp[diag] >= Kmer)
+                  score[diag] += Kmer;
+                else
+                  score[diag] += apos - lastp[diag];
+                lastp[diag] = apos;
+              }
+
+#ifdef TEST_GATHER
+            printf("  %6lld upto %6d",nidx-lidx,amark);
 #endif
 
-        lasta = -1;
-        lastd = -(Kmer+1);
-        for (f = g; f < h; f++)
-          { bpos = hits[f].bpos;
-            apos = hits[f].apos;
-            diag = apos - bpos;
-            if ((lastd != diag && apos >= lasta) || (lastd == diag && apos > lasta+Kmer))
-              { diag >>= Binshift;
-                if (score[diag] + score[diag+1] >= Hitmin || score[diag] + score[diag-1] >= Hitmin)
-                  { if (lasta < 0)
-                      { align->bseq = aseq + aread[ar].boff;
+            for (f = lidx; f < nidx; f++)
+              { apos = hits[f].apos;
+                diag = hits[f].diag;
+                bpos = apos - diag;
+                diag = diag >> Binshift;
+                if (apos > lasta[diag] &&
+                     (score[diag] + scorp[diag] >= Hitmin || score[diag] + scorm[diag] >= Hitmin))
+                  { if (setaln)
+                      { setaln = 0;
+                        align->bseq = aseq + aread[ar].boff;
                         align->aseq = bseq + bread[br].boff;
                         align->blen = alen;
                         align->alen = blen;
@@ -1280,21 +1331,35 @@ static void *report_thread(void *arg)
 #ifdef TEST_GATHER
                     else
                       printf("\n                    ");
-                    if (score[diag-1] > score[diag+1])
+
+                    if (scorm[diag] > scorp[diag])
                       printf("  %5d.. x %5d.. %5d (%3d)",
-                             bpos,apos,apos-bpos,score[diag]+score[diag-1]);
+                             bpos,apos,apos-bpos,score[diag]+scorm[diag]);
                     else
                       printf("  %5d.. x %5d.. %5d (%3d)",
-                             bpos,apos,apos-bpos,score[diag]+score[diag+1]);
+                             bpos,apos,apos-bpos,score[diag]+scorp[diag]);
 #endif
                     nfilt += 1;
 
-#ifdef TEST_HIT
+                    apath = Local_Alignment(align,work,aspec,bpos-apos,bpos-apos,bpos+apos,-1,-1);
 
-                    apath = Local_Alignment(align,work,aspec,bpos,bpos,apos);
-                    lasta = bpath->bepos;
-                    lastd = lasta - bpath->aepos;
-                    if ((apath->aepos - apath->abpos) + (apath->bepos - apath->bbpos) >= MINOVER)
+                    { int low, hgh, be;
+
+                      Diagonal_Span(bpath,tspace,&low,&hgh);
+                      if (diag < low)
+                        low = diag;
+                      else if (diag > hgh)
+                        hgh = diag;
+                      be = bpath->bepos;
+                      for (diag = low; diag <= hgh; diag++)
+                        if (be > lasta[diag])
+                          lasta[diag] = be;
+#ifdef TEST_GATHER
+                      printf(" %d - %d @ %d",low,hgh,bpath->bepos);
+#endif
+                    }
+
+                    if ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos) >= MINOVER)
                       { ovla->path = *apath;
                         if (small)
                           { Compress_TraceTo8(ovla);
@@ -1331,26 +1396,34 @@ static void *report_thread(void *arg)
 #ifdef TEST_GATHER
                     else
                       printf("  No alignment %d",
-                              ((apath->aepos - apath->abpos) + (apath->bepos - apath->bbpos))/2);
+                              ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos))/2);
 #endif
-
-#else // TEST_HIT
-
-                    break;
-
-#endif // TEST_HIT
                   }
               }
-          }
-#ifdef TEST_GATHER
-        printf("\n");
-#endif
 
-        for (; g < h; g++)
-          { bpos = hits[g].bpos;
-            apos = hits[g].apos;
-            diag = (apos - bpos) >> Binshift;
-            score[diag] = lastp[diag] = 0;
+            for (f = lidx; f < nidx; f++)
+              { diag = hits[f].diag >> Binshift;
+                score[diag] = lastp[diag] = 0;
+              }
+#ifdef TEST_GATHER
+            printf("\n");
+#endif
+          }
+
+        for (f = sidx; f < nidx; f++)
+          { int d;
+
+            diag = hits[f].diag >> Binshift;
+            for (d = diag; d <= maxdiag; d++)
+              if (lasta[d] == 0)
+                break;
+              else
+                lasta[d] = 0;
+            for (d = diag-1; d >= mindiag; d--)
+              if (lasta[d] == 0)
+                break;
+              else
+                lasta[d] = 0;
           }
       }
 
@@ -1448,9 +1521,9 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   if (VERBOSE)
     { if (comp)
-        printf("\nComparing %s to %s\n",aname,bname);
-      else
         printf("\nComparing c(%s) to %s\n",aname,bname);
+      else
+        printf("\nComparing %s to %s\n",aname,bname);
     }
 
   if (alen == 0 || blen == 0)
@@ -1625,7 +1698,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
     khit[nhits].aread = 0x7fffffff;
     khit[nhits].bread = 0x7fffffff;
-    khit[nhits].bpos  = 0x7fffffff;
+    khit[nhits].diag  = 0x7fffffff;
     khit[nhits].apos  = 0;
 
 #ifdef TEST_CSORT
@@ -1660,19 +1733,20 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
       }
     parmr[NTHREADS-1].end = nhits;
 
-    w = ((ablock->maxlen >> Binshift) - (-bblock->maxlen >> Binshift)) + 1;
-    counters = (int *) Malloc(NTHREADS*4*w*sizeof(int),"Allocating diagonal buckets");
+    w = ((ablock->maxlen >> Binshift) - ((-bblock->maxlen) >> Binshift)) + 1;
+    counters = (int *) Malloc(NTHREADS*3*w*sizeof(int),"Allocating diagonal buckets");
     if (counters == NULL)
       exit (1);
 
-    for (i = 0; i < 4*w*NTHREADS; i++)
+    for (i = 0; i < 3*w*NTHREADS; i++)
       counters[i] = 0;
     for (i = 0; i < NTHREADS; i++)
       { if (i == 0)
           parmr[i].score = counters - ((-bblock->maxlen) >> Binshift);
         else
-          parmr[i].score = parmr[i-1].lastp + w;
+          parmr[i].score = parmr[i-1].lasta + w;
         parmr[i].lastp = parmr[i].score + w;
+        parmr[i].lasta = parmr[i].lastp + w;
         parmr[i].work  = New_Work_Data();
         parmr[i].aspec = aspec;
 

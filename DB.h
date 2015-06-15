@@ -57,6 +57,36 @@
 
 #include "QV.h"
 
+#define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
+                            //    Undefine if you don't want this
+
+//  For interactive applications where it is inappropriate to simply exit with an error
+//    message to standard error, define the constant INTERACTIVE.  If set, then error
+//    messages are put in the global variable Ebuffer and the caller of a DB routine
+//    can decide how to deal with the error.
+//
+//  DB, QV, or alignment routines that can encounter errors function as before in
+//    non-INTERACTIVE mode by exiting after printing an error message to stderr.  In
+//    INTERACTIVE mode the routines place a message at EPLACE and return an error
+//    value.  For such routines that were previously void, they are now int, and
+//    return 1 if an error occured, 0 otherwise.
+
+#undef INTERACTIVE
+
+#ifdef INTERACTIVE
+
+#define EPRINTF sprintf
+#define EPLACE  Ebuffer
+#define EXIT(x) return (x)
+
+#else // BATCH
+
+#define EPRINTF fprintf
+#define EPLACE  stderr
+#define EXIT(x) exit (1)
+
+#endif
+
 typedef unsigned char      uint8;
 typedef unsigned short     uint16;
 typedef unsigned int       uint32;
@@ -68,9 +98,6 @@ typedef signed long long   int64;
 typedef float              float32;
 typedef double             float64;
 
-#define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
-                            //    Undefine if you don't want this
-
 
 /*******************************************************************************************
  *
@@ -80,8 +107,14 @@ typedef double             float64;
 
 extern char *Prog_Name;   //  Name of program
 
+#ifdef INTERACTIVE
+
+extern char Ebuffer[];
+
+#endif
+
 #define SYSTEM_ERROR							\
-  { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);	\
+  { EPRINTF(EPLACE,"%s: System error, read failed!\n",Prog_Name);	\
     exit (2);								\
   }
 
@@ -291,7 +324,7 @@ typedef struct
   //   a part # in it then just the part is opened.  The index array is allocated (for all or
   //   just the part) and read in.
   // Return status of routine:
-  //    -1: The DB could not be opened for a reason reported by the routine to stderr
+  //    -1: The DB could not be opened for a reason reported by the routine to EPLACE
   //     0: Open of DB proceeded without mishap
   //     1: Open of DAM proceeded without mishap
 
@@ -309,10 +342,12 @@ void Trim_DB(HITS_DB *db);
 
 void Close_DB(HITS_DB *db);
 
-  // If QV pseudo track is not already in db's track list, then set it up and return a pointer
-  //   to it.  The database must not have been trimmed yet.
+  // If QV pseudo track is not already in db's track list, then load it and set it up.
+  //   The database must not have been trimmed yet.  -1 is returned if a .qvs file is not
+  //   present, and 1 is returned if an error (reported to EPLACE) occured and INTERACTIVE
+  //   is defined.  Otherwise a 0 is returned.
 
-void Load_QVs(HITS_DB *db);
+int Load_QVs(HITS_DB *db);
 
   // Remove the QV pseudo track, all space associated with it, and close the .qvs file.
 
@@ -329,7 +364,9 @@ int Check_Track(HITS_DB *db, char *track);
   // If track is not already in the db's track list, then allocate all the storage for it,
   //   read it in from the appropriate file, add it to the track list, and return a pointer
   //   to the newly created HITS_TRACK record.  If the track does not exist or cannot be
-  //   opened for some reason, then NULL is returned.
+  //   opened for some reason, then NULL is returned if INTERACTIVE is defined.  Otherwise
+  //   the routine prints an error message to stderr and exits if an error occurs, and returns
+  //   with NULL only if the track does not exist.
 
 HITS_TRACK *Load_Track(HITS_DB *db, char *track);
 
@@ -340,27 +377,31 @@ void Close_Track(HITS_DB *db, char *track);
 
   // Allocate and return a buffer big enough for the largest read in 'db'.
   // **NB** free(x-1) if x is the value returned as *prefix* and suffix '\0'(4)-byte
-  // are needed by the alignment algorithms.
+  // are needed by the alignment algorithms.  If cannot allocate memory then return NULL
+  // if INTERACTIVE is defined, or print error to stderr and exit otherwise.
 
 char *New_Read_Buffer(HITS_DB *db);
 
   // Load into 'read' the i'th read in 'db'.  As a lower case ascii string if ascii is 1, an
   //   upper case ascii string if ascii is 2, and a numeric string over 0(A), 1(C), 2(G), and 3(T)
   //   otherwise.  A '\0' (or 4) is prepended and appended to the string so it has a delimeter
-  //   for traversals in either direction.
+  //   for traversals in either direction.  A non-zero value is returned if an error occured
+  //   and INTERACTIVE is defined.
 
-void  Load_Read(HITS_DB *db, int i, char *read, int ascii);
+int  Load_Read(HITS_DB *db, int i, char *read, int ascii);
 
   // Load into 'read' the subread [beg,end] of the i'th read in 'db' and return a pointer to the
   //   the start of the subinterval (not necessarily = to read !!! ).  As a lower case ascii
   //   string if ascii is 1, an upper case ascii string if ascii is 2, and a numeric string
   //   over 0(A), 1(C), 2(G), and 3(T) otherwise.  A '\0' (or 4) is prepended and appended to
   //   the string holding the substring so it has a delimeter for traversals in either direction.
+  //   A NULL pointer is returned if an error occured and INTERACTIVE is defined.
 
 char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii);
 
   // Allocate a set of 5 vectors large enough to hold the longest QV stream that will occur
-  //   in the database.  
+  //   in the database.  If cannot allocate memory then return NULL if INTERACTIVE is defined,
+  //   or print error to stderr and exit otherwise.
 
 #define DEL_QV  0   //  The deletion QVs are x[DEL_QV] if x is the buffer returned by New_QV_Buffer
 #define DEL_TAG 1   //  The deleted characters
@@ -371,27 +412,31 @@ char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii);
 char **New_QV_Buffer(HITS_DB *db);
 
   // Load into 'entry' the 5 QV vectors for i'th read in 'db'.  The deletion tag or characters
-  //   are converted to a numeric or upper/lower case ascii string as per ascii.
+  //   are converted to a numeric or upper/lower case ascii string as per ascii.  Return with
+  //   a zero, except when an error occurs and INTERACTIVE is defined in which case return wtih 1.
 
-void   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
+int   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
 
   // Allocate a block big enough for all the uncompressed sequences, read them into it,
   //   reset the 'off' in each read record to be its in-memory offset, and set the
   //   bases pointer to point at the block after closing the bases file.  If ascii is
   //   1 then the reads are converted to lowercase ascii, if 2 then uppercase ascii, and
   //   otherwise the reads are left as numeric strings over 0(A), 1(C), 2(G), and 3(T).
+  //   Return with a zero, except when an error occurs and INTERACTIVE is defined in which
+  //   case return wtih 1.
 
-void Read_All_Sequences(HITS_DB *db, int ascii);
+int Read_All_Sequences(HITS_DB *db, int ascii);
 
   // For the DB or DAM "path" = "prefix/root[.db|.dam]", find all the files for that DB, i.e. all
-  //   those of the form "prefix/[.]root.part" and call foreach with the complete path to each file
+  //   those of the form "prefix/[.]root.part" and call actor with the complete path to each file
   //   pointed at by path, and the suffix of the path by extension.  The . proceeds the root
   //   name if the defined constant HIDE_FILES is set.  Always the first call is with the
   //   path "prefix/root.db" and extension "db".  There will always be calls for
   //   "prefix/[.]root.idx" and "prefix/[.]root.bps".  All other calls are for *tracks* and
   //   so this routine gives one a way to know all the tracks associated with a given DB.
-  //   Return non-zero iff path could not be opened for any reason.
+  //   -1 is returned if the path could not be found, and 1 is returned if an error (reported
+  //   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
 
-int List_DB_Files(char *path, void foreach(char *path, char *extension));
+int List_DB_Files(char *path, void actor(char *path, char *extension));
 
 #endif // _HITS_DB

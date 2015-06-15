@@ -192,7 +192,7 @@ static HScheme *Huffman(uint64 *hist, HScheme *inscheme)
 
   scheme = (HScheme *) Malloc(sizeof(HScheme),"Allocating Huffman scheme record");
   if (scheme == NULL)
-    exit (1);
+    return (NULL);
 
   hsize = 0;                        //  Load heap
   value = 0;
@@ -365,22 +365,30 @@ static HScheme *Read_Scheme(FILE *in)
 
   scheme = (HScheme *) Malloc(sizeof(HScheme),"Allocating Huffman scheme record");
   if (scheme == NULL)
-    exit (1);
+    return (NULL);
 
   lens = scheme->codelens;
   bits = scheme->codebits;
   look = scheme->lookup;
 
   if (fread(&x,1,1,in) != 1)
-    SYSTEM_ERROR
+    { EPRINTF(EPLACE,"Could not read scheme type byte (Read_Scheme)\n");
+      free(scheme);
+      return (NULL);
+    }
   scheme->type = x;
   for (i = 0; i < 256; i++)
     { if (fread(&x,1,1,in) != 1)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"Could not read length of %d'th code (Read_Scheme)\n",i);
+          return (NULL);
+        }
       lens[i] = x;
       if (x > 0)
         { if (fread(bits+i,sizeof(uint32),1,in) != 1)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"Could not read bit encoding of %d'th code (Read_Scheme)\n",i);
+              free(scheme);
+              return (NULL);
+            }
         }
       else
         bits[i] = 0;
@@ -536,7 +544,7 @@ static void Encode_Run(HScheme *neme, HScheme *reme, FILE *out, uint8 *read, int
 
   //  Read and decode from in, the next rlen symbols into read according to scheme
 
-static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
+static int Decode(HScheme *scheme, FILE *in, char *read, int rlen)
 { int    *look, *lens;
   int     signal, ilen;
   uint64  icode;
@@ -563,33 +571,37 @@ static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
   lens = scheme->codelens;
   look = scheme->lookup;
 
-#define GET							\
-  if (n > ilen)							\
-    { icode <<= ilen;						\
-      if (fread(ipart,sizeof(uint32),1,in) != 1)		\
-        SYSTEM_ERROR						\
-      ilen    = n-ilen;						\
-      icode <<= ilen;						\
-      ilen    = 32-ilen;					\
-    }								\
-  else								\
-    { icode <<= n;						\
-      ilen   -= n;						\
+#define GET								\
+  if (n > ilen)								\
+    { icode <<= ilen;							\
+      if (fread(ipart,sizeof(uint32),1,in) != 1)			\
+        { EPRINTF(EPLACE,"Could not read more bits (Decode)\n");	\
+          return (1);							\
+        }								\
+      ilen    = n-ilen;							\
+      icode <<= ilen;							\
+      ilen    = 32-ilen;						\
+    }									\
+  else									\
+    { icode <<= n;							\
+      ilen   -= n;							\
     }
 
-#define GETFLIP							\
-  if (n > ilen)							\
-    { icode <<= ilen;						\
-      if (fread(ipart,sizeof(uint32),1,in) != 1)		\
-        SYSTEM_ERROR						\
-      Flip_Long(ipart);						\
-      ilen    = n-ilen;						\
-      icode <<= ilen;						\
-      ilen    = 32-ilen;					\
-    }								\
-  else								\
-    { icode <<= n;						\
-      ilen   -= n;						\
+#define GETFLIP								\
+  if (n > ilen)								\
+    { icode <<= ilen;							\
+      if (fread(ipart,sizeof(uint32),1,in) != 1)			\
+        { EPRINTF(EPLACE,"Could not read more bits (Decode)\n");	\
+          return (1);							\
+        }								\
+      Flip_Long(ipart);							\
+      ilen    = n-ilen;							\
+      icode <<= ilen;							\
+      ilen    = 32-ilen;						\
+    }									\
+  else									\
+    { icode <<= n;							\
+      ilen   -= n;							\
     }
 
   n     = 16;
@@ -619,13 +631,15 @@ static void Decode(HScheme *scheme, FILE *in, char *read, int rlen)
           }
         read[j] = (char) c;
       }
+
+  return (0);
 }
 
   //  Read and decode from in, the next rlen symbols into read according to non-rchar scheme
   //    neme, and the rchar runlength shceme reme
 
-static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
-                       int rlen, int rchar)
+static int Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
+                      int rlen, int rchar)
 { int    *nlook, *nlens;
   int    *rlook, *rlens;
   int     nsignal, ilen;
@@ -709,6 +723,8 @@ static void Decode_Run(HScheme *neme, HScheme *reme, FILE *in, char *read,
             read[j] = (char) c;
           }
       }
+
+  return (0);
 }
 
 
@@ -752,7 +768,7 @@ static void Histogram_Runs(uint64 *run, uint8 *stream, int rlen, int runChar)
  ********************************************************************************************/
 
 static char  *Read = NULL;   //  Referred by:  QVentry, Read_Lines, QVcoding_Scan,
-static int    Rmax = -1;     //                Compress_Next_QVentry, Uncompress_Next_QVentry
+static int    Rmax = -1;     //                Compress_Next_QVentry
 
 static int    Nline;         //  Referred by:  QVcoding_Scan
 
@@ -761,17 +777,21 @@ char *QVentry()
 
 //  If nlines == 1 trying to read a single header, nlines = 5 trying to read 5 QV/fasta lines
 //    for a sequence.  Place line j at Read+j*Rmax and the length of every line is returned
-//    unless eof occurs in which case return -1.
+//    unless eof occurs in which case return -1.  If any error occurs return -2.
 
 int Read_Lines(FILE *input, int nlines)
 { int   i, rlen;
+  int   tmax;
+  char *tread;
   char *other;
 
   if (Read == NULL)
-    { Rmax = MIN_BUFFER;
-      Read = (char *) Malloc(5*Rmax,"Allocating QV entry read buffer");
-      if (Read == NULL)
-       exit (1);
+    { tmax  = MIN_BUFFER;
+      tread = (char *) Malloc(5*tmax,"Allocating QV entry read buffer");
+      if (tread == NULL)
+        EXIT(-2);
+      Rmax = tmax;
+      Read = tread;
     }
 
   Nline += 1;
@@ -780,13 +800,15 @@ int Read_Lines(FILE *input, int nlines)
 
   rlen = strlen(Read);
   while (Read[rlen-1] != '\n')
-    { Rmax = ((int) 1.4*Rmax) + MIN_BUFFER;
-      Read = (char *) Realloc(Read,5*Rmax,"Reallocating QV entry read buffer");
-      if (Read == NULL)
-        exit (1);
+    { tmax  = ((int) 1.4*Rmax) + MIN_BUFFER;
+      tread = (char *) Realloc(Read,5*tmax,"Reallocating QV entry read buffer");
+      if (tread == NULL)
+        EXIT(-2);
+      Rmax = tmax;
+      Read = tread;
       if (fgets(Read+rlen,Rmax-rlen,input) == NULL)
-        { fprintf(stderr,"Line %d: Last line does not end with a newline !\n",Nline);
-          exit (1);
+        { EPRINTF(EPLACE,"Line %d: Last line does not end with a newline !\n",Nline);
+          EXIT(-2);
         }
       rlen += strlen(Read+rlen);
     }
@@ -795,12 +817,12 @@ int Read_Lines(FILE *input, int nlines)
     { other += Rmax;
       Nline += 1;
       if (fgets(other,Rmax,input) == NULL)
-        { fprintf(stderr,"Line %d: incomplete last entry of .quiv file\n",Nline);
-          exit (1);
+        { EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
+          EXIT(-2);
         }
       if (rlen != (int) strlen(other))
-        { fprintf(stderr,"Line %d: Lines for an entry are not the same length\n",Nline);
-          exit (1);
+        { EPRINTF(EPLACE,"Line %d: Lines for an entry are not the same length\n",Nline);
+          EXIT(-2);
         }
     }
   return (rlen-1);
@@ -871,7 +893,7 @@ static int      delChar, subChar;
 
   // Referred by:  QVcoding_Scan, Create_QVcoding
 
-void QVcoding_Scan(FILE *input)
+int QVcoding_Scan(FILE *input)
 { char *slash;
   int   rlen;
 
@@ -900,29 +922,32 @@ void QVcoding_Scan(FILE *input)
     { int well, beg, end, qv;
 
       rlen = Read_Lines(input,1);
+      if (rlen == -2)
+        EXIT(1);
       if (rlen < 0)
         break;
 
       if (rlen == 0 || Read[0] != '@')
-        { fprintf(stderr,"Line %d: Header in quiv file is missing\n",Nline);
-          exit (1);
+        { EPRINTF(EPLACE,"Line %d: Header in quiv file is missing\n",Nline);
+          EXIT(1);
         }
       slash = index(Read+1,'/');
       if (slash == NULL)
-        { fprintf(stderr,"%s: Line %d: Header line incorrectly formatted ?\n",
+  	{ EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          exit (1);
+          EXIT(1);
         }
       if (sscanf(slash+1,"%d/%d_%d RQ=0.%d\n",&well,&beg,&end,&qv) != 4)
-        { fprintf(stderr,"%s: Line %d: Header line incorrectly formatted ?\n",
+        { EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          exit (1);
+          EXIT(1);
         }
 
       rlen = Read_Lines(input,5);
       if (rlen < 0)
-        { fprintf(stderr,"Line %d: incomplete last entry of .quiv file\n",Nline);
-          exit (1);
+        { if (rlen == -1)
+            EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
+          EXIT(1);
         }
 
       Histogram_Seqs(delHist,(uint8 *) (Read),rlen);
@@ -956,6 +981,8 @@ void QVcoding_Scan(FILE *input)
       if (subChar >= 0)
         Histogram_Runs( subRun,(uint8 *) (Read+4*Rmax),rlen,subChar);
     }
+
+  return (0);
 }
 
   //   Using the statistics in the global stat tables, create the Huffman schemes and write
@@ -964,8 +991,16 @@ void QVcoding_Scan(FILE *input)
 
 QVcoding *Create_QVcoding(int lossy)
 { static QVcoding coding;
-  static HScheme *delScheme, *insScheme, *mrgScheme, *subScheme;
-  static HScheme *dRunScheme, *sRunScheme;
+
+  HScheme *delScheme, *insScheme, *mrgScheme, *subScheme;
+  HScheme *dRunScheme, *sRunScheme;
+
+  delScheme  = NULL;
+  dRunScheme = NULL;
+  insScheme  = NULL;
+  mrgScheme  = NULL;
+  subScheme  = NULL;
+  sRunScheme = NULL;
 
   //  Check whether using a subtitution run char is a win
 
@@ -996,6 +1031,8 @@ QVcoding *Create_QVcoding(int lossy)
 
 #define SCHEME_MACRO(meme,hist,label,bits)	\
   scheme = Huffman( (hist), NULL);		\
+  if (scheme == NULL)				\
+    goto error;					\
   if (scheme->type)				\
     { (meme) = Huffman( (hist), scheme);	\
       free(scheme);				\
@@ -1077,6 +1114,21 @@ QVcoding *Create_QVcoding(int lossy)
   coding.flip       = 0;
 
   return (&coding);
+
+error:
+  if (delScheme != NULL)
+    free(delScheme);
+  if (dRunScheme != NULL)
+    free(dRunScheme);
+  if (insScheme != NULL)
+    free(insScheme);
+  if (mrgScheme != NULL)
+    free(mrgScheme);
+  if (subScheme != NULL)
+    free(subScheme);
+  if (sRunScheme != NULL)
+    free(sRunScheme);
+  EXIT(NULL);
 }
 
   // Write the encoding scheme 'coding' to 'output'
@@ -1131,11 +1183,15 @@ QVcoding *Read_QVcoding(FILE *input)
     int    len;
 
     if (fread(&half,sizeof(uint16),1,input) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"Could not read flip byte (Read_QVcoding)\n");
+        EXIT(NULL);
+      }
     coding.flip = (half != 0x33cc);
 
     if (fread(&half,sizeof(uint16),1,input) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"Could not read deletion char (Read_QVcoding)\n");
+        EXIT(NULL);
+      }
     if (coding.flip)
       Flip_Short(&half);
     coding.delChar = half;
@@ -1143,7 +1199,9 @@ QVcoding *Read_QVcoding(FILE *input)
       coding.delChar = -1;
 
     if (fread(&half,sizeof(uint16),1,input) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"Could not read substitution char (Read_QVcoding)\n");
+        EXIT(NULL);
+      }
     if (coding.flip)
       Flip_Short(&half);
     coding.subChar = half;
@@ -1153,15 +1211,19 @@ QVcoding *Read_QVcoding(FILE *input)
     //  Read the short name common to all headers
 
     if (fread(&len,sizeof(int),1,input) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"Could not read header name length (Read_QVcoding)\n");
+        EXIT(NULL);
+      }
     if (coding.flip)
       Flip_Long(&len);
     coding.prefix = (char *) Malloc(len+1,"Allocating header prefix");
     if (coding.prefix == NULL)
-      exit (1);
+      EXIT(NULL);
     if (len > 0)
       { if (fread(coding.prefix,len,1,input) != 1)
-          SYSTEM_ERROR
+          { EPRINTF(EPLACE,"Could not read header name (Read_QVcoding)\n");
+            EXIT(NULL);
+          }
       }
     coding.prefix[len] = '\0';
   }
@@ -1172,16 +1234,52 @@ QVcoding *Read_QVcoding(FILE *input)
 
   //  Read the Huffman schemes used to compress the data
 
-  coding.delScheme  = Read_Scheme(input);
+  coding.delScheme  = NULL;
+  coding.dRunScheme = NULL;
+  coding.insScheme  = NULL;
+  coding.mrgScheme  = NULL;
+  coding.subScheme  = NULL;
+  coding.sRunScheme = NULL;
+
+  coding.delScheme = Read_Scheme(input);
+  if (coding.delScheme == NULL)
+    goto error;
   if (coding.delChar >= 0)
-    coding.dRunScheme = Read_Scheme(input);
-  coding.insScheme  = Read_Scheme(input);
-  coding.mrgScheme  = Read_Scheme(input);
-  coding.subScheme  = Read_Scheme(input);
+    { coding.dRunScheme = Read_Scheme(input);
+      if (coding.dRunScheme == NULL)
+        goto error;
+    }
+  coding.insScheme = Read_Scheme(input);
+  if (coding.insScheme == NULL)
+    goto error;
+  coding.mrgScheme = Read_Scheme(input);
+  if (coding.mrgScheme == NULL)
+    goto error;
+  coding.subScheme = Read_Scheme(input);
+  if (coding.subScheme == NULL)
+    goto error;
   if (coding.subChar >= 0)
-    coding.sRunScheme = Read_Scheme(input);
+    { coding.sRunScheme = Read_Scheme(input);
+      if (coding.sRunScheme == NULL)
+        goto error;
+    }
 
   return (&coding);
+
+error:
+  if (coding.delScheme != NULL)
+    free(coding.delScheme);
+  if (coding.dRunScheme != NULL)
+    free(coding.dRunScheme);
+  if (coding.insScheme != NULL)
+    free(coding.insScheme);
+  if (coding.mrgScheme != NULL)
+    free(coding.mrgScheme);
+  if (coding.subScheme != NULL)
+    free(coding.subScheme);
+  if (coding.sRunScheme != NULL)
+    free(coding.sRunScheme);
+  EXIT(NULL);
 }
 
   //  Free all the auxilliary storage associated with the encoding argument
@@ -1205,15 +1303,16 @@ void Free_QVcoding(QVcoding *coding)
  *
  ********************************************************************************************/
 
-void Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy)
+int Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy)
 { int rlen, clen;
 
   //  Get all 5 streams, compress each with its scheme, and output
 
   rlen = Read_Lines(input,5);
   if (rlen < 0)
-    { fprintf(stderr,"Line %d: incomplete last entry of .quiv file\n",Nline);
-      exit (1);
+    { if (rlen == -1)
+        EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
+      EXIT (1);
     }
 
   if (coding->delChar < 0)
@@ -1247,45 +1346,61 @@ void Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int loss
   else
     Encode_Run(coding->subScheme, coding->sRunScheme, output,
                (uint8 *) (Read+4*Rmax), rlen, coding->subChar);
+
+  return (0);
 }
 
-void Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rlen)
+int Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rlen)
 { int clen, tlen;
 
   //  Decode each stream and write to output
 
   if (coding->delChar < 0)
-    { Decode(coding->delScheme, input, entry[0], rlen);
+    { if (Decode(coding->delScheme, input, entry[0], rlen))
+        EXIT(1);
       clen = rlen;
       tlen = COMPRESSED_LEN(clen);
       if (tlen > 0)
         { if (fread(entry[1],tlen,1,input) != 1)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"Could not read deletions entry (Uncompress_Next_QVentry\n");
+              EXIT(1);
+            }
         }
       Uncompress_Read(clen,entry[1]);
       Lower_Read(entry[1]);
     }
   else
-    { Decode_Run(coding->delScheme, coding->dRunScheme, input,
-                 entry[0], rlen, coding->delChar);
+    { if (Decode_Run(coding->delScheme, coding->dRunScheme, input,
+                     entry[0], rlen, coding->delChar))
+        EXIT(1);
       clen = Packed_Length(entry[0],rlen,coding->delChar);
       tlen = COMPRESSED_LEN(clen);
       if (tlen > 0)
         { if (fread(entry[1],tlen,1,input) != 1)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"Could not read deletions entry (Uncompress_Next_QVentry\n");
+              EXIT(1);
+            }
         }
       Uncompress_Read(clen,entry[1]);
       Lower_Read(entry[1]);
       Unpack_Tag(entry[1],clen,entry[0],rlen,coding->delChar);
     }
 
-  Decode(coding->insScheme, input, entry[2], rlen);
+  if (Decode(coding->insScheme, input, entry[2], rlen))
+    EXIT(1);
 
-  Decode(coding->mrgScheme, input, entry[3], rlen);
+  if (Decode(coding->mrgScheme, input, entry[3], rlen))
+    EXIT(1);
 
   if (coding->subChar < 0)
-    Decode(coding->subScheme, input, entry[4], rlen);
+    { if (Decode(coding->subScheme, input, entry[4], rlen))
+        EXIT(1);
+    }
   else
-    Decode_Run(coding->subScheme, coding->sRunScheme, input,
-               entry[4], rlen, coding->subChar);
+    { if (Decode_Run(coding->subScheme, coding->sRunScheme, input,
+                     entry[4], rlen, coding->subChar))
+        EXIT(1);
+    }
+
+  return (0);
 }

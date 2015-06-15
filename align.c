@@ -73,7 +73,6 @@
 #undef  DEBUG_ALIGN        //  Show division points of Compute_Trace
 #undef  DEBUG_SCRIPT       //  Show trace additions for Compute_Trace
 #undef  DEBUG_AWAVE        //  Show F/R waves of Compute_Trace
-#define   SMALL_BIT 100
 
 #undef  SHOW_TRACE         //  Show full trace for Print_Alignment
 
@@ -102,7 +101,7 @@ Work_Data *New_Work_Data()
   
   work = (_Work_Data *) Malloc(sizeof(_Work_Data),"Allocating work data block");
   if (work == NULL)
-    exit (1);
+    EXIT(NULL);
   work->vecmax = 0;
   work->vector = NULL;
   work->pntmax = 0;
@@ -114,25 +113,43 @@ Work_Data *New_Work_Data()
   return ((Work_Data *) work);
 }
 
-static void enlarge_vector(_Work_Data *work, int newmax)
-{ work->vecmax = ((int) (newmax*1.2)) + 10000;
-  work->vector = Realloc(work->vector,work->vecmax,"Enlarging DP vector");
-  if (work->vector == NULL)
-    exit (1);
+static int enlarge_vector(_Work_Data *work, int newmax)
+{ void *vec;
+  int   max;
+
+  max = ((int) (newmax*1.2)) + 10000;
+  vec = Realloc(work->vector,max,"Enlarging DP vector");
+  if (vec == NULL)
+    EXIT(1);
+  work->vecmax = max;
+  work->vector = vec;
+  return (0);
 }
 
-static void enlarge_points(_Work_Data *work, int newmax)
-{ work->pntmax = ((int) (newmax*1.2)) + 10000;
-  work->points = Realloc(work->points,work->pntmax,"Enlarging point vector");
-  if (work->points == NULL)
-    exit (1);
+static int enlarge_points(_Work_Data *work, int newmax)
+{ void *vec;
+  int   max;
+
+  max = ((int) (newmax*1.2)) + 10000;
+  vec = Realloc(work->points,max,"Enlarging point vector");
+  if (vec == NULL)
+    EXIT(1);
+  work->pntmax = max;
+  work->points = vec;
+  return (0);
 }
 
-static void enlarge_trace(_Work_Data *work, int newmax)
-{ work->tramax = ((int) (newmax*1.2)) + 10000;
-  work->trace  = Realloc(work->trace,work->tramax,"Enlarging trace vector");
-  if (work->trace == NULL)
-    exit (1);
+static int enlarge_trace(_Work_Data *work, int newmax)
+{ void *vec;
+  int   max;
+
+  max = ((int) (newmax*1.2)) + 10000;
+  vec = Realloc(work->trace,max,"Enlarging trace vector");
+  if (vec == NULL)
+    EXIT(1);
+  work->tramax = max;
+  work->trace  = vec;
+  return (0);
 }
 
 void Free_Work_Data(Work_Data *ework)
@@ -175,16 +192,6 @@ void Free_Work_Data(Work_Data *ework)
 
 static double Bias_Factor[10] = { .690, .690, .690, .690, .780,
                                   .850, .900, .933, .966, 1.000 };
-
-  //  Micro-Sat Band Parameters
-
-#define MICRO_SAT  20
-
-static int Sat_Width[MICRO_SAT+1] =
-    { -1, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5 };
-
-#define SAT_LOW   .75
-#define SAT_HGH  1.25
 
   //  Adjustable paramters
 
@@ -234,7 +241,7 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
 
   spec = (_Align_Spec *) Malloc(sizeof(_Align_Spec),"Allocating alignment specification");
   if (spec == NULL)
-    exit (1);
+    EXIT(NULL);
 
   spec->ave_corr    = ave_corr;
   spec->trace_space = trace_space;
@@ -248,8 +255,9 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
     match = 1.-match;
   bias = (int) ((match+.025)*20.-1.);
   if (match < .2)
-    { fprintf(stderr,"Warning: Base bias worse than 80/20%% !\n");
-      bias = 3;
+    { EPRINTF(EPLACE,"Base bias worse than 80/20%% ! (New_Align_Spec)\n");
+      free(spec);
+      EXIT(NULL);
     }
 
   spec->ave_path = (int) (PATH_LEN * (1. - Bias_Factor[bias] * (1. - ave_corr)));
@@ -258,7 +266,9 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
 
   parms.score = (int16 *) Malloc(sizeof(int16)*(TRIM_MASK+1)*2,"Allocating trim table");
   if (parms.score == NULL)
-    exit (1);
+    { free(spec);
+      EXIT(NULL);
+    }
   parms.table = parms.score + (TRIM_MASK+1);
 
   set_table(0,0,0,0,&parms);
@@ -346,20 +356,25 @@ typedef struct
     int mark;
   } Pebble;
 
-static int forward_wave(_Work_Data *work, _Align_Spec *spec,
-                        Alignment *align, Path *bpath,
-                        int mind, int maxd, int mida)
+static int VectorEl = 6*sizeof(int) + sizeof(BVEC);
+
+static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, Path *bpath,
+                        int *mind, int maxd, int mida, int minp, int maxp)
 { char *aseq  = align->aseq;
   char *bseq  = align->bseq;
   Path *apath = align->path;
 
   int     hgh, low, dif;
-  int     minp, maxp;
+  int     vlen, vmin, vmax;
   int    *V, *M;
+  int    *_V, *_M;
   BVEC   *T;
+  BVEC   *_T;
 
   int    *HA, *HB;
+  int    *_HA, *_HB;
   int    *NA, *NB;
+  int    *_NA, *_NB;
   Pebble *cells;
   int     avail, cmax, boff;
 
@@ -376,17 +391,33 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
   int     more, morem, lasta;
   int     aclip, bclip;
 
-  { int alen = align->alen + 1;
-    int blen = align->blen + 1;
-    int tlen = alen + blen + 1;
+  hgh = maxd;
+  low = *mind;
+  dif = 0;
 
-    V  = ((int *) work->vector) + blen;
-    M  = V + tlen;
-    HA = M + tlen;
-    HB = HA + tlen;
-    NA = HB + tlen;
-    NB = NA + tlen;
-    T  = ((BVEC *) (NB + alen)) + blen;
+  { int span, wing;
+
+    span = (hgh-low)+1;
+    vlen = work->vecmax/VectorEl;
+    wing = (vlen - span)/2;
+    vmin = low - wing;
+    vmax = hgh + wing;
+
+    _V  = ((int *) work->vector);
+    _M  = _V + vlen;
+    _HA = _M + vlen;
+    _HB = _HA + vlen;
+    _NA = _HB + vlen;
+    _NB = _NA + vlen;
+    _T  = ((BVEC *) (_NB + vlen));
+
+    V  = _V-vmin;
+    M  = _M-vmin;
+    HA = _HA-vmin;
+    HB = _HB-vmin;
+    NA = _NA-vmin;
+    NB = _NB-vmin;
+    T  = _T-vmin;
 
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
@@ -399,39 +430,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
   }
 
   /* Compute 0-wave starting from mid-line */
-
-  hgh = maxd;
-  low = mind;
-  if (aseq == bseq)
-    { if (low < 0)
-        { int big = -low;
-          int sml = -hgh;
-
-          if (big <= MICRO_SAT)
-            minp = low - Sat_Width[big];
-          else
-            minp = -SAT_HGH*big;
-          if (sml <= MICRO_SAT)
-            maxp = hgh + Sat_Width[sml];
-          else
-            maxp = -SAT_LOW*sml;
-        }
-      else
-        { if (low <= MICRO_SAT)
-            minp = low - Sat_Width[low];
-          else
-            minp = SAT_LOW*low;
-          if (hgh <= MICRO_SAT)
-            maxp = hgh + Sat_Width[hgh];
-          else
-            maxp = SAT_HGH*hgh;
-        }
-    }
-  else
-    { minp = -INT32_MAX;
-      maxp =  INT32_MAX;
-    }
-  dif = 0;
 
   more  = 1;
   aclip =  INT32_MAX;
@@ -460,7 +458,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
           { cmax  = ((int) (avail*1.2)) + 10000;
             cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
             if (cells == NULL)
-              exit (1);
+              EXIT(1);
+            work->celmax = cmax;
+            work->cells  = (void *) cells;
           }
 
         na = ((y+k)/TRACE_SPACE)*TRACE_SPACE;
@@ -512,7 +512,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
               { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
-                  exit (1);
+                  EXIT(1);
+                work->celmax = cmax;
+                work->cells  = (void *) cells;
               }
 #ifdef SHOW_TPS
             printf(" A %d: %d,%d,0,%d\n",avail,ha,k,na); fflush(stdout);
@@ -530,7 +532,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
               { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
-                  exit (1);
+                  EXIT(1);
+                work->celmax = cmax;
+                work->cells  = (void *) cells;
               }
 #ifdef SHOW_TPS
             printf(" B %d: %d,%d,0,%d\n",avail,hb,k,nb); fflush(stdout);
@@ -603,6 +607,82 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
       BVEC    t;
       int     am, ac, ap;
       char   *a;
+
+      if (low <= vmin || hgh >= vmax)
+        { int   span, wing;
+          int64 move;
+          int64 vd, md, had, hbd, nad, nbd, td;
+
+          span = (hgh-low)+1;
+          if (.8*vlen < span)
+            { if (enlarge_vector(work,vlen*VectorEl))
+                EXIT(1);
+
+              move = ((void *) _V) - work->vector;
+              vlen = work->vecmax/VectorEl;
+
+              _V  = (int *) work->vector;
+              _M  = _V + vlen;
+              _HA = _M + vlen;
+              _HB = _HA + vlen;
+              _NA = _HB + vlen;
+              _NB = _NA + vlen;
+              _T  = ((BVEC *) (_NB + vlen));
+            }
+          else
+            move = 0;
+
+          wing = (vlen - span)/2;
+
+          vd  = ((void *) ( _V+wing)) - (((void *) ( V+low)) - move);
+          md  = ((void *) ( _M+wing)) - (((void *) ( M+low)) - move);
+          had = ((void *) (_HA+wing)) - (((void *) (HA+low)) - move);
+          hbd = ((void *) (_HB+wing)) - (((void *) (HB+low)) - move);
+          nad = ((void *) (_NA+wing)) - (((void *) (NA+low)) - move);
+          nbd = ((void *) (_NB+wing)) - (((void *) (NB+low)) - move);
+          td  = ((void *) ( _T+wing)) - (((void *) ( T+low)) - move);
+
+          if (vd < 0)
+            memmove( _V+wing,  ((void *) ( V+low)) - move, span*sizeof(int));
+          if (md < 0)
+            memmove( _M+wing,  ((void *) ( M+low)) - move, span*sizeof(int));
+          if (had < 0)
+            memmove(_HA+wing,  ((void *) (HA+low)) - move, span*sizeof(int));
+          if (hbd < 0)
+            memmove(_HB+wing,  ((void *) (HB+low)) - move, span*sizeof(int));
+          if (nad < 0)
+            memmove(_NA+wing,  ((void *) (NA+low)) - move, span*sizeof(int));
+          if (nbd < 0)
+            memmove(_NB+wing,  ((void *) (NB+low)) - move, span*sizeof(int));
+          if (td < 0)
+            memmove( _T+wing,  ((void *) ( T+low)) - move, span*sizeof(BVEC));
+
+          if (td > 0)
+            memmove( _T+wing,  ((void *) ( T+low)) - move, span*sizeof(BVEC));
+          if (nbd > 0)
+            memmove(_NB+wing,  ((void *) (NB+low)) - move, span*sizeof(int));
+          if (nad > 0)
+            memmove(_NA+wing,  ((void *) (NA+low)) - move, span*sizeof(int));
+          if (hbd > 0)
+            memmove(_HB+wing,  ((void *) (HB+low)) - move, span*sizeof(int));
+          if (had > 0)
+            memmove(_HA+wing,  ((void *) (HA+low)) - move, span*sizeof(int));
+          if (md > 0)
+            memmove( _M+wing,  ((void *) ( M+low)) - move, span*sizeof(int));
+          if (vd > 0)
+            memmove( _V+wing,  ((void *) ( V+low)) - move, span*sizeof(int));
+
+          vmin = low-wing;
+          vmax = hgh+wing;
+
+          V  =  _V-vmin;
+          M  =  _M-vmin;
+          HA = _HA-vmin;
+          HB = _HB-vmin;
+          NA = _NA-vmin;
+          NB = _NB-vmin;
+          T  =  _T-vmin;
+        }
 
       if (low > minp)
         { low -= 1;
@@ -702,7 +782,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
-                        exit (1);
+                        EXIT(1);
+                      work->celmax = cmax;
+                      work->cells  = (void *) cells;
                     }
 #ifdef SHOW_TPS
                   printf(" A %d: %d,%d,%d,%d\n",avail,ha,k,dif,NA[k]); fflush(stdout);
@@ -724,7 +806,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
-                        exit (1);
+                        EXIT(1);
+                      work->celmax = cmax;
+                      work->cells  = (void *) cells;
                     }
 #ifdef SHOW_TPS
                   printf(" B %d: %d,%d,%d,%d\n",avail,hb,k,dif,NB[k]); fflush(stdout);
@@ -938,27 +1022,29 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec,
     bpath->tlen  = btlen;
   }
 
-  work->cells  = (void *) cells;
-  work->celmax = cmax;
-
-  return (low);
+  *mind = low;
+  return (0);
 }
 
 /*** Reverse Wave ***/
 
-static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
-                         Alignment *align, Path *bpath, int mind, int maxd, int mida)
+static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, Path *bpath,
+                        int mind, int maxd, int mida, int minp, int maxp)
 { char *aseq  = align->aseq - 1;
   char *bseq  = align->bseq - 1;
   Path *apath = align->path;
 
   int     hgh, low, dif;
-  int     minp, maxp;
+  int     vlen, vmin, vmax;
   int    *V, *M;
+  int    *_V, *_M;
   BVEC   *T;
+  BVEC   *_T;
 
   int    *HA, *HB;
+  int    *_HA, *_HB;
   int    *NA, *NB;
+  int    *_NA, *_NB;
   Pebble *cells;
   int     avail, cmax, boff;
 
@@ -975,17 +1061,33 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
   int     more, morem, lasta;
   int     aclip, bclip;
 
-  { int alen = align->alen + 1;
-    int blen = align->blen + 1;
-    int tlen = alen + blen + 1;
+  hgh = maxd;
+  low = mind;
+  dif = 0;
 
-    V  = ((int *) work->vector) + blen;
-    M  = V + tlen;
-    HA = M + tlen;
-    HB = HA + tlen;
-    NA = HB + tlen;
-    NB = NA + tlen;
-    T  = ((BVEC *) (NB + alen)) + blen;
+  { int span, wing;
+
+    span = (hgh-low)+1;
+    vlen = work->vecmax/VectorEl;
+    wing = (vlen - span)/2;
+    vmin = low - wing;
+    vmax = hgh + wing;
+
+    _V  = ((int *) work->vector);
+    _M  = _V + vlen;
+    _HA = _M + vlen;
+    _HB = _HA + vlen;
+    _NA = _HB + vlen;
+    _NB = _NA + vlen;
+    _T  = ((BVEC *) (_NB + vlen));
+
+    V  = _V-vmin;
+    M  = _M-vmin;
+    HA = _HA-vmin;
+    HB = _HB-vmin;
+    NA = _NA-vmin;
+    NB = _NB-vmin;
+    T  = _T-vmin;
 
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
@@ -996,39 +1098,6 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
     else
       boff = 0;
   }
-
-  hgh = maxd;
-  low = mind;
-  if (aseq == bseq)
-    { if (low < 0)
-        { int big = -low;
-          int sml = -hgh;
-
-          if (big <= MICRO_SAT)
-            minp = low - Sat_Width[big];
-          else
-            minp = -SAT_HGH*big;
-          if (sml <= MICRO_SAT)
-            maxp = hgh + Sat_Width[sml];
-          else
-            maxp = -SAT_LOW*sml;
-        }
-      else
-        { if (low <= MICRO_SAT)
-            minp = low - Sat_Width[low];
-          else
-            minp = SAT_LOW*low;
-          if (hgh <= MICRO_SAT)
-            maxp = hgh + Sat_Width[hgh];
-          else
-            maxp = SAT_HGH*hgh;
-        }
-    }
-  else
-    { minp = -INT32_MAX;
-      maxp = INT32_MAX;
-    }
-  dif = 0;
 
   more  = 1;
   aclip = -INT32_MAX;
@@ -1057,7 +1126,9 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
           { cmax  = ((int) (avail*1.2)) + 10000;
             cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
             if (cells == NULL)
-              exit (1);
+              EXIT(1);
+            work->celmax = cmax;
+            work->cells  = (void *) cells;
           }
 
         na = ((y+k+TRACE_SPACE-1)/TRACE_SPACE-1)*TRACE_SPACE;
@@ -1107,7 +1178,9 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
               { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
-                  exit (1);
+                  EXIT(1);
+                work->celmax = cmax;
+                work->cells  = (void *) cells;
               }
 #ifdef SHOW_TPS
             printf(" A %d: %d,%d,0,%d\n",avail,ha,k,na); fflush(stdout);
@@ -1125,7 +1198,9 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
               { cmax  = ((int) (avail*1.2)) + 10000;
                 cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),"Reallocating trace cells");
                 if (cells == NULL)
-                  exit (1);
+                  EXIT(1);
+                work->celmax = cmax;
+                work->cells  = (void *) cells;
               }
 #ifdef SHOW_TPS
             printf(" B %d: %d,%d,0,%d\n",avail,hb,k,nb); fflush(stdout);
@@ -1196,6 +1271,81 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
       BVEC   t;
       int    am, ac, ap;
       char  *a;
+
+      if (low <= vmin || hgh >= vmax)
+        { int   span, wing;
+          int64 move, vd, md, had, hbd, nad, nbd, td;
+
+          span = (hgh-low)+1;
+          if (.8*vlen < span)
+            { if (enlarge_vector(work,vlen*VectorEl))
+                EXIT(1);
+
+              move = ((void *) _V) - work->vector;
+              vlen = work->vecmax/VectorEl;
+
+              _V  = (int *) work->vector;
+              _M  = _V + vlen;
+              _HA = _M + vlen;
+              _HB = _HA + vlen;
+              _NA = _HB + vlen;
+              _NB = _NA + vlen;
+              _T  = ((BVEC *) (_NB + vlen));
+            }
+          else
+            move = 0;
+
+          wing = (vlen - span)/2;
+
+          vd  = ((void *) ( _V+wing)) - (((void *) ( V+low)) - move);
+          md  = ((void *) ( _M+wing)) - (((void *) ( M+low)) - move);
+          had = ((void *) (_HA+wing)) - (((void *) (HA+low)) - move);
+          hbd = ((void *) (_HB+wing)) - (((void *) (HB+low)) - move);
+          nad = ((void *) (_NA+wing)) - (((void *) (NA+low)) - move);
+          nbd = ((void *) (_NB+wing)) - (((void *) (NB+low)) - move);
+          td  = ((void *) ( _T+wing)) - (((void *) ( T+low)) - move);
+
+          if (vd < 0)
+            memmove( _V+wing,  ((void *) ( V+low)) - move, span*sizeof(int));
+          if (md < 0)
+            memmove( _M+wing,  ((void *) ( M+low)) - move, span*sizeof(int));
+          if (had < 0)
+            memmove(_HA+wing,  ((void *) (HA+low)) - move, span*sizeof(int));
+          if (hbd < 0)
+            memmove(_HB+wing,  ((void *) (HB+low)) - move, span*sizeof(int));
+          if (nad < 0)
+            memmove(_NA+wing,  ((void *) (NA+low)) - move, span*sizeof(int));
+          if (nbd < 0)
+            memmove(_NB+wing,  ((void *) (NB+low)) - move, span*sizeof(int));
+          if (td < 0)
+            memmove( _T+wing,  ((void *) ( T+low)) - move, span*sizeof(BVEC));
+
+          if (td > 0)
+            memmove( _T+wing,  ((void *) ( T+low)) - move, span*sizeof(BVEC));
+          if (nbd > 0)
+            memmove(_NB+wing,  ((void *) (NB+low)) - move, span*sizeof(int));
+          if (nad > 0)
+            memmove(_NA+wing,  ((void *) (NA+low)) - move, span*sizeof(int));
+          if (hbd > 0)
+            memmove(_HB+wing,  ((void *) (HB+low)) - move, span*sizeof(int));
+          if (had > 0)
+            memmove(_HA+wing,  ((void *) (HA+low)) - move, span*sizeof(int));
+          if (md > 0)
+            memmove( _M+wing,  ((void *) ( M+low)) - move, span*sizeof(int));
+          if (vd > 0)
+            memmove( _V+wing,  ((void *) ( V+low)) - move, span*sizeof(int));
+
+          vmin = low-wing;
+          vmax = hgh+wing;
+
+          V  =  _V-vmin;
+          M  =  _M-vmin;
+          HA = _HA-vmin;
+          HB = _HB-vmin;
+          NA = _NA-vmin;
+          NB = _NB-vmin;
+          T  =  _T-vmin;
+        }
 
       if (low > minp)
         { low -= 1;
@@ -1295,7 +1445,9 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
-                        exit (1);
+                        EXIT(1);
+                      work->celmax = cmax;
+                      work->cells  = (void *) cells;
                     }
 #ifdef SHOW_TPS
                   printf(" A %d: %d,%d,%d,%d\n",avail,ha,k,dif,NA[k]); fflush(stdout);
@@ -1316,7 +1468,9 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
                       cells = (Pebble *) Realloc(cells,cmax*sizeof(Pebble),
                                                        "Reallocating trace cells");
                       if (cells == NULL)
-                        exit (1);
+                        EXIT(1);
+                      work->celmax = cmax;
+                      work->cells  = (void *) cells;
                     }
 #ifdef SHOW_TPS
                   printf(" B %d: %d,%d,%d,%d\n",avail,hb,k,dif,NB[k]); fflush(stdout);
@@ -1586,8 +1740,7 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
     bpath->trace = btrace + btlen;
   }
 
-  work->cells  = (void *) cells;
-  work->celmax = cmax;
+  return (0);
 }
 
 
@@ -1596,21 +1749,27 @@ static void reverse_wave(_Work_Data *work, _Align_Spec *spec,
 */
 
 Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
-                      int xlow, int xhgh, int ycnt)
+                      int low, int hgh, int anti, int lbord, int hbord)
 { _Work_Data  *work = ( _Work_Data *) ework;
   _Align_Spec *spec = (_Align_Spec *) espec;
 
   Path *apath, *bpath;
-  int alen, blen;
+  int   minp, maxp;
+  int   selfie;
 
-  alen = align->alen;
-  blen = align->blen;
+  { int alen, blen;
+    int maxtp, wsize;
 
-  { int maxtp, wsize;
+    alen = align->alen;
+    blen = align->blen;
 
-    wsize = (6*sizeof(int) + sizeof(BVEC))*(alen+blen+3);
+    if (hgh-low >= 7500)
+      wsize = VectorEl*(hgh-low+1);
+    else
+      wsize = VectorEl*10000;
     if (wsize >= work->vecmax)
-      enlarge_vector(work,wsize);
+      if (enlarge_vector(work,wsize))
+        EXIT(NULL);
 
     if (alen < blen)
       maxtp = 2*(blen/spec->trace_space+2);
@@ -1618,7 +1777,8 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
       maxtp = 2*(alen/spec->trace_space+2);
     wsize = 4*maxtp*sizeof(uint16) + sizeof(Path);
     if (wsize > work->pntmax)
-      enlarge_points(work,wsize);
+      if (enlarge_points(work,wsize))
+        EXIT(NULL);
 
     apath = align->path;
     bpath = (Path *) work->points;
@@ -1631,30 +1791,41 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   printf("\n");
 #endif
 
-  { int l, h, a;
+  selfie = (align->aseq == align->bseq);
+   
+  if (lbord < 0)
+    { if (selfie && low >= 0)
+        minp = 1;
+      else
+        minp = -INT32_MAX;
+    }
+  else
+    minp = low-lbord;
+  if (hbord < 0)
+    { if (selfie && hgh <= 0)
+        maxp = -1;
+      else
+        maxp = INT32_MAX;
+    }
+  else
+    maxp = hgh+hbord;
 
-    l = xlow-ycnt;
-    h = xhgh-ycnt;
-    a = (xlow+xhgh)/2+ycnt;
-    if (a < h)
-      a = h;
-    if (a < -l)
-      a = -l;
-    if (a > 2*alen - h)
-      a = 2*alen-h;
-    if (a > 2*blen + l)
-      a = 2*blen+l;
+  if (forward_wave(work,spec,align,bpath,&low,hgh,anti,minp,maxp))
+    EXIT(NULL);
 
-    l = forward_wave(work,spec,align,bpath,l,h,a);
 #ifdef DEBUG_PASSES
-    printf("F1 (%d-%d,%d) => (%d,%d) %d\n",xlow,xhgh,ycnt,apath->aepos,apath->bepos,apath->diffs);
+  printf("F1 (%d,%d) ~ %d => (%d,%d) %d\n",
+         (2*anti+(low+hgh))/4,(anti-(low+hgh))/4,hgh-low,
+         apath->aepos,apath->bepos,apath->diffs);
 #endif
 
-    reverse_wave(work,spec,align,bpath,l,l,a);
+  if (reverse_wave(work,spec,align,bpath,low,low,anti,minp,maxp))
+    EXIT(NULL);
+
 #ifdef DEBUG_PASSES
-    printf("R1 (%d,%d) => (%d,%d) %d\n",l,ycnt,apath->abpos,apath->bbpos,apath->diffs);
+  printf("R1 (%d,%d) => (%d,%d) %d\n",
+         (anti+low)/2,(anti-low)/2,apath->abpos,apath->bbpos,apath->diffs);
 #endif
-  }
 
   if (COMP(align->flags))
     { uint16 *trace = (uint16 *) bpath->trace;
@@ -1802,7 +1973,7 @@ int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
 
   if (((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace)*2 != ovl->path.tlen-2)
     { if (verbose) 
-        fprintf(stderr,"  %s: Wrong number of trace points\n",fname);
+        EPRINTF(EPLACE,"  %s: Wrong number of trace points\n",fname);
       return (1);
     }         
   p = ovl->path.bbpos;
@@ -1818,7 +1989,7 @@ int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
     }
   if (p != ovl->path.bepos)
     { if (verbose)
-        fprintf(stderr,"  %s: Trace point sum != aligned interval\n",fname);
+        EPRINTF(EPLACE,"  %s: Trace point sum != aligned interval\n",fname);
       return (1); 
     }         
   return (0);
@@ -1921,8 +2092,8 @@ void Complement_Seq(char *aseq, int len)
 static char ToL[8] = { 'a', 'c', 'g', 't', '.', '[', ']', '-' };
 static char ToU[8] = { 'A', 'C', 'G', 'T', '.', '[', ']', '-' };
 
-void Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
-                     int indent, int width, int border, int upper, int coord)
+int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
+                    int indent, int width, int border, int upper, int coord)
 { _Work_Data *work  = (_Work_Data *) ework;
   int        *trace = align->path->trace;
   int         tlen  = align->path->tlen;
@@ -1937,7 +2108,7 @@ void Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   int   match, diff;
   char *N2A;
 
-  if (trace == NULL) return;
+  if (trace == NULL) return (0);
 
 #ifdef SHOW_TRACE
   fprintf(file,"\nTrace:\n");
@@ -1947,7 +2118,8 @@ void Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
 
   o = sizeof(char)*3*(width+1);
   if (o > work->vecmax)
-    enlarge_vector(work,o);
+    if (enlarge_vector(work,o))
+      EXIT(1);
 
   if (upper)
     N2A = ToU;
@@ -2157,10 +2329,11 @@ void Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
     fprintf(file,"\n");
 
   fflush(file);
+  return (0);
 }
 
-void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
-                     int indent, int block, int border, int upper, int coord)
+int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
+                    int indent, int block, int border, int upper, int coord)
 { _Work_Data *work  = (_Work_Data *) ework;
   int        *trace = align->path->trace;
   int         tlen  = align->path->tlen;
@@ -2176,7 +2349,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   char *N2A;
   int   vmax;
 
-  if (trace == NULL) return;
+  if (trace == NULL) return (0);
 
 #ifdef SHOW_TRACE
   fprintf(file,"\nTrace:\n");
@@ -2187,7 +2360,8 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   vmax = work->vecmax/3;
   o = sizeof(char)*6*(block+1);
   if (o > vmax)
-    { enlarge_vector(work,3*o);
+    { if (enlarge_vector(work,3*o))
+        EXIT(1);
       vmax = work->vecmax/3;
     }
 
@@ -2245,7 +2419,8 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   Bbuf[o] = N2A[v];							\
   o += 1;								\
   if (o >= vmax)							\
-    { enlarge_vector(work,3*o);						\
+    { if (enlarge_vector(work,3*o))					\
+        EXIT(1);							\
       vmax = work->vecmax/3;						\
       memmove(work->vector+2*vmax,Dbuf,o);				\
       memmove(work->vector+vmax,Bbuf,o);				\
@@ -2408,6 +2583,7 @@ void Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
     fprintf(file,"\n");
 
   fflush(file);
+  return (0);
 }
 
 /* Print an ASCII representation of the overlap in align between fragments
@@ -2773,7 +2949,7 @@ OVERLAP2:
 }
 
 
-static void Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
+static int Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
 { _Work_Data *work = (_Work_Data *) ework;
   Trace_Waves wave;
 
@@ -2792,13 +2968,15 @@ static void Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
     L = asub;
   L *= sizeof(int);
   if (L > work->tramax)
-    enlarge_trace(work,L);
+    if (enlarge_trace(work,L))
+      EXIT(1);
 
   trace = wave.Stop = ((int *) work->trace);
 
   D = 2*(path->diffs + 4)*sizeof(int);
   if (D > work->vecmax)
-    enlarge_vector(work,D);
+    if (enlarge_vector(work,D))
+      EXIT(1);
   
   D = (path->diffs+3)/2;
   wave.VF = ((int *) work->vector) + (D+1);
@@ -2811,6 +2989,7 @@ static void Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
                          align->bseq+path->bbpos,path->bepos-path->bbpos,&wave);
   path->trace = trace;
   path->tlen  = wave.Stop - trace;
+  return (0);
 }
 
 
@@ -2840,7 +3019,8 @@ static int iter_np(char *A, int M, char *B, int N, Trace_Waves *wave)
 
   { int  *F0, *F1, *F2;
     int  *HF;
-    int   low, hgh, pos;
+    int   low, hgh;
+    int   posl, posh;
 
 #ifdef DEBUG_ALIGN
     printf("\n%*s BASE %ld,%ld: %d vs %d\n",depth,"",A-wave->Aabs,B-wave->Babs,M,N);
@@ -2862,10 +3042,19 @@ static int iter_np(char *A, int M, char *B, int N, Trace_Waves *wave)
       { low = del;
         hgh = 0;
       }
+
+    posl = -INT32_MAX;
+    posh =  INT32_MAX;
     if (wave->Aabs == wave->Babs)
-      pos = B-A;
-    else
-      pos = -INT32_MAX;
+      { if (B == A)
+          { EPRINTF(EPLACE,"Error: self comparison starts on diagonal 0 (Compute_Trace)\n");
+            EXIT(-1);
+          }
+        else if (B < A)
+          posl = (B-A)+1;
+        else
+          posh = (B-A)-1;
+      }
 
     F1 = PVF[-2];
     F0 = PVF[-1];
@@ -2888,10 +3077,10 @@ static int iter_np(char *A, int M, char *B, int N, Trace_Waves *wave)
         HF = PHF[D];
 
         if ((D & 0x1) == 0)
-          { hgh += 1;
-            low -= 1;
-            if (low <= pos)
-              low += 1;
+          { if (low > posl)
+              low -= 1;
+            if (hgh < posh)
+              hgh += 1;
           }
         F0[hgh+1] = F0[low-1] = -2;
 
@@ -3086,7 +3275,8 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave)
 
   { int  *F0, *F1, *F2;
     int  *HF;
-    int   low, hgh, pos;
+    int   low, hgh;
+    int   posl, posh;
 
 #ifdef DEBUG_ALIGN
     printf("\n%*s BASE %ld,%ld: %d vs %d\n",depth,"",A-wave->Aabs,B-wave->Babs,M,N);
@@ -3108,10 +3298,19 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave)
       { low = del;
         hgh = 0;
       }
+
+    posl = -INT32_MAX;
+    posh =  INT32_MAX;
     if (wave->Aabs == wave->Babs)
-      pos = B-A;
-    else
-      pos = -INT32_MAX;
+      { if (B == A)
+          { EPRINTF(EPLACE,"Error: self comparison starts on diagonal 0 (Compute_Trace)\n");
+            EXIT(1);
+          }
+        else if (B < A)
+          posl = (B-A)+1;
+        else
+          posh = (B-A)-1;
+      }
 
     F1 = PVF[-2];
     F0 = PVF[-1];
@@ -3134,10 +3333,10 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave)
         HF = PHF[D];
 
         if ((D & 0x1) == 0)
-          { hgh += 1;
-            low -= 1;
-            if (low <= pos)
-              low += 1;
+          { if (low > posl)
+              low -= 1;
+            if (hgh < posh)
+              hgh += 1;
           }
         F0[hgh+1] = F0[low-1] = -2;
 
@@ -3246,7 +3445,7 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave)
     wave->mida = (A-wave->Aabs) + k + PVF[D][k];
   }
 
-  return (1);
+  return (0);
 }
 
 
@@ -3256,13 +3455,13 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave)
 *                                                                                        *
 \****************************************************************************************/
 
-void Compute_Trace_ALL(Alignment *align, Work_Data *ework)
+int Compute_Trace_ALL(Alignment *align, Work_Data *ework)
 { _Work_Data *work = (_Work_Data *) ework;
   Trace_Waves wave;
 
   Path *path;
   char *aseq, *bseq;
-  int   M, N;
+  int   M, N, D;
 
   path = align->path;
   aseq = align->aseq;
@@ -3282,19 +3481,19 @@ void Compute_Trace_ALL(Alignment *align, Work_Data *ework)
       s = M;
     s *= sizeof(int);
     if (s > work->tramax)
-      enlarge_trace(work,s);
+      if (enlarge_trace(work,s))
+        EXIT(1);
 
     dmax = path->diffs - abs(M-N);
 
     s = (dmax+3)*2*((M+N+3)*sizeof(int) + sizeof(int *));
 
     if (s > 256000000)
-      { Compute_Trace_ND_ALL(align,ework);
-        return;
-      }
+      return (Compute_Trace_ND_ALL(align,ework));
 
     if (s > work->vecmax)
-      enlarge_vector(work,s);
+      if (enlarge_vector(work,s))
+        EXIT(1);
 
     wave.PVF = PVF = ((int **) (work->vector)) + 2;
     wave.PHF = PHF = PVF + (dmax+3);
@@ -3312,12 +3511,17 @@ void Compute_Trace_ALL(Alignment *align, Work_Data *ework)
   wave.Aabs = aseq;
   wave.Babs = bseq;
 
-  path->diffs = iter_np(aseq+path->abpos,M,bseq+path->bbpos,N,&wave);
+  D = iter_np(aseq+path->abpos,M,bseq+path->bbpos,N,&wave);
+  if (D < 0)
+    EXIT(1);
+  path->diffs = D;
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
+
+  return (0);
 }
 
-void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
+int Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
 { _Work_Data *work = (_Work_Data *) ework;
   Trace_Waves wave;
 
@@ -3348,7 +3552,8 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
     else
       s = M*sizeof(int);
     if (s > work->tramax)
-      enlarge_trace(work,s);
+      if (enlarge_trace(work,s))
+        EXIT(1);
 
     nmax = 0;
     dmax = 0;
@@ -3366,7 +3571,8 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
     s = (dmax+3)*2*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
     if (s > work->vecmax)
-      enlarge_vector(work,s);
+      if (enlarge_vector(work,s))
+        EXIT(1);
 
     wave.PVF = PVF = ((int **) (work->vector)) + 2;
     wave.PHF = PHF = PVF + (dmax+3);
@@ -3384,7 +3590,7 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
   wave.Aabs = aseq;
   wave.Babs = bseq;
 
-  { int i;
+  { int i, d;
 
     diffs = 0;
     ab = path->abpos;
@@ -3394,21 +3600,29 @@ void Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
     for (i = 1; i < tlen; i += 2)
       { ae = ae + trace_spacing;
         be = bb + points[i];
-        diffs += iter_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave);
+        d  = iter_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave);
+        if (d < 0)
+          EXIT(1);
+        diffs += d;
         ab = ae;
         bb = be;
       }
     ae = path->aepos;
     be = path->bepos;
-    diffs += iter_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave);
+    d  = iter_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave);
+    if (d < 0)
+      EXIT(1);
+    diffs += d;
   }
 
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
   path->diffs = diffs;
+
+  return (0);
 }
 
-void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
+int Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
 { _Work_Data *work = (_Work_Data *) ework;
   Trace_Waves wave;
 
@@ -3439,7 +3653,8 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
     else
       s = M*sizeof(int);
     if (s > work->tramax)
-      enlarge_trace(work,s);
+      if (enlarge_trace(work,s))
+        EXIT(1);
 
     nmax = 0;
     dmax = 0;
@@ -3457,7 +3672,8 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
     s = (dmax+3)*4*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
     if (s > work->vecmax)
-      enlarge_vector(work,s);
+      if (enlarge_vector(work,s))
+        EXIT(1);
 
     wave.PVF = PVF = ((int **) (work->vector)) + 2;
     wave.PHF = PHF = PVF + (dmax+3);
@@ -3475,7 +3691,7 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
   wave.Aabs = aseq;
   wave.Babs = bseq;
 
-  { int i;
+  { int i, d;
     int as, bs;
     int af, bf;
 
@@ -3488,28 +3704,42 @@ void Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
       { ae = ae + trace_spacing;
         be = bb + points[i];
         if (middle_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave))
-          { af = wave.mida;
-            bf = wave.midb;
-            diffs += iter_np(aseq+as,af-as,bseq+bs,bf-bs,&wave);
-            ab = ae;
-            bb = be;
-            as = af;
-            bs = bf;
-          }
-      }
-    ae = path->aepos;
-    be = path->bepos;
-    if (middle_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave))
-      { af = wave.mida;
+          EXIT(1);
+        af = wave.mida;
         bf = wave.midb;
-        diffs  += iter_np(aseq+as,af-as,bseq+bs,bf-bs,&wave);
+        d  = iter_np(aseq+as,af-as,bseq+bs,bf-bs,&wave);
+        if (d < 0)
+          EXIT(1);
+        diffs += d;
+        ab = ae;
+        bb = be;
         as = af;
         bs = bf;
       }
-    diffs += iter_np(aseq+af,ae-as,bseq+bf,be-bs,&wave);
+
+    ae = path->aepos;
+    be = path->bepos;
+
+    if (middle_np(aseq+ab,ae-ab,bseq+bb,be-bb,&wave))
+      EXIT(1);
+    af = wave.mida;
+    bf = wave.midb;
+    d  = iter_np(aseq+as,af-as,bseq+bs,bf-bs,&wave);
+    if (d < 0)
+      EXIT(1);
+    diffs += d;
+    as = af;
+    bs = bf;
+    
+    d += iter_np(aseq+af,ae-as,bseq+bf,be-bs,&wave);
+    if (d < 0)
+      EXIT(1);
+    diffs += d;
   }
 
   path->trace = work->trace;
   path->tlen  = wave.Stop - ((int *) path->trace);
   path->diffs = diffs;
+
+  return (0);
 }

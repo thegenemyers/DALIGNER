@@ -73,14 +73,20 @@
 
 char *Prog_Name;
 
+#ifdef INTERACTIVE
+
+char Ebuffer[1000];
+
+#endif
+
 void *Malloc(int64 size, char *mesg)
 { void *p;
 
   if ((p = malloc(size)) == NULL)
     { if (mesg == NULL)
-        fprintf(stderr,"%s: Out of memory\n",Prog_Name);
+        EPRINTF(EPLACE,"%s: Out of memory\n",Prog_Name);
       else
-        fprintf(stderr,"%s: Out of memory (%s)\n",Prog_Name,mesg);
+        EPRINTF(EPLACE,"%s: Out of memory (%s)\n",Prog_Name,mesg);
     }
   return (p);
 }
@@ -88,9 +94,9 @@ void *Malloc(int64 size, char *mesg)
 void *Realloc(void *p, int64 size, char *mesg)
 { if ((p = realloc(p,size)) == NULL)
     { if (mesg == NULL)
-        fprintf(stderr,"%s: Out of memory\n",Prog_Name);
+        EPRINTF(EPLACE,"%s: Out of memory\n",Prog_Name);
       else
-        fprintf(stderr,"%s: Out of memory (%s)\n",Prog_Name,mesg);
+        EPRINTF(EPLACE,"%s: Out of memory (%s)\n",Prog_Name,mesg);
     }
   return (p);
 }
@@ -102,9 +108,9 @@ char *Strdup(char *name, char *mesg)
     return (NULL);
   if ((s = strdup(name)) == NULL)
     { if (mesg == NULL)
-        fprintf(stderr,"%s: Out of memory\n",Prog_Name);
+        EPRINTF(EPLACE,"%s: Out of memory\n",Prog_Name);
       else
-        fprintf(stderr,"%s: Out of memory (%s)\n",Prog_Name,mesg);
+        EPRINTF(EPLACE,"%s: Out of memory (%s)\n",Prog_Name,mesg);
     }
   return (s);
 }
@@ -115,7 +121,7 @@ FILE *Fopen(char *name, char *mode)
   if (name == NULL || mode == NULL)
     return (NULL);
   if ((f = fopen(name,mode)) == NULL)
-    fprintf(stderr,"%s: Cannot open %s for '%s'\n",Prog_Name,name,mode);
+    EPRINTF(EPLACE,"%s: Cannot open %s for '%s'\n",Prog_Name,name,mode);
   return (f);
 }
 
@@ -181,7 +187,7 @@ char *Catenate(char *path, char *sep, char *root, char *suffix)
   if (len > max)
     { max = ((int) (1.2*len)) + 100;
       if ((cat = (char *) realloc(cat,max+1)) == NULL)
-        { fprintf(stderr,"%s: Out of memory (Making path name for %s)\n",Prog_Name,root);
+        { EPRINTF(EPLACE,"%s: Out of memory (Making path name for %s)\n",Prog_Name,root);
           return (NULL);
         }
     }
@@ -201,7 +207,7 @@ char *Numbered_Suffix(char *left, int num, char *right)
   if (len > max)
     { max = ((int) (1.2*len)) + 100;
       if ((suffix = (char *) realloc(suffix,max+1)) == NULL)
-        { fprintf(stderr,"%s: Out of memory (Making number suffix for %d)\n",Prog_Name,num);
+        { EPRINTF(EPLACE,"%s: Out of memory (Making number suffix for %d)\n",Prog_Name,num);
           return (NULL);
         }
     }
@@ -383,19 +389,21 @@ void Number_Read(char *s)
 //   a part # in it then just the part is opened.  The index array is allocated (for all or
 //   just the part) and read in.
 // Return status of routine:
-//    -1: The DB could not be opened for a reason reported by the routine to stderr
+//    -1: The DB could not be opened for a reason reported by the routine to EPLACE
 //     0: Open of DB proceeded without mishap
 //     1: Open of DAM proceeded without mishap
 
 int Open_DB(char* path, HITS_DB *db)
-{ char *root, *pwd, *bptr, *fptr, *cat;
-  int   nreads;
-  FILE *index, *dbvis;
-  int   status, plen, isdam;
-  int   part, cutoff, all;
-  int   ufirst, tfirst, ulast, tlast;
+{ HITS_DB dbcopy;
+  char   *root, *pwd, *bptr, *fptr, *cat;
+  int     nreads;
+  FILE   *index, *dbvis;
+  int     status, plen, isdam;
+  int     part, cutoff, all;
+  int     ufirst, tfirst, ulast, tlast;
 
   status = -1;
+  dbcopy = *db;
 
   plen = strlen(path);
   if (strcmp(path+(plen-4),".dam") == 0)
@@ -418,22 +426,24 @@ int Open_DB(char* path, HITS_DB *db)
   isdam = 0;
   cat = Catenate(pwd,"/",root,".db");
   if (cat == NULL)
-    exit (1);
+    return (-1);
   if ((dbvis = fopen(cat,"r")) == NULL)
     { cat = Catenate(pwd,"/",root,".dam");
       if (cat == NULL)
-        exit (1);
+        return (-1);
       if ((dbvis = fopen(cat,"r")) == NULL)
-        { fprintf(stderr,"%s: Could not open database %s\n",Prog_Name,path);
-          goto exit;
+        { EPRINTF(EPLACE,"%s: Could not open database %s\n",Prog_Name,path);
+          goto error;
         }
       isdam = 1;
     }
 
   if ((index = Fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
-    goto exit1;
+    goto error1;
   if (fread(db,sizeof(HITS_DB),1,index) != 1)
-    SYSTEM_ERROR
+    { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+      goto error2;
+    }
 
   { int   p, nblocks, nfiles;
     int64 size;
@@ -441,35 +451,45 @@ int Open_DB(char* path, HITS_DB *db)
 
     nblocks = 0;
     if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+        goto error2;
+      }
     for (p = 0; p < nfiles; p++)
       if (fscanf(dbvis,DB_FDATA,&tlast,fname,prolog) != 3)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+          goto error2;
+        }
     if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1)
       if (part == 0)
         { cutoff = 0;
           all    = 1;
         }
       else
-        { fprintf(stderr,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
+        { EPRINTF(EPLACE,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
                          Prog_Name,root);
-          goto exit2;
+          goto error2;
         }
     else
       { if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
-          SYSTEM_ERROR
+          { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+            goto error2;
+          }
         if (part > nblocks)
-          { fprintf(stderr,"%s: DB %s has only %d blocks\n",Prog_Name,root,nblocks);
-            goto exit2;
+          { EPRINTF(EPLACE,"%s: DB %s has only %d blocks\n",Prog_Name,root,nblocks);
+            goto error2;
           }
       }
 
     if (part > 0)
       { for (p = 1; p <= part; p++)
           if (fscanf(dbvis,DB_BDATA,&ufirst,&tfirst) != 2)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+              goto error2;
+            }
         if (fscanf(dbvis,DB_BDATA,&ulast,&tlast) != 2)
-          SYSTEM_ERROR
+          { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+            goto error2;
+          }
       }
     else
       { ufirst = tfirst = 0;
@@ -491,7 +511,10 @@ int Open_DB(char* path, HITS_DB *db)
     { db->reads = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+2),"Allocating Open_DB index");
       db->reads += 1;
       if (fread(db->reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+          free(db->reads);
+          goto error2;
+        }
     }
   else
     { HITS_READ *reads;
@@ -503,7 +526,10 @@ int Open_DB(char* path, HITS_DB *db)
 
       fseeko(index,sizeof(HITS_READ)*ufirst,SEEK_CUR);
       if (fread(reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+          free(reads);
+          goto error2;
+        }
 
       totlen = 0;
       maxlen = 0;
@@ -524,21 +550,26 @@ int Open_DB(char* path, HITS_DB *db)
 
   db->nreads = nreads;
   db->path   = Strdup(Catenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
+  if (db->path == NULL)
+    goto error2;
   db->bases  = NULL;
   db->loaded = 0;
 
   status = isdam;
 
-exit2:
+error2:
   fclose(index);
-exit1:
+error1:
   fclose(dbvis);
-exit:
+error:
   if (bptr != NULL)
     *bptr = '.';
 
   free(pwd);
   free(root);
+
+  if (status < 0)
+    *db = dbcopy;
 
   return (status);
 }
@@ -682,61 +713,58 @@ void Close_DB(HITS_DB *db)
 HITS_DB *Active_DB = NULL;  //  Last db/qv used by "Load_QVentry"
 HITS_QV *Active_QV;         //    Becomes invalid after closing
 
-void Load_QVs(HITS_DB *db)
+int Load_QVs(HITS_DB *db)
 { FILE        *quiva, *istub, *indx;
+  char        *root;
   uint16      *table;
-  QVcoding    *coding;
   HITS_QV     *qvtrk;
+  QVcoding    *coding, *nx;
+  int          ncodes;
 
   if (db->tracks != NULL && strcmp(db->tracks->name,".@qvs") == 0)
-    return;
+    return (0);
 
   if (db->trimmed)
-    { fprintf(stderr,"%s: Cannot load QVs after trimming the DB\n",Prog_Name);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: Cannot load QVs after trimming the DB\n",Prog_Name);
+      EXIT(1);
     }
 
   if (db->reads[db->nreads-1].coff < 0)
-    { fprintf(stderr,"%s: The requested QVs have not been added to the DB!\n",Prog_Name);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: The requested QVs have not been added to the DB!\n",Prog_Name);
+      EXIT(1);
     }
 
   //  Open .qvs, .idx, and .db files
 
   quiva = Fopen(Catenate(db->path,"","",".qvs"),"r");
   if (quiva == NULL)
-    return;
-  if (db->part > 0)
-    { indx = Fopen(Catenate(db->path,"","",".idx"),"r");
-      if (indx == NULL)
-        exit (1);
-    }
-  else
-    indx = NULL;
+    return (-1);
 
-  { char *x;
+  istub  = NULL;
+  indx   = NULL; 
+  table  = NULL;
+  coding = NULL;
+  qvtrk  = NULL;
 
-    x = rindex(db->path,'/');
-    *x = '\0';
-    istub = Fopen(Catenate(db->path,"/",x+2,".db"),"r");
-    if (istub == NULL)
-      exit (1);
-    *x = '/';
-  }
+  root = rindex(db->path,'/') + 2;
+  istub = Fopen(Catenate(db->path,"/",root,".db"),"r");
+  if (istub == NULL)
+    goto error;
 
-  { int   first, last, nfiles, ncodes;
+  { int   first, last, nfiles;
     char  prolog[MAX_NAME], fname[MAX_NAME];
     int   i, j;
 
-    table = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
-
     if (fscanf(istub,DB_NFILE,&nfiles) != 1)
-      SYSTEM_ERROR
+      { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+        goto error;
+      }
 
     if (db->part > 0)
-      { int pfirst, plast;
-        int fbeg, fend;
-        int n, k;
+      { int       pfirst, plast;
+        int       fbeg, fend;
+        int       n, k;
+        FILE     *indx;
 
         //  Determine first how many and which files span the block (fbeg to fend)
 
@@ -746,7 +774,9 @@ void Load_QVs(HITS_DB *db)
         first = 0;
         for (fbeg = 0; fbeg < nfiles; fbeg++)
           { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              SYSTEM_ERROR
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
             if (last > pfirst)
               break;
             first = last;
@@ -755,31 +785,36 @@ void Load_QVs(HITS_DB *db)
           { if (last >= plast)
               break;
             if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              SYSTEM_ERROR
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
             first = last;
           }
 
+        indx   = Fopen(Catenate(db->path,"","",".idx"),"r");
         ncodes = fend-fbeg;
         coding = (QVcoding *) Malloc(sizeof(QVcoding)*ncodes,"Allocating coding schemes");
+        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
+        if (indx == NULL || coding == NULL || table == NULL)
+          { ncodes = 0;
+            goto error;
+          }
 
         //  Carefully get the first coding scheme (its offset is most likely in a HITS_RECORD
         //    in .idx that is *not* in memory).  Get all the other coding schemes normally and
         //    assign the tables # for each read in the block in "tables".
 
         rewind(istub);
-        if (fscanf(istub,DB_NFILE,&nfiles) != 1)
-          SYSTEM_ERROR
+        fscanf(istub,DB_NFILE,&nfiles);
 
         first = 0;
         for (n = 0; n < fbeg; n++)
-          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              SYSTEM_ERROR
+          { fscanf(istub,DB_FDATA,&last,fname,prolog);
             first = last;
           }
 
         for (n = fbeg; n < fend; n++)
-          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              SYSTEM_ERROR
+          { fscanf(istub,DB_FDATA,&last,fname,prolog);
 
             i = n-fbeg;
             if (first < pfirst)
@@ -787,13 +822,26 @@ void Load_QVs(HITS_DB *db)
 
                 fseeko(indx,sizeof(HITS_DB) + sizeof(HITS_READ)*first,SEEK_SET);
                 if (fread(&read,sizeof(HITS_READ),1,indx) != 1)
-                  SYSTEM_ERROR
+                  { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                    ncodes = i;
+                    goto error;
+                  }
                 fseeko(quiva,read.coff,SEEK_SET);
-                coding[i] = *Read_QVcoding(quiva);
+                nx = Read_QVcoding(quiva);
+                if (nx == NULL)
+                  { ncodes = i;
+                    goto error;
+                  }
+                coding[i] = *nx;
               }
             else
               { fseeko(quiva,db->reads[first-pfirst].coff,SEEK_SET);
-                coding[i] = *Read_QVcoding(quiva);
+                nx = Read_QVcoding(quiva);
+                if (nx == NULL)
+                  { ncodes = i;
+                    goto error;
+                  }
+                coding[i] = *nx;
                 db->reads[first-pfirst].coff = ftello(quiva);
               }
 
@@ -807,9 +855,10 @@ void Load_QVs(HITS_DB *db)
               table[j++] = (uint16) i;
 
             first = last;
-          }
+	  }
 
         fclose(indx);
+        indx = NULL;
       }
 
     else
@@ -818,14 +867,24 @@ void Load_QVs(HITS_DB *db)
 
         ncodes = nfiles;
         coding = (QVcoding *) Malloc(sizeof(QVcoding)*nfiles,"Allocating coding schemes");
+        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
+        if (coding == NULL || table == NULL)
+          goto error;
   
         first = 0;
         for (i = 0; i < nfiles; i++)
           { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              SYSTEM_ERROR
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
   
             fseeko(quiva,db->reads[first].coff,SEEK_SET);
-            coding[i] = *Read_QVcoding(quiva);
+            nx = Read_QVcoding(quiva);
+            if (nx == NULL)
+              { ncodes = i;
+                goto error;
+              }
+            coding[i] = *nx;
 	    db->reads[first].coff = ftello(quiva);
 
             for (j = first; j < last; j++)
@@ -839,9 +898,13 @@ void Load_QVs(HITS_DB *db)
     //    track list
 
     qvtrk = (HITS_QV *) Malloc(sizeof(HITS_QV),"Allocating QV pseudo-track");
+    if (qvtrk == NULL)
+      goto error;
+    qvtrk->name   = Strdup(".@qvs","Allocating QV pseudo-track name");
+    if (qvtrk->name == NULL)
+      goto error;
     qvtrk->next   = db->tracks;
     db->tracks    = (HITS_TRACK *) qvtrk;
-    qvtrk->name   = Strdup(".@qvs","Allocating QV pseudo-track name");
     qvtrk->ncodes = ncodes;
     qvtrk->table  = table;
     qvtrk->coding = coding;
@@ -849,7 +912,25 @@ void Load_QVs(HITS_DB *db)
   }
 
   fclose(istub);
-  fclose(indx);
+  return (0);
+
+error:
+  if (qvtrk != NULL)
+    free(qvtrk);
+  if (table != NULL)
+    free(table);
+  if (coding != NULL)
+    { int i;
+      for (i = 0; i < ncodes; i++)
+        Free_QVcoding(coding+i);
+      free(coding);
+    }
+  if (indx != NULL)
+    fclose(indx);
+  if (istub != NULL)
+    fclose(istub);
+  fclose(quiva);
+  EXIT(1);
 }
 
 // Close the QV stream, free the QV pseudo track and all associated memory
@@ -939,11 +1020,12 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
   int         treads, ureads;
   void       *anno;
   void       *data;
+  char       *name;
   HITS_TRACK *record;
 
   if (track[0] == '.')
-    { fprintf(stderr,"Track names cannot begin with a .\n");
-      exit (1);
+    { EPRINTF(EPLACE,"%s: Track name, '%s', cannot begin with a .\n",Prog_Name,track);
+      EXIT(NULL);
     }
 
   for (record = db->tracks; record != NULL; record = record->next)
@@ -960,17 +1042,35 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
       ispart = 0;
     }
   if (afile == NULL)
-    return (NULL);
+    { EPRINTF(EPLACE,"%s: Track '%s' does not exist\n",Prog_Name,track);
+      return (NULL);
+    }
+
+  dfile  = NULL;
+  anno   = NULL;
+  data   = NULL;
+  record = NULL;
 
   if (ispart)
-    dfile = fopen(Catenate(db->path,Numbered_Suffix(".",db->part,"."),track,".data"),"r");
+    name = Catenate(db->path,Numbered_Suffix(".",db->part,"."),track,".data");
   else
-    dfile = fopen(Catenate(db->path,".",track,".data"),"r");
+    name = Catenate(db->path,".",track,".data");
+  if (name == NULL)
+    goto error;
+  dfile = fopen(name,"r");
 
   if (fread(&tracklen,sizeof(int),1,afile) != 1)
-    SYSTEM_ERROR
+    { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
+      goto error;
+    }
   if (fread(&size,sizeof(int),1,afile) != 1)
-    SYSTEM_ERROR
+    { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
+      goto error;
+    }
+  if (size <= 0)
+    { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
+      goto error;
+    }
 
   if (ispart)
     { ureads = ((int *) (db->reads))[-1];
@@ -983,16 +1083,16 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
 
   if (db->trimmed)
     { if (tracklen != treads)
-        { fprintf(stderr,"%s: Track %s not same size as database !\n",Prog_Name,track);
-          exit (1);
+        { EPRINTF(EPLACE,"%s: Track '%s' not same size as database !\n",Prog_Name,track);
+          goto error;
         }
       if ( ! ispart && db->part > 0)
         fseeko(afile,size*db->tfirst,SEEK_CUR);
     }
   else
     { if (tracklen != ureads)
-        { fprintf(stderr,"%s: Track %s not same size as database !\n",Prog_Name,track);
-          exit (1);
+        { EPRINTF(EPLACE,"%s: Track '%s' not same size as database !\n",Prog_Name,track);
+          goto error;
         }
       if ( ! ispart && db->part > 0)
         fseeko(afile,size*db->ufirst,SEEK_CUR);
@@ -1000,24 +1100,18 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
   nreads = db->nreads;
 
   anno = (void *) Malloc(size*(nreads+1),"Allocating Track Anno Vector");
-
-  if (size > 0)
-    { if (dfile == NULL)
-        { if (fread(anno,size,nreads,afile) != (size_t) nreads)
-            SYSTEM_ERROR
-        }
-      else
-        { if (fread(anno,size,nreads+1,afile) != (size_t) (nreads+1))
-            SYSTEM_ERROR
-        }
-    }
-  else
-    SYSTEM_ERROR
+  if (anno == NULL)
+    goto error;
 
   if (dfile != NULL)
     { int64 *anno8, off8, dlen;
       int   *anno4, off4;
       int    i;
+
+      if (fread(anno,size,nreads+1,afile) != (size_t) (nreads+1))
+        { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
+          goto error;
+        }
 
       if (size == 4)
         { anno4 = (int *) anno;
@@ -1041,19 +1135,33 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
           dlen = anno8[nreads];
           data = (void *) Malloc(dlen,"Allocating Track Data Vector");
         }
+      if (data == NULL)
+        goto error;
       if (dlen > 0)
         { if (fread(data,dlen,1,dfile) != 1)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"%s: Track '%s' data file is junk\n",Prog_Name,track);
+              goto error;
+            }
         }
       fclose(dfile);
+      dfile = NULL;
     }
   else
-    data = NULL;
+    { if (fread(anno,size,nreads,afile) != (size_t) nreads)
+        { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
+          goto error;
+        }
+      data = NULL;
+    }
 
   fclose(afile);
 
   record = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),"Allocating Track Record");
+  if (record == NULL)
+    goto error;
   record->name = Strdup(track,"Allocating Track Name");
+  if (record->name == NULL)
+    goto error;
   record->data = data;
   record->anno = anno;
   record->size = size;
@@ -1068,6 +1176,18 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
     }
 
   return (record);
+
+error:
+  if (record == NULL)
+    free(record);
+  if (data != NULL)
+    free(data);
+  if (anno != NULL)
+    free(anno);
+  if (dfile != NULL)
+    fclose(dfile);
+  fclose(afile);
+  EXIT (NULL);
 }
 
 void Close_Track(HITS_DB *db, char *track)
@@ -1106,7 +1226,7 @@ char *New_Read_Buffer(HITS_DB *db)
 
   read = (char *) Malloc(db->maxlen+4,"Allocating New Read Buffer");
   if (read == NULL)
-    exit (1);
+    EXIT(NULL);
   return (read+1);
 }
 
@@ -1116,20 +1236,21 @@ char *New_Read_Buffer(HITS_DB *db)
 //
 // **NB**, the byte before read will be set to a delimiter character!
 
-void Load_Read(HITS_DB *db, int i, char *read, int ascii)
+int Load_Read(HITS_DB *db, int i, char *read, int ascii)
 { FILE      *bases  = (FILE *) db->bases;
   int64      off;
   int        len, clen;
   HITS_READ *r = db->reads;
 
-  if (bases == NULL)
-    { db->bases = (void *) (bases = Fopen(Catenate(db->path,"","",".bps"),"r"));
-      if (bases == NULL)
-        exit (1);
-    }
   if (i >= db->nreads)
-    { fprintf(stderr,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
+      EXIT(1);
+    }
+  if (bases == NULL)
+    { bases = Fopen(Catenate(db->path,"","",".bps"),"r");
+      if (bases == NULL)
+        EXIT(1);
+      db->bases = (void *) bases;
     }
 
   off = r[i].boff;
@@ -1140,7 +1261,9 @@ void Load_Read(HITS_DB *db, int i, char *read, int ascii)
   clen = COMPRESSED_LEN(len);
   if (clen > 0)
     { if (fread(read,clen,1,bases) != 1)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
+          EXIT(1);
+        }
     }
   Uncompress_Read(len,read);
   if (ascii == 1)
@@ -1153,6 +1276,7 @@ void Load_Read(HITS_DB *db, int i, char *read, int ascii)
     }
   else
     read[-1] = 4;
+  return (0);
 }
 
 char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii)
@@ -1162,14 +1286,15 @@ char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii)
   int        bbeg, bend;
   HITS_READ *r = db->reads;
 
-  if (bases == NULL)
-    { db->bases = (void *) (bases = Fopen(Catenate(db->path,"","",".bps"),"r"));
-      if (bases == NULL)
-        exit (1);
-    }
   if (i >= db->nreads)
-    { fprintf(stderr,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
+      EXIT(NULL);
+    }
+  if (bases == NULL)
+    { bases = Fopen(Catenate(db->path,"","",".bps"),"r");
+      if (bases == NULL)
+        EXIT(NULL);
+      db->bases = (void *) bases;
     }
 
   bbeg = beg/4;
@@ -1183,7 +1308,9 @@ char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii)
   clen = bend-bbeg;
   if (clen > 0)
     { if (fread(read,clen,1,bases) != 1)
-        SYSTEM_ERROR
+        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
+          EXIT(NULL);
+        }
     }
   Uncompress_Read(4*clen,read);
   read += beg%4;
@@ -1219,7 +1346,7 @@ char **New_QV_Buffer(HITS_DB *db)
   qvs   = (char *) Malloc(db->maxlen*5,"Allocating New QV Buffer");
   entry = (char **) Malloc(sizeof(char *)*5,"Allocating New QV Buffer");
   if (qvs == NULL || entry == NULL)
-    exit (1);
+    EXIT(NULL);
   for (i = 0; i < 5; i++)
     entry[i] = qvs + i*db->maxlen;
   return (entry);
@@ -1228,22 +1355,22 @@ char **New_QV_Buffer(HITS_DB *db)
 // Load into entry the QV streams for the i'th read from db.  The parameter ascii applies to
 //  the DELTAG stream as described for Load_Read.
 
-void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
+int Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
 { HITS_READ *reads;
   FILE      *quiva;
   int        rlen;
 
   if (db != Active_DB)
     { if (db->tracks == NULL || strcmp(db->tracks->name,".@qvs") != 0)
-        { fprintf(stderr,"%s: QV's are not loaded!\n",Prog_Name);
-          exit (1);
+        { EPRINTF(EPLACE,"%s: QV's are not loaded (Load_QVentry)\n",Prog_Name);
+          EXIT(1);
         }
       Active_QV = (HITS_QV *) db->tracks;
       Active_DB = db;
     }
   if (i >= db->nreads)
-    { fprintf(stderr,"%s: Index out of bounds (Load_QVentry)\n",Prog_Name);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_QVentry)\n",Prog_Name);
+      EXIT(1);
     }
 
   reads = db->reads;
@@ -1251,7 +1378,8 @@ void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
   rlen  = reads[i].rlen;
 
   fseeko(quiva,reads[i].coff,SEEK_SET);
-  Uncompress_Next_QVentry(quiva,entry,Active_QV->coding+Active_QV->table[i],rlen);
+  if (Uncompress_Next_QVentry(quiva,entry,Active_QV->coding+Active_QV->table[i],rlen))
+    EXIT(1);
 
   if (ascii != 1)
     { char *deltag = entry[1];
@@ -1270,6 +1398,8 @@ void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
             deltag[j] = (char) (deltag[j]+u);
         }
     }
+
+  return (0);
 }
 
 
@@ -1285,8 +1415,8 @@ void Load_QVentry(HITS_DB *db, int i, char **entry, int ascii)
 //   non-zero then the reads are converted to ACGT ascii, otherwise the reads are left
 //   as numeric strings over 0(A), 1(C), 2(G), and 3(T).
 
-void Read_All_Sequences(HITS_DB *db, int ascii)
-{ FILE      *bases  = (FILE *) db->bases;
+int Read_All_Sequences(HITS_DB *db, int ascii)
+{ FILE      *bases;
   int        nreads = db->nreads;
   HITS_READ *reads = db->reads;
   void     (*translate)(char *s);
@@ -1295,12 +1425,15 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
   int64  o, off;
   int    i, len, clen;
 
+  bases = Fopen(Catenate(db->path,"","",".bps"),"r");
   if (bases == NULL)
-    db->bases = (void *) (bases = Fopen(Catenate(db->path,"","",".bps"),"r"));
-  else
-    rewind(bases);
+    EXIT(1);
 
   seq = (char *) Malloc(db->totlen+nreads+4,"Allocating All Sequence Reads");
+  if (seq == NULL)
+    { fclose(bases);
+      EXIT(1);
+    }
 
   *seq++ = 4;
 
@@ -1318,7 +1451,11 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
       clen = COMPRESSED_LEN(len);
       if (clen > 0)
         { if (fread(seq+o,clen,1,bases) != 1)
-            SYSTEM_ERROR
+            { EPRINTF(EPLACE,"%s: Read of .bps file failed (Read_All_Sequences)\n",Prog_Name);
+              free(seq);
+              fclose(bases);
+              EXIT(1);
+            }
         }
       Uncompress_Read(len,seq+o);
       if (ascii)
@@ -1332,9 +1469,11 @@ void Read_All_Sequences(HITS_DB *db, int ascii)
 
   db->bases  = (void *) seq;
   db->loaded = 1;
+
+  return (0);
 }
 
-int List_DB_Files(char *path, void foreach(char *path, char *extension))
+int List_DB_Files(char *path, void actor(char *path, char *extension))
 { int            status, plen, rlen, dlen;
   char          *root, *pwd, *name;
   int            isdam;
@@ -1351,13 +1490,15 @@ int List_DB_Files(char *path, void foreach(char *path, char *extension))
   rlen = strlen(root);
 
   if (root == NULL || pwd == NULL)
-    { status = 1;
-      goto exit;
+    { free(pwd);
+      free(root);
+      EXIT(1);
     }
 
   if ((dirp = opendir(pwd)) == NULL)
-    { status = 1;
-      goto exit;
+    { EPRINTF(EPLACE,"%s: Cannot open directory %s (List_DB_Files)\n",Prog_Name,pwd);
+      status = -1;
+      goto error;
     }
 
   isdam = 0;
@@ -1380,15 +1521,16 @@ int List_DB_Files(char *path, void foreach(char *path, char *extension))
         }
     }
   if (dp == NULL)
-    { status = 1;
+    { EPRINTF(EPLACE,"%s: Cannot find %s (List_DB_Files)\n",Prog_Name,pwd);
+      status = -1;
       closedir(dirp);
-      goto exit;
+      goto error;
     }
 
   if (isdam)
-    foreach(Catenate(pwd,"/",root,".dam"),"dam");
+    actor(Catenate(pwd,"/",root,".dam"),"dam");
   else
-    foreach(Catenate(pwd,"/",root,".db"),"db");
+    actor(Catenate(pwd,"/",root,".db"),"db");
 
   rewinddir(dirp);                         //   Report each auxiliary file
   while ((dp = readdir(dirp)) != NULL)
@@ -1406,11 +1548,11 @@ int List_DB_Files(char *path, void foreach(char *path, char *extension))
         continue;
       if (strncmp(name,root,rlen) != 0)
         continue;
-      foreach(Catenate(pwd,PATHSEP,name,""),name+(rlen+1));
+      actor(Catenate(pwd,PATHSEP,name,""),name+(rlen+1));
     }
   closedir(dirp);
 
-exit:
+error:
   free(pwd);
   free(root);
   return (status);
