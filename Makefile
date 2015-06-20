@@ -1,4 +1,4 @@
-CFLAGS = -O3 -Wall -Wextra -fno-strict-aliasing
+CFLAGS = -O3 -Wall -Wextra -fno-strict-aliasing -Wno-unused-result
 
 ALL = daligner HPCdaligner HPCmapper LAsort LAmerge LAsplit LAcat LAshow LAcheck
 
