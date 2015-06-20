@@ -658,6 +658,7 @@ int main(int argc, char *argv[])
 
   { int i, j;
 
+    broot = NULL;
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
         if (strcmp(afile,bfile) != 0)
