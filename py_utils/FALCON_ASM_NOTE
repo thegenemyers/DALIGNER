@@ -1,0 +1,27 @@
+
+# example for using daligner and Falcon to generate an assembly
+
+export PATH=/path_to_DAZZLER/DALIGNER/:$PATH
+export PATH=/path_to_DAZZLER/DAZZ_DB/:$PATH
+. /path_to_HBAR_FALCON/bin/activate
+
+for f in `cat input.fofn `; do fasta2DB yeast $f; done
+DBsplit -x500 -s400 yeast
+HPCdaligner -v -dal4 -t16 -m.70 -l1000 -s1000  yeast > run_jobs.sh
+bash run_jobs.sh
+
+cp /path_to_DAZZLER/DALIGNER/DB.so .
+cp /path_to_DAZZLER/DALIGNER/py_utils/*.py .
+for i in 1 2 3 4; do
+    python DBLA_to_falcon.py yeast.$i.las yeast.db | falcon_sense.py \
+    --min_cov 4 --output_multi --min_idt 0.70 --trim_size 10 \
+    --n_core 24 > preads.$i.fa;
+done
+
+mkdir falcon_asm
+cat preads.1.fa preads.2.fa preads.3.fa preads.4.fa > falcon_asm/preads.fa
+
+cd falcon_asm
+falcon_overlap.py --d_core 3 --n_core 24 --min_len 8000 preads.fa > preads.ovl
+falcon_asm.py preads.ovl preads.fa
+falcon_fixasm.py
