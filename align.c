@@ -3565,8 +3565,6 @@ int Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing)
       }
     if (tlen <= 1)
       nmax = N;
-    if (points[d-1] > dmax)
-      dmax = points[d-1];
 
     s = (dmax+3)*2*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
@@ -3666,8 +3664,6 @@ int Compute_Trace_MID(Alignment *align, Work_Data *ework, int trace_spacing)
       }
     if (tlen <= 1)
       nmax = N;
-    if (points[d-1] > dmax)
-      dmax = points[d-1];
 
     s = (dmax+3)*4*((trace_spacing+nmax+3)*sizeof(int) + sizeof(int *));
 
