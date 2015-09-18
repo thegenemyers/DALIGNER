@@ -58,6 +58,10 @@
 
 #define _A_MODULE
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 /*** INTERACTIVE vs BATCH version
 
      The defined constant INTERACTIVE (set in DB.h) determines whether an interactive or
@@ -345,5 +349,9 @@ typedef struct {
   void Decompress_TraceTo16(Overlap *ovl);
 
   int  Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // _A_MODULE
