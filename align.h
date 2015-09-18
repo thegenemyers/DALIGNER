@@ -51,12 +51,12 @@
 
 #include "DB.h"
 
-#define TRACE_XOVR 125   //  If the trace spacing is not more than this value, then can
-                         //    and do compress traces pts to 8-bit unsigned ints
-
 #ifndef _A_MODULE
 
 #define _A_MODULE
+
+#define TRACE_XOVR 125   //  If the trace spacing is not more than this value, then can
+                         //    and do compress traces pts to 8-bit unsigned ints
 
 /*** INTERACTIVE vs BATCH version
 
