@@ -51,6 +51,10 @@
 #include "DB.h"
 #include "align.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 extern int    BIASED;
 extern int    VERBOSE;
 extern int    MINOVER;
@@ -70,5 +74,9 @@ void Build_Table(HITS_DB *block);
 
 void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
                   int self, int comp, Align_Spec *asettings);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif

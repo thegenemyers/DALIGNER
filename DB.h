@@ -57,6 +57,10 @@
 
 #include "QV.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
                             //    Undefine if you don't want this
 
@@ -438,5 +442,9 @@ int Read_All_Sequences(HITS_DB *db, int ascii);
   //   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
 
 int List_DB_Files(char *path, void actor(char *path, char *extension));
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // _HITS_DB
