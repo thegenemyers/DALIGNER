@@ -34,11 +34,17 @@ LAcheck: LAcheck.c align.c align.h DB.c DB.h QV.c QV.h
 LAupgrade.Dec.31.2014: LAupgrade.Dec.31.2014.c align.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAupgrade.Dec.31.2014 LAupgrade.Dec.31.2014.c align.c DB.c QV.c -lm
 
+LIBRARY_HEADERS = align.h DB.h QV.h
+LIBRARY_SOURCES = align.c DB.c QV.c
+LIBRARY_OBJECTS = align.o DB.o QV.o
+LIBRARY_SHAREDOBJECTS = align.so DB.so QV.so
+
 clean:
 	rm -f $(ALL)
 	rm -fr *.dSYM
 	rm -f LAupgrade.Dec.31.2014
 	rm -f daligner.tar.gz
+	rm -f ${LIBRARY_OBJECTS} ${LIBRARY_SHAREDOBJECTS} libalign.a libalign.so
 
 install:
 	cp $(ALL) ~/bin
@@ -46,3 +52,27 @@ install:
 package:
 	make clean
 	tar -zcf daligner.tar.gz README *.h *.c Makefile
+
+libalign.a: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
+	gcc $(CFLAGS) -c -o align.o align.c
+	gcc $(CFLAGS) -c -o DB.o DB.c
+	gcc $(CFLAGS) -c -o QV.o QV.c
+	ar -q libalign.a ${LIBRARY_OBJECTS}
+	rm -f ${LIBRARY_OBJECTS}
+
+libalign.so: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
+	gcc $(CFLAGS) -fpic -c -o align.so align.c
+	gcc $(CFLAGS) -fpic -c -o DB.so DB.c
+	gcc $(CFLAGS) -fpic -c -o QV.so QV.c
+	gcc -shared -o libalign.so ${LIBRARY_SHAREDOBJECTS}
+	rm -f ${LIBRARY_SHAREDOBJECTS}
+
+PREFIX=${HOME}
+DESTDIR=
+
+libinstall: libalign.a libalign.so
+	mkdir -p ${DESTDIR}${PREFIX}/include
+	cp ${LIBRARY_HEADERS} ${DESTDIR}${PREFIX}/include
+	mkdir -p ${DESTDIR}${PREFIX}/lib
+	cp libalign.a libalign.so ${DESTDIR}${PREFIX}/lib
+	rm -f libalign.a libalign.so
