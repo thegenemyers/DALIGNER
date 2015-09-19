@@ -52,6 +52,10 @@
 
 #define _QV_COMPRESSOR
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
   //  The defined constant INTERACTIVE (set in DB.h) determines whether an interactive or
   //    batch version of the routines in this library are compiled.  In batch mode, routines
   //    print an error message and exit.  In interactive mode, the routines place the error
@@ -121,5 +125,9 @@ int      Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int 
   //    error occured.
 
 int      Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rlen);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // _QV_COMPRESSOR
