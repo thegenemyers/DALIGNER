@@ -38,13 +38,14 @@ LIBRARY_HEADERS = align.h DB.h QV.h
 LIBRARY_SOURCES = align.c DB.c QV.c
 LIBRARY_OBJECTS = align.o DB.o QV.o
 LIBRARY_SHAREDOBJECTS = align.so DB.so QV.so
+SHARED_LIBRARY_SUFFIX=.so
 
 clean:
 	rm -f $(ALL)
 	rm -fr *.dSYM
 	rm -f LAupgrade.Dec.31.2014
 	rm -f daligner.tar.gz
-	rm -f ${LIBRARY_OBJECTS} ${LIBRARY_SHAREDOBJECTS} libalign.a libalign.so
+	rm -f ${LIBRARY_OBJECTS} ${LIBRARY_SHAREDOBJECTS} libalign.a libalign${SHARED_LIBRARY_SUFFIX}
 
 install:
 	cp $(ALL) ~/bin
@@ -60,19 +61,19 @@ libalign.a: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
 	ar -q libalign.a ${LIBRARY_OBJECTS}
 	rm -f ${LIBRARY_OBJECTS}
 
-libalign.so: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
+libalign${SHARED_LIBRARY_SUFFIX}: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
 	gcc $(CFLAGS) -fpic -c -o align.so align.c
 	gcc $(CFLAGS) -fpic -c -o DB.so DB.c
 	gcc $(CFLAGS) -fpic -c -o QV.so QV.c
-	gcc -shared -o libalign.so ${LIBRARY_SHAREDOBJECTS}
+	gcc -shared -o libalign${SHARED_LIBRARY_SUFFIX} ${LIBRARY_SHAREDOBJECTS}
 	rm -f ${LIBRARY_SHAREDOBJECTS}
 
 PREFIX=${HOME}
 DESTDIR=
 
-libinstall: libalign.a libalign.so
+libinstall: libalign.a libalign${SHARED_LIBRARY_SUFFIX}
 	mkdir -p ${DESTDIR}${PREFIX}/include
 	cp ${LIBRARY_HEADERS} ${DESTDIR}${PREFIX}/include
 	mkdir -p ${DESTDIR}${PREFIX}/lib
-	cp libalign.a libalign.so ${DESTDIR}${PREFIX}/lib
-	rm -f libalign.a libalign.so
+	cp libalign.a libalign${SHARED_LIBRARY_SUFFIX} ${DESTDIR}${PREFIX}/lib
+	rm -f libalign.a libalign${SHARED_LIBRARY_SUFFIX}
