@@ -39,6 +39,7 @@ LIBRARY_SOURCES = align.c DB.c QV.c
 LIBRARY_OBJECTS = align.o DB.o QV.o
 LIBRARY_SHAREDOBJECTS = align.so DB.so QV.so
 SHARED_LIBRARY_SUFFIX=.so
+SHARED_LIBRARY_EXTRA_LINKER_FLAGS=
 
 clean:
 	rm -f $(ALL)
@@ -65,7 +66,7 @@ libalign${SHARED_LIBRARY_SUFFIX}: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
 	gcc $(CFLAGS) -fpic -c -o align.so align.c
 	gcc $(CFLAGS) -fpic -c -o DB.so DB.c
 	gcc $(CFLAGS) -fpic -c -o QV.so QV.c
-	gcc -shared -o libalign${SHARED_LIBRARY_SUFFIX} ${LIBRARY_SHAREDOBJECTS}
+	gcc -shared ${SHARED_LIBRARY_EXTRA_LINKER_FLAGS} -o libalign${SHARED_LIBRARY_SUFFIX} ${LIBRARY_SHAREDOBJECTS}
 	rm -f ${LIBRARY_SHAREDOBJECTS}
 
 PREFIX=${HOME}
