@@ -326,11 +326,13 @@ static Double *lex_sort(int bytes[16], Double *src, Double *trg, Lex_Arg *parmx)
         { x = 0;
           for (i = 0; i < NTHREADS; i++)
             { parmx[i].beg = x;
-              parmx[i].end = x = LEX_zsize*(i+1);
+              if (LEX_zsize*(i+1) <= len) x = LEX_zsize*(i+1);
+              parmx[i].end = x;
               for (j = 0; j < BPOWR; j++)
                 parmx[i].tptr[j] = 0;
             }
           parmx[NTHREADS-1].end = len;
+          //assert(parmx[NTHREADS-1].end >= parmx[NTHREADS-1].beg);
 
           for (j = 0; j < BPOWR; j++)
             { k = (j << NSHIFT);
