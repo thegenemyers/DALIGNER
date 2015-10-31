@@ -358,8 +358,15 @@ void Close_QVs(HITS_DB *db);
   //     0: Track is for untrimmed DB
   //    -1: Track is not the right size of DB either trimmed or untrimmed
   //    -2: Could not find the track
+  // In addition, if opened (0 or 1 returned), then kind points at an integer indicating
+  //   the type of track as follows:
+  //      CUSTOM  0 => a custom track
+  //      MASK    1 => a mask track
 
-int Check_Track(HITS_DB *db, char *track);
+#define CUSTOM_TRACK 0
+#define   MASK_TRACK 1
+
+int Check_Track(HITS_DB *db, char *track, int *kind);
 
   // If track is not already in the db's track list, then allocate all the storage for it,
   //   read it in from the appropriate file, add it to the track list, and return a pointer
@@ -427,11 +434,11 @@ int   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
 
 int Read_All_Sequences(HITS_DB *db, int ascii);
 
-  // For the DB or DAM "path" = "prefix/root[.db|.dam]", find all the files for that DB, i.e. all
+  // For the DB or DAM "path" = "prefix/root.[db|dam]", find all the files for that DB, i.e. all
   //   those of the form "prefix/[.]root.part" and call actor with the complete path to each file
   //   pointed at by path, and the suffix of the path by extension.  The . proceeds the root
   //   name if the defined constant HIDE_FILES is set.  Always the first call is with the
-  //   path "prefix/root.db" and extension "db".  There will always be calls for
+  //   path "prefix/root.[db|dam]" and extension "db" or "dam".  There will always be calls for
   //   "prefix/[.]root.idx" and "prefix/[.]root.bps".  All other calls are for *tracks* and
   //   so this routine gives one a way to know all the tracks associated with a given DB.
   //   -1 is returned if the path could not be found, and 1 is returned if an error (reported

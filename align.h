@@ -49,14 +49,14 @@
  *
  ********************************************************************************************/
 
+#ifndef _A_MODULE
+
+#define _A_MODULE
+
 #include "DB.h"
 
 #define TRACE_XOVR 125   //  If the trace spacing is not more than this value, then can
                          //    and do compress traces pts to 8-bit unsigned ints
-
-#ifndef _A_MODULE
-
-#define _A_MODULE
 
 /*** INTERACTIVE vs BATCH version
 
@@ -231,10 +231,20 @@ void Complement_Seq(char *a, int n);
      one wants to retain the bread-path and the two trace point sequences, then they must be
      copied to user-allocated storage before calling the routine again.  NULL is returned in
      the event of an error.
+
+     Find_Extension is a variant of Local_Alignment that simply finds a local alignment that
+     either ends (if prefix is non-zero) or begins (if prefix is zero) at the point
+     (anti+diag)/2,(anti-diag)/2).  All other parameters are as before.  It returns a non-zero
+     value only when INTERACTIVE is on and it cannot allocate the memory it needs.
+     Only the path and trace with respect to the aread is returned.  This routine is experimental
+     and may not persist in later versions of the code.
   */
 
   Path *Local_Alignment(Alignment *align, Work_Data *work, Align_Spec *spec,
                         int low, int hgh, int anti, int lbord, int hbord);
+
+  int   Find_Extension(Alignment *align, Work_Data *work, Align_Spec *spec,    //  experimental !!
+                       int diag, int anti, int lbord, int hbord, int prefix);
 
   /* Given a legitimate Alignment object, Compute_Trace_X computes an exact trace for the alignment.
      If 'path.trace' is non-NULL, then it is assumed to be a sequence of pass-through points
@@ -255,9 +265,22 @@ void Complement_Seq(char *a, int n);
      return 1 if an error occurred and 0 otherwise.
   */
 
+#define LOWERMOST -1   //   Possible modes for "mode" parameter below)
+#define GREEDIEST  0
+#define UPPERMOST  1
+
   int Compute_Trace_ALL(Alignment *align, Work_Data *work);
-  int Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing);
-  int Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing);
+  int Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing, int mode);
+  int Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing, int mode);
+
+  /* Compute_Trace_IRR (IRR for IRRegular) computes a trace for the given alignment where
+     it assumes the spacing between trace points between both the A and B read varies, and
+     futher assumes that the A-spacing is given in the short integers normally occupied by
+     the differences in the alignment between the trace points.  This routine is experimental
+     and may not persist in later versions of the code.
+  */
+
+  int Compute_Trace_IRR(Alignment *align, Work_Data *work, int mode);   //  experimental !!
 
   /* Alignment_Cartoon prints an ASCII representation of the overlap relationhip between the
      two reads of 'align' to the given 'file' indented by 'indent' space.  Coord controls

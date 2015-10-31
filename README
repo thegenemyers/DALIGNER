@@ -42,7 +42,7 @@ UPGRADE & DEVELOPER NOTES ! ! !
   If you have already performed a big comparison and don't want to recompute all your
 local alignments in .las files, but do want to use a more recent version of the
 software that entails a change to the data structures (currently the update on
-December 31, 2014), please note the routine LAupgrade.31.2014.  This take an .las file,
+December 31, 2014), please note the routine LAupgrade.Dec.31.2014.  This take a .las file,
 say X.las, as an argument, and writes to standard output the .las file in the new
 format.
 
@@ -198,8 +198,57 @@ uppercase should be used for DNA sequence instead of the default lowercase.  If 
 -o option is set then only alignments that are proper overlaps (a sequence end occurs
 at the each end of the alignment) are displayed.
 
+5. LAdump [-ocdt] <src1:db|dam> [ <src2:db|dam> ]
+                  <align:las> [ <reads:FILE> | <reads:range> ... ]
 
-5. LAcat <source:las> > <target>.las
+Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
+piles in an .las file and select which information to show about them.  The difference
+is that the information is written in a very simple "1-code" ASCII format that makes it
+easy for one to read and parse the information for further use.  For each LA the pair of
+reads is output on a line.  -c requests that one further output the coordinates of the
+LA segments be output.  The -d option requests that the number of difference in the LA
+be output, and -t requests that the tracepoint information be output.  Finally, -o
+requests that only LAs that are proper overlaps be output. 
+
+The format is very simple.  Each requested piece of information occurs on a line.  The
+first character of every line is a "1-code" character that tells you what information
+to expect on the line.  The rest of the line contains information where each item is
+separated by a single blank space.  The trace point line gives the number of trace
+point intervals in the LA and is immediately followed by that many lines containing
+a pair of integers giving the # of differences and b-displacement in each successive
+trace point interval.
+
+    P #a #b           - (#a,#b) have an LA between them
+    C #ab #ae #bb #be - [#ab,#ae] aligns with [#bb,#be]
+    D #               - there are # differences in the LA
+    T #n              - there are #n trace point intervals for the LA
+     (#d #y )^#n      - there are #d difference aligning the #y bp's of B with the
+                           next fixed-size interval of A
+    + X #             - Total amount of X (X = P or T)
+    % X #             - Maximum amount of X in any pile (X = P or T)
+    @ T #             - Maximum number of trace points in any trace
+
+1-code lines that begin with +, %, or @ are always the first lines in the output.
+They give size information about what is contained in the output.  Specifically,
+'+ X #' gives the total number of LAs (X=P), or the total number of trace point
+intervals (X=T) in the file .  '% X #' gives the maximum number of LAs (X=P) or
+the maximum number of trace point intervals (X=T) in a given *pile* (collection of
+LAs all with the same a-read (applies only to sorted .las files).  Finally @ T #
+gives the maximum # of trace point intervals in any trace within the file.
+
+6. LAindex -v <source:las> ...
+
+LAindex takes a series of one or more sorted .las files and produces a "pile
+index" for each one.  If the input file has name "X.las", then the name of its
+index file is ".X.las.idx".  For each A-read pile encoded in the .las file,
+the index contains the offset to the first local alignment with A in the file.
+This allows programs that process piles to more efficiently read just the piles
+they need at any momement at time, as opposed to haveing to sequentially scan
+through the .las file.  The index file also contains the four numbers % P, + T,
+% T, and @ T described for LAdump above, in the first four 64-bit integers
+of the index in the order given.
+
+7. LAcat <source:las> > <target>.las
 
 Given argument <source>, find all files <source>.1.las, <source>.2.las, ...
 <source>.n.<las> where <source>.i.las exists for every i in [1,n].  Then
@@ -207,7 +256,7 @@ concatenate these files in order into a single .las file and pipe the result
 to the standard output.
 
 
-6. LAsplit <target:las> (<parts:int> | <path:db|dam>) < <source>.las
+8. LAsplit <target:las> (<parts:int> | <path:db|dam>) < <source>.las
 
 If the second argument is an integer n, then divide the alignment file <source>, piped
 in through the standard input, as evenly as possible into n alignment files with the
@@ -219,7 +268,7 @@ divide the input alignment file into block .las files where all records whose a-
 in <path>.i.db are in <align>.i.las.
 
 
-7. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
+9. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
 
 LAcheck checks each .las file for structural integrity, where the a- and b-sequences
 come from src1 or from src1 and scr2, respectively.  That is, it makes sure each file
@@ -232,10 +281,10 @@ runs silently.  The exit status is 0 if every file is deemed good, and 1 if at l
 one of the files looks corrupted.
 
 
-8. HPCdaligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
-                       [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
-                       [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
-                       <path:db|dam> [<first:int>[-<last:int>]]
+10. HPCdaligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
+                        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
+                        [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
+                        <path:db|dam> [<first:int>[-<last:int>]]
 
 HPCdaligner writes a UNIX shell script to the standard output that consists of a
 sequence of commands that effectively run daligner on all pairs of blocks of a split

@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     novl   = 0;
     tspace = 0;
     mspace = 0;
-    tbytes = sizeof(uint8);
+    tbytes = 0;
     for (i = 0; 1; i++)
       { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
         if ((input = fopen(name,"r")) == NULL) break;
@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
         fclose(input);
       }
     fwrite(&novl,sizeof(int64),1,stdout);
-    fwrite(&tspace,sizeof(int32),1,stdout);
+    fwrite(&tspace,sizeof(int),1,stdout);
   }
 
   { int      i, j;

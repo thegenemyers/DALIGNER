@@ -37,11 +37,10 @@
 
 /*******************************************************************************************
  *
- *  Merge together in index order, overlap files <XXX>.1.las, <XXX>.2.las, ... into a
- *    single overlap file and output to the standard output
+ *  Convert older .las files so that the alen and blen fields are removed.
  *
  *  Author:  Gene Myers
- *  Date  :  July 2013
+ *  Date  :  Dec 2014
  *
  *******************************************************************************************/
 
@@ -119,7 +118,7 @@ int main(int argc, char *argv[])
     tbytes = sizeof(uint16);
 
   fwrite(&novl,sizeof(int64),1,stdout);
-  fwrite(&tspace,sizeof(int32),1,stdout);
+  fwrite(&tspace,sizeof(int),1,stdout);
 
   { int         j;
     OverlapOld *w;
