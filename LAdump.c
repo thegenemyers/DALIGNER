@@ -325,6 +325,7 @@ int main(int argc, char *argv[])
     //  For each record do
 
     novls = omax = smax = ttot = tmax = 0;
+    sdeg  = odeg = 0;
 
     al = 0;
     for (j = 0; j < novl; j++)
