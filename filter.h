@@ -70,10 +70,11 @@ extern uint64 MEM_PHYSICAL;
 
 int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin); 
 
-void Build_Table(HITS_DB *block);
+void *Sort_Kmers(HITS_DB *block, int *len);
 
 void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
-                  int self, int comp, Align_Spec *asettings);
+                  void *atable, int alen, void *btable, int blen,
+                  int comp, Align_Spec *asettings);
 
 #if defined(__cplusplus)
 }

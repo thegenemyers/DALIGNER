@@ -37,11 +37,14 @@
 
 /*******************************************************************************************
  *
- *  Merge together in index order, overlap files <XXX>.1.las, <XXX>.2.las, ... into a
- *    single overlap file and output to the standard output
+ *  Create an index with extension .las.idx for a .las file.
+ *    Utility expects the .las file to be sorted.
+ *    Header contains total # of trace points, max # of trace points for
+ *    a given overlap, max # of trace points in all the overlaps for a given aread, and
+ *    max # of overlaps for a given aread.  The remainder are the offsets into each pile.
  *
  *  Author:  Gene Myers
- *  Date  :  July 2013
+ *  Date  :  Sept 2015
  *
  *******************************************************************************************/
 
@@ -56,93 +59,107 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "<source:las> > <target>.las";
+static char *Usage = "[-v] <source:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ char     *iblock, *oblock;
-  FILE     *input;
+{ char     *iblock;
+  FILE     *input, *output;
   int64     novl, bsize, ovlsize, ptrsize;
   int       tspace, tbytes;
   char     *pwd, *root;
+  int64     tmax, ttot;
+  int64     omax, smax;
+  int64     odeg, sdeg;
+  int       i;
 
-  Prog_Name = Strdup("LAcat","");
+  int       VERBOSE;
 
-  if (argc <= 1)
-    { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-      exit (1);
-    }
+  //  Process options
+
+  { int j, k;
+    int flags[128];
+
+    ARG_INIT("LAindex")
+
+    j = 1;
+    for (i = 1; i < argc; i++)
+      if (argv[i][0] == '-')
+        { ARG_FLAGS("v") }
+      else
+        argv[j++] = argv[i];
+    argc = j;
+
+    VERBOSE = flags['v'];
+
+    if (argc <= 1)
+      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        exit (1);
+      }
+  }
+
+  //  For each file do
 
   ptrsize = sizeof(void *);
   ovlsize = sizeof(Overlap) - ptrsize;
   bsize   = MEMORY * 1000000ll;
-  oblock  = (char *) Malloc(bsize,"Allocating output block");
   iblock  = (char *) Malloc(bsize + ptrsize,"Allocating input block");
-  if (oblock == NULL || iblock == NULL)
+  if (iblock == NULL)
     exit (1);
   iblock += ptrsize;
 
-  pwd    = PathTo(argv[1]);
-  root   = Root(argv[1],".las");
+  for (i = 1; i < argc; i++)
+    { pwd   = PathTo(argv[i]);
+      root  = Root(argv[i],".las");
+      input = Fopen(Catenate(pwd,"/",root,".las"),"r");
+      if (input == NULL)
+        exit (1);
+    
+      if (fread(&novl,sizeof(int64),1,input) != 1)
+        SYSTEM_ERROR
+      if (fread(&tspace,sizeof(int),1,input) != 1)
+        SYSTEM_ERROR
+      if (tspace <= TRACE_XOVR)
+        tbytes = sizeof(uint8);
+      else
+        tbytes = sizeof(uint16);
+    
+      output = Fopen(Catenate(pwd,"/.",root,".las.idx"),"w");
+      if (output == NULL)
+        exit (1);
+    
+      free(pwd);
+      free(root);
 
-  { int64    povl;
-    int      i, mspace;
+      if (VERBOSE)
+        { printf("  Indexing %s: ",root);
+          Print_Number(novl,0,stdout);
+          printf(" records ... ");
+          fflush(stdout);
+        }
 
-    novl   = 0;
-    tspace = 0;
-    mspace = 0;
-    tbytes = 0;
-    for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
-        if ((input = fopen(name,"r")) == NULL) break;
-
-        if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
-        novl += povl;
-        if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
-        if (i == 0)
-          { tspace = mspace;
-            if (tspace <= TRACE_XOVR)
-              tbytes = sizeof(uint8);
-            else
-              tbytes = sizeof(uint16);
-          }
-        else if (tspace != mspace)
-          { fprintf(stderr,"%s: PT-point spacing conflict (%d vs %d)\n",Prog_Name,tspace,mspace);
-            exit (1);
-          }
-
-        fclose(input);
-      }
-    fwrite(&novl,sizeof(int64),1,stdout);
-    fwrite(&tspace,sizeof(int),1,stdout);
-  }
-
-  { int      i, j;
-    Overlap *w;
-    int64    tsize, povl;
-    int      mspace;
-    char    *iptr, *itop;
-    char    *optr, *otop;
-
-    optr = oblock;
-    otop = oblock + bsize;
-
-    for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
-        if ((input = fopen(name,"r")) == NULL) break;
-
-        if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
-        if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
-
+      fwrite(&novl,sizeof(int64),1,output);
+      fwrite(&novl,sizeof(int64),1,output);
+      fwrite(&novl,sizeof(int64),1,output);
+      fwrite(&novl,sizeof(int64),1,output);
+    
+      { int         j, alst;
+        Overlap    *w;
+        int64       tsize;
+        int64       optr;
+        char       *iptr, *itop;
+        int64       tlen;
+    
+        optr = 4*sizeof(int64);
         iptr = iblock;
         itop = iblock + fread(iblock,1,bsize,input);
-
-        for (j = 0; j < povl; j++)
+    
+        alst = -1;
+        odeg = sdeg = 0;
+        omax = smax = 0;
+        tmax = ttot = 0;
+        for (j = 0; j < novl; j++)
           { if (iptr + ovlsize > itop)
               { int64 remains = itop-iptr;
                 if (remains > 0)
@@ -151,19 +168,28 @@ int main(int argc, char *argv[])
                 itop  = iblock + remains;
                 itop += fread(itop,1,bsize-remains,input);
               }
-
+    
             w = (Overlap *) (iptr - ptrsize);
-            tsize = w->path.tlen*tbytes;
-
-            if (optr + ovlsize + tsize > otop)
-              { fwrite(oblock,1,optr-oblock,stdout);
-                optr = oblock;
+    
+            tlen  = w->path.tlen;
+            if (w->aread != alst)
+              { if (sdeg > smax)
+                  smax = sdeg;
+                if (odeg > omax)
+                  omax = odeg;
+                fwrite(&optr,sizeof(int64),1,output);
+    	        odeg = sdeg = 0;
+                alst = w->aread;
               }
-
-            memcpy(optr,iptr,ovlsize);
-            optr += ovlsize;
+            if (tlen > tmax)
+              tmax = tlen;
+            ttot += tlen;
+            odeg += 1;
+            sdeg += tlen;
+    
             iptr += ovlsize;
-
+    
+            tsize = tlen*tbytes;
             if (iptr + tsize > itop)
               { int64 remains = itop-iptr;
                 if (remains > 0)
@@ -173,21 +199,34 @@ int main(int argc, char *argv[])
                 itop += fread(itop,1,bsize-remains,input);
               }
             
-            memcpy(optr,iptr,tsize);
-            optr += tsize;
+            optr += ovlsize + tsize;
             iptr += tsize;
           }
-
-        fclose(input);
+        fwrite(&optr,sizeof(int64),1,output);
       }
+    
+      if (sdeg > smax)
+        smax = sdeg;
+      if (odeg > omax)
+        omax = odeg;
+    
+      rewind(output);
+    
+      fwrite(&omax,sizeof(int64),1,output);
+      fwrite(&ttot,sizeof(int64),1,output);
+      fwrite(&smax,sizeof(int64),1,output);
+      fwrite(&tmax,sizeof(int64),1,output);
 
-    if (optr > oblock)
-      fwrite(oblock,1,optr-oblock,stdout);
-  }
+      if (VERBOSE)
+        { Print_Number(ttot,0,stdout);
+          printf(" trace points\n");
+          fflush(stdout);
+        }
+    
+      fclose(input);
+      fclose(output);
+    }
 
-  free(pwd);
-  free(root);
-  free(oblock);
   free(iblock-ptrsize);
 
   exit (0);

@@ -63,7 +63,7 @@ static char *Usage[] =
   { "[-vb] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>]",
     "      [-e<double(.85)] [-l<int(1000)>] [-s<int(100)] [-H<int>]",
     "      [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]",
-    "       <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]"
+    "      <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]"
   };
 
 static int power(int base, int exp)
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
   char *pwd2, *root2;
 
   int    MUNIT, DUNIT;
-  int    VON, BON;
+  int    VON, BON, CON;
   int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
   double EREL;
   int    MMAX, MTOP;
@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vbd");
+            ARG_FLAGS("vbc");
             break;
           case 'k':
             ARG_POSITIVE(KINT,"K-mer length")
@@ -209,6 +209,7 @@ int main(int argc, char *argv[])
 
     VON = flags['v'];
     BON = flags['b'];
+    CON = flags['c'];
 
     if (argc < 3 || argc > 4)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
@@ -455,6 +456,8 @@ int main(int argc, char *argv[])
           printf("LAsort");
           if (VON)
             printf(" -v");
+          if (CON)
+            printf(" -c");
           for (k = 0; k < NTHREADS; k++)
             { if (useblock1)
                 printf(" %s.%d",root1,i);
@@ -476,6 +479,8 @@ int main(int argc, char *argv[])
           printf(" && LAmerge");
           if (VON)
             printf(" -v");
+          if (CON)
+            printf(" -c");
           if (nblocks1 == 1)
             if (useblock2)
               printf(" %s.%s.%d",root1,root2,j);
@@ -586,6 +591,8 @@ int main(int argc, char *argv[])
                       printf("LAmerge");
                       if (VON)
                         printf(" -v");
+                      if (CON)
+                        printf(" -c");
                       if (i == level)
                         if (useblock2)
                           printf(" %s.%s.%d",root1,root2,j);

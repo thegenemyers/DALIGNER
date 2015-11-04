@@ -69,24 +69,50 @@ static int SORT_OVL(const void *x, const void *y)
   Overlap *ol, *or;
   int      al, ar;
   int      bl, br;
+  int      cl, cr;
   int      pl, pr;
 
   ol = (Overlap *) (IBLOCK+l);
-  al = ol->aread;
-  bl = ol->bread;
-
   or = (Overlap *) (IBLOCK+r);
-  ar = or->aread;
-  br = or->bread;
 
+  al = ol->aread;
+  ar = or->aread;
   if (al != ar)
     return (al-ar);
+
+  bl = ol->bread;
+  br = or->bread;
   if (bl != br)
     return (bl-br);
 
+  cl = COMP(ol->flags);
+  cr = COMP(ol->flags);
+  if (cl != cr)
+    return (cl-cr);
+
   pl = ol->path.abpos;
   pr = or->path.abpos;
+  return (pl-pr);
+}
 
+static int SORT_MAP(const void *x, const void *y)
+{ int64 l = *((int64 *) x);
+  int64 r = *((int64 *) y);
+
+  Overlap *ol, *or;
+  int      al, ar;
+  int      pl, pr;
+
+  ol = (Overlap *) (IBLOCK+l);
+  or = (Overlap *) (IBLOCK+r);
+
+  al = ol->aread;
+  ar = or->aread;
+  if (al != ar)
+    return (al-ar);
+
+  pl = ol->path.abpos;
+  pr = or->path.abpos;
   return (pl-pr);
 }
 
@@ -98,6 +124,7 @@ int main(int argc, char *argv[])
   int       i;
 
   int       VERBOSE;
+  int       MAP_ORDER;
  
   //  Process options
 
@@ -109,12 +136,13 @@ int main(int argc, char *argv[])
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
-        { ARG_FLAGS("v") }
+        { ARG_FLAGS("vc") }
       else
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];
+    VERBOSE   = flags['v'];
+    MAP_ORDER = flags['c'];
 
     if (argc <= 1)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
@@ -218,7 +246,10 @@ int main(int argc, char *argv[])
       //  Sort permutation array of ptrs to records
 
       IBLOCK = iblock;
-      qsort(perm,novl,sizeof(int64),SORT_OVL);
+      if (MAP_ORDER)
+        qsort(perm,novl,sizeof(int64),SORT_MAP);
+      else
+        qsort(perm,novl,sizeof(int64),SORT_OVL);
 
       //  Output the records in sorted order
 

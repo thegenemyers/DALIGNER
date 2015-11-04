@@ -39,7 +39,10 @@
  *
  *  Fast local alignment filter for long, noisy reads based on "dumbing down" of my RECOMB 2005
  *     filter with Jens Stoye, and a "smarting up" of the k-mer matching by turning it into
- *     a threaded sort and merge paradigm using a super cache coherent radix sort.
+ *     a threaded sort and merge paradigm using a super cache coherent radix sort.  Local
+ *     alignment is accomplised with dynamically-banded O(nd) algorithm that terminates when
+ *     it fails to find a e-matching patch for a significant distance, and polishes the match
+ *     to the last e-prefix-positive 32-mer.
  *
  *  Author :  Gene Myers
  *  First  :  June 2013
@@ -70,6 +73,9 @@
 #define PANEL_SIZE     50000   //  Size to break up very long A-reads
 #define PANEL_OVERLAP  10000   //  Overlap of A-panels
 
+#define MATCH_CHUNK    100     //  Max expected number of hits between two reads
+#define TRACE_CHUNK  20000     //  Max expected trace points in hits between two reads
+
 #undef  TEST_LSORT
 #undef  TEST_KSORT
 #undef  TEST_PAIRS
@@ -77,6 +83,7 @@
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
 #undef  TEST_GATHER
+#undef  TEST_CONTAIN
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
 #define   ALIGN_WIDTH    80   //     Parameters for alignment
@@ -88,6 +95,10 @@
 #endif
 
 #ifdef TEST_GATHER
+#define NOTHREAD
+#endif
+
+#ifdef TEST_CONTAIN
 #define NOTHREAD
 #endif
 
@@ -127,11 +138,6 @@ typedef struct
   } SeedPair;
 
 #endif
-
-static KmerPos *Asort = NULL;
-static KmerPos *Csort = NULL;
-
-static int      Alen, Clen;
 
 /*******************************************************************************************
  *
@@ -674,7 +680,7 @@ static void *compress_thread(void *arg)
   return (NULL);
 }
 
-static KmerPos *sort_kmers(HITS_DB *block, int *len)
+void *Sort_Kmers(HITS_DB *block, int *len)
 { THREAD    threads[NTHREADS];
   Tuple_Arg parmt[NTHREADS];
   Comp_Arg  parmf[NTHREADS];
@@ -694,7 +700,7 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
   if (NormShift == NULL && BIASED)
     { double scale;
 
-      NormShift = (int *) Malloc(sizeof(int)*(Kmer+1),"Allocating sort_kmers bias shift");
+      NormShift = (int *) Malloc(sizeof(int)*(Kmer+1),"Allocating Sort_Kmers bias shift");
       if (NormShift == NULL)
         exit (1);
       for (i = 0; i <= Kmer; i++)
@@ -714,12 +720,12 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
     goto no_mers;
 
   if (( (Kshift-1)/BSHIFT + (TooFrequent < INT32_MAX) ) & 0x1)
-    { trg = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating sort_kmers vectors");
-      src = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating sort_kmers vectors");
+    { trg = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating Sort_Kmers vectors");
+      src = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating Sort_Kmers vectors");
     }
   else
-    { src = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating sort_kmers vectors");
-      trg = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating sort_kmers vectors");
+    { src = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating Sort_Kmers vectors");
+      trg = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+1),"Allocating Sort_Kmers vectors");
     }
   if (src == NULL || trg == NULL)
     exit (1);
@@ -843,9 +849,9 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
   if (MEM_LIMIT > 0 && kmers > (int64) (MEM_LIMIT/(4*sizeof(KmerPos))))
     { fprintf(stderr,"Warning: Block size too big, index occupies more than 1/4 of");
       if (MEM_LIMIT == MEM_PHYSICAL)
-        fprintf(stderr," physical memory\n");
+        fprintf(stderr," physical memory (%.1fGb)\n",(1.*MEM_LIMIT)/0x40000000ll);
       else
-        fprintf(stderr," desired memory allocation\n");
+        fprintf(stderr," desired memory allocation (%.1fGb)\n",(1.*MEM_LIMIT)/0x40000000ll);
       fflush(stderr);
     }
 
@@ -855,13 +861,6 @@ static KmerPos *sort_kmers(HITS_DB *block, int *len)
 no_mers:
   *len = 0;
   return (NULL);
-}
-
-void Build_Table(HITS_DB *block)
-{ if (Asort == NULL)
-    Asort = sort_kmers(block,&Alen);
-  else
-    Csort = sort_kmers(block,&Clen);
 }
 
 
@@ -887,6 +886,8 @@ static int find_tuple(uint64 x, KmerPos *a, int n)
     }
   return (l);
 }
+
+  //  Determine what *will* be the size of the merged list and histogram of sizes for given cutoffs
 
 static KmerPos  *MG_alist;
 static KmerPos  *MG_blist;
@@ -996,6 +997,8 @@ static void *count_thread(void *arg)
 
   return (NULL);
 }
+
+  //  Produce the merged list now that the list has been allocated and the appropriate cutoff determined.
 
 static void *merge_thread(void *arg)
 { Merge_Arg  *data  = (Merge_Arg *) arg;
@@ -1138,8 +1141,304 @@ static void *merge_thread(void *arg)
   return (NULL);
 }
 
+  //  Report threads: given a segment of merged list, find all seeds and from them all alignments.
 
-void Diagonal_Span(Path *path, int tspace, int *mind, int *maxd)
+static HITS_DB    *MR_ablock;
+static HITS_DB    *MR_bblock;
+static SeedPair   *MR_hits;
+static int         MR_comp;
+static int         MR_two;
+static Align_Spec *MR_spec;
+static int         MR_tspace;
+
+typedef struct
+  { int     max;
+    int     top;
+    uint16 *trace;
+  } Trace_Buffer;
+
+static int Entwine(Path *jpath, Path *kpath, int *where)
+{ int   ac, b2, y2, ae;
+  int   i, j, k;
+  int   num, den, min;
+  int   strt, iflare, oflare;
+
+  uint16 *ktrace = (uint16 *) kpath->trace;
+  uint16 *jtrace = (uint16 *) jpath->trace;
+
+  min   = 10000;
+  num   = 0;
+  den   = 0;
+  strt  = 1;
+
+#ifdef SEE_ENTWINE
+  printf("\n");
+#endif
+
+  y2 = jpath->bbpos;
+  j  = jpath->abpos/MR_tspace;
+
+  b2 = kpath->bbpos;
+  k  = kpath->abpos/MR_tspace;
+
+  if (j < k)
+    { ac = k*MR_tspace;
+
+      j = 1 + 2*(k-j);
+      k = 1;
+
+      for (i = 1; i < j; i += 2)
+        y2 += jtrace[i];
+    }
+  else
+    { ac = j*MR_tspace;
+
+      k = 1 + 2*(j-k);
+      j = 1;
+
+      for (i = 1; i < k; i += 2)
+        b2 += ktrace[i];
+    }
+
+  ae = jpath->aepos;
+  if (ae > kpath->aepos)
+    ae = kpath->aepos;
+
+  while (1)
+    { ac += MR_tspace;
+      if (ac >= ae)
+        break;
+      y2 += jtrace[j];
+      b2 += ktrace[k];
+      j += 2;
+      k += 2;
+
+#ifdef SEE_ENTWINE
+      printf("   @ %5d : %5d %5d = %4d\n",ac,y2,b2,abs(b2-y2));
+#endif
+
+      i = abs(y2-b2);
+      if (i <= min)
+        { min = i;
+          if (i == 0)
+            *where = ac;
+        }
+      num += i;
+      den += 1;
+      if (strt)
+        { strt   = 0;
+          iflare = i;
+        }
+      oflare = i;
+    }
+
+#ifdef SEE_ENTWINE
+  if (den == 0)
+    printf("Nothing\n");
+  else
+    printf("MINIM = %d AVERAGE = %d  IFLARE = %d  OFLARE = %d\n",min,num/den,iflare,oflare);
+#endif
+
+  if (den == 0)
+    return (-1);
+  else
+    return (min);
+}
+
+
+//  Produce the concatentation of path1 and path2 where they are known to meet at
+//    the trace point with coordinate ap. Place this result in a big growing buffer,
+//    that gets reset when fusion is called with path1 = NULL
+
+static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
+{ int     k, k1, k2;
+  int     len, diff;
+  uint16 *trace;
+
+  k1 = 2 * ((ap/MR_tspace) - (path1->abpos/MR_tspace));
+  k2 = 2 * ((ap/MR_tspace) - (path2->abpos/MR_tspace));
+
+  len = k1+(path2->tlen-k2);
+
+  if (tbuf->top + len >= tbuf->max)
+    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
+      tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
+      if (tbuf->trace == NULL)
+        exit (1);
+    }
+  trace = tbuf->trace+tbuf->top;
+  tbuf->top += len;
+
+  diff = 0;
+  len  = 0;
+  if (k1 > 0)
+    { uint16 *t = (uint16 *) (path1->trace);
+      for (k = 0; k < k1; k += 2)
+        { trace[len++] = t[k];
+          trace[len++] = t[k+1];
+          diff += t[k];
+        }
+    }
+  if (k2 < path2->tlen)
+    { uint16 *t = (uint16 *) (path2->trace);
+      for (k = k2; k < path2->tlen; k += 2)
+        { trace[len++] = t[k];
+          trace[len++] = t[k+1];
+          diff += t[k];
+        }
+    }
+
+  path1->aepos = path2->aepos;
+  path1->bepos = path2->bepos;
+  path1->diffs = diff;
+  path1->trace = trace;
+  path1->tlen  = len;
+}
+
+
+static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buffer *tbuf)
+{ Path *jpath, *kpath;
+  int   j, k, no;
+  int   dist, awhen, bwhen;
+  int   hasB;
+
+#ifdef TEST_CONTAIN
+  for (j = 0; j < novls; j++)
+    printf("  %3d: [%5d,%5d] x [%5d,%5d]\n",j,amatch[j].abpos,amatch[j].aepos,
+                                              amatch[j].bbpos,amatch[j].bepos);
+#endif
+
+  hasB = (bmatch != NULL);
+
+  no = 0;
+  for (j = 1; j < novls; j++)
+    { jpath = amatch+j;
+      for (k = no; k >= 0; k--)
+        { kpath = amatch+k;
+
+          if (jpath->abpos < kpath->abpos)
+
+            { if (kpath->abpos <= jpath->aepos && kpath->bbpos <= jpath->bepos)
+                { dist = Entwine(jpath,kpath,&awhen);
+                  if (dist == 0)
+                    { if (kpath->aepos > jpath->aepos)
+                        { if (hasB)
+                            { if (MR_comp)
+                                { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
+                                  if (dist != 0)
+                                    continue;
+                                  Fusion(jpath,awhen,kpath,tbuf);
+                                  amatch[k] = *jpath;
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+#ifdef TEST_CONTAIN
+                                  printf("  Really 1");
+#endif
+                                }
+                              else
+                                { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
+                                  if (dist != 0)
+                                    continue;
+                                  Fusion(jpath,awhen,kpath,tbuf);
+                                  amatch[k] = *jpath;
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
+                                  bmatch[k] = bmatch[j];
+#ifdef TEST_CONTAIN
+                                  printf("  Really 2");
+#endif
+                                }
+                            }
+                          else
+                            { Fusion(jpath,awhen,kpath,tbuf);
+                              amatch[k] = *jpath;
+#ifdef TEST_CONTAIN
+                              printf("  Really 3");
+#endif
+                            }
+                        }
+                      else
+                        { amatch[k] = *jpath;
+                          if (hasB)
+                            bmatch[k] = bmatch[j];
+                        }
+#ifdef TEST_CONTAIN
+                      printf("  Fuse! A %d %d\n",j,k);
+#endif
+                      break;
+                    }
+                }
+            }
+
+          else // kpath->abpos <= jpath->abpos
+
+            { if (jpath->abpos <= kpath->aepos && jpath->bbpos <= kpath->bepos)
+                { dist = Entwine(kpath,jpath,&awhen);
+                  if (dist == 0)
+                    { if (kpath->abpos == jpath->abpos)
+                        { if (kpath->aepos < jpath->aepos)
+                            { amatch[k] = *jpath;
+                              if (hasB)
+                                bmatch[k] = bmatch[j];
+                            }
+                        }
+                      else if (jpath->aepos > kpath->aepos)
+                        { if (hasB)
+                            { if (MR_comp)
+                                { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
+                                  if (dist != 0)
+                                    continue;
+                                  Fusion(kpath,awhen,jpath,tbuf);
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
+                                  bmatch[k] = bmatch[j];
+#ifdef TEST_CONTAIN
+                                  printf("  Really 4");
+#endif
+                                }
+                              else
+                                { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
+                                  if (dist != 0)
+                                    continue;
+                                  Fusion(kpath,awhen,jpath,tbuf);
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+#ifdef TEST_CONTAIN
+                                  printf("  Really 5");
+#endif
+                                }
+                            }
+                          else
+                            { Fusion(kpath,awhen,jpath,tbuf);
+#ifdef TEST_CONTAIN
+                              printf("  Really 6");
+#endif
+                            }
+                        }
+#ifdef TEST_CONTAIN
+                      printf("  Fuse! B %d %d\n",j,k);
+#endif
+                      break;
+                    }
+                }
+            }
+        }
+      if (k < 0)
+        { no += 1;
+          amatch[no] = *jpath;
+          if (hasB)
+            bmatch[no] = bmatch[j];
+        }
+    }
+
+  novls = no+1;
+
+#ifdef TEST_CONTAIN
+  for (j = 0; j < novls; j++)
+    printf("  %3d: [%5d,%5d] x [%5d,%5d]\n",j,amatch[j].abpos,amatch[j].aepos,
+                                              amatch[j].bbpos,amatch[j].bepos);
+#endif
+
+  return (novls);
+}
+
+void Diagonal_Span(Path *path, int *mind, int *maxd)
 { uint16 *points;
   int     i, tlen;
   int     dd, low, hgh;
@@ -1147,19 +1446,19 @@ void Diagonal_Span(Path *path, int tspace, int *mind, int *maxd)
   points = (uint16 *) path->trace;
   tlen   = path->tlen;
 
-  dd = path->bbpos - path->abpos;
+  dd = path->abpos - path->bbpos;
   low = hgh = dd;
 
-  dd = path->bepos - path->aepos;
+  dd = path->aepos - path->bepos;
   if (dd < low)
     low = dd;
   else if (dd > hgh)
     hgh = dd;
 
-  dd = path->bbpos - (path->abpos/tspace)*tspace;
+  dd = (path->abpos/MR_tspace)*MR_tspace - path->bbpos;
   tlen -= 2;
   for (i = 1; i < tlen; i += 2)
-    { dd += points[i]-tspace;
+    { dd += MR_tspace - points[i];
       if (dd < low)
         low = dd;
       else if (dd > hgh)
@@ -1170,19 +1469,12 @@ void Diagonal_Span(Path *path, int tspace, int *mind, int *maxd)
   *maxd = (hgh >> Binshift)+1;
 }
 
-static HITS_DB  *MR_ablock;
-static HITS_DB  *MR_bblock;
-static SeedPair *MR_hits;
-static int       MR_comp;
-static int       MR_two;
-
 typedef struct
   { int64       beg, end;
     int        *score;
     int        *lastp;
     int        *lasta;
     Work_Data  *work;
-    Align_Spec *aspec;
     FILE       *ofile1;
     FILE       *ofile2;
     int64       nfilt;
@@ -1203,7 +1495,6 @@ static void *report_thread(void *arg)
   int         *lastp  = data->lastp;
   int         *lasta  = data->lasta;
   Work_Data   *work   = data->work;
-  Align_Spec  *aspec  = data->aspec;
   FILE        *ofile1 = data->ofile1;
   FILE        *ofile2 = data->ofile2;
   int          afirst = MR_ablock->tfirst;
@@ -1214,12 +1505,18 @@ static void *report_thread(void *arg)
   Overlap     _ovla, *ovla = &_ovla;
   Overlap     _ovlb, *ovlb = &_ovlb;
   Alignment   _align, *align = &_align;
-  Path        *apath;
-  Path        *bpath = &(ovlb->path);
+  Path        *apath = &(ovla->path);
+  Path        *bpath;
   int64        nfilt = 0;
   int64        ahits = 0;
   int64        bhits = 0;
-  int          tspace, small, tbytes;
+  int          small, tbytes;
+
+  int    AOmax, BOmax;
+  int    novla, novlb;
+  Path  *amatch, *bmatch;
+
+  Trace_Buffer _tbuf, *tbuf = &_tbuf;
 
   Double *hitc;
   int     minhit;
@@ -1230,10 +1527,9 @@ static void *report_thread(void *arg)
   //    complemented sequence !!
 
   align->flags = ovla->flags = ovlb->flags = MR_comp;
-  align->path = bpath;
+  align->path  = apath;
 
-  tspace = Trace_Spacing(aspec);
-  if (tspace <= TRACE_XOVR)
+  if (MR_tspace <= TRACE_XOVR)
     { small  = 1;
       tbytes = sizeof(uint8);
     }
@@ -1242,11 +1538,21 @@ static void *report_thread(void *arg)
       tbytes = sizeof(uint16);
     }
 
+  AOmax = BOmax = MATCH_CHUNK;
+  amatch = Malloc(sizeof(Path)*AOmax,"Allocating match vector");
+  bmatch = Malloc(sizeof(Path)*BOmax,"Allocating match vector");
+
+  tbuf->max   = 2*TRACE_CHUNK;
+  tbuf->trace = Malloc(sizeof(short)*tbuf->max,"Allocating trace vector");
+
+  if (amatch == NULL || bmatch == NULL || tbuf->trace == NULL)
+    exit (1);
+
   fwrite(&ahits,sizeof(int64),1,ofile1);
-  fwrite(&tspace,sizeof(int),1,ofile1);
+  fwrite(&MR_tspace,sizeof(int),1,ofile1);
   if (MR_two)
     { fwrite(&bhits,sizeof(int64),1,ofile2);
-      fwrite(&tspace,sizeof(int),1,ofile2);
+      fwrite(&MR_tspace,sizeof(int),1,ofile2);
     }
 
   minhit = (Hitmin-1)/Kmer + 1;
@@ -1283,6 +1589,8 @@ static void *report_thread(void *arg)
 #endif
         setaln = 1;
         amark2 = 0;
+        novla  = novlb = 0;
+        tbuf->top = 0;
         for (sidx = nidx; hitd[nidx].p2 == cpair; nidx = h2)
           { amark  = amark2 + PANEL_SIZE;
             amark2 = amark  - PANEL_OVERLAP;
@@ -1321,10 +1629,10 @@ static void *report_thread(void *arg)
                      (score[diag] + scorp[diag] >= Hitmin || score[diag] + scorm[diag] >= Hitmin))
                   { if (setaln)
                       { setaln = 0;
-                        align->bseq = aseq + aread[ar].boff;
-                        align->aseq = bseq + bread[br].boff;
-                        align->blen = alen;
-                        align->alen = blen;
+                        align->aseq = aseq + aread[ar].boff;
+                        align->bseq = bseq + bread[br].boff;
+                        align->alen = alen;
+                        align->blen = blen;
                         ovlb->bread = ovla->aread = ar + afirst;
                         ovlb->aread = ovla->bread = br + bfirst;
                       }
@@ -1341,50 +1649,77 @@ static void *report_thread(void *arg)
 #endif
                     nfilt += 1;
 
-                    apath = Local_Alignment(align,work,aspec,bpos-apos,bpos-apos,bpos+apos,-1,-1);
+                    bpath = Local_Alignment(align,work,MR_spec,apos-bpos,apos-bpos,apos+bpos,-1,-1);
 
-                    { int low, hgh, be;
+                    { int low, hgh, ae;
 
-                      Diagonal_Span(bpath,tspace,&low,&hgh);
+                      Diagonal_Span(apath,&low,&hgh);
                       if (diag < low)
                         low = diag;
                       else if (diag > hgh)
                         hgh = diag;
-                      be = bpath->bepos;
+                      ae = apath->aepos;
                       for (diag = low; diag <= hgh; diag++)
-                        if (be > lasta[diag])
-                          lasta[diag] = be;
+                        if (ae > lasta[diag])
+                          lasta[diag] = ae;
 #ifdef TEST_GATHER
-                      printf(" %d - %d @ %d",low,hgh,bpath->bepos);
+                      printf(" %d - %d @ %d",low,hgh,apath->aepos);
 #endif
                     }
 
                     if ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos) >= MINOVER)
-                      { ovla->path = *apath;
-                        if (small)
-                          { Compress_TraceTo8(ovla);
-                            Compress_TraceTo8(ovlb);
-                          }
-                        if (alen >= HGAP_MIN)
-                          { Write_Overlap(ofile1,ovla,tbytes);
-                            ahits += 1;
+                      { if (alen >= HGAP_MIN)
+                          { if (novla >= AOmax)
+                              { AOmax = 1.2*novla + MATCH_CHUNK;
+                                amatch = Realloc(amatch,sizeof(Path)*AOmax,
+                                                 "Reallocating match vector");
+                                if (amatch == NULL)
+                                  exit (1);
+                              }
+                            if (tbuf->top + apath->tlen > tbuf->max)
+                              { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
+                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
+                                                      "Reallocating trace vector");
+                                if (tbuf->trace == NULL)
+                                  exit (1);
+                              }
+                            amatch[novla] = *apath;
+                            amatch[novla].trace = tbuf->trace + tbuf->top;
+                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                            novla += 1;
+                            tbuf->top += apath->tlen;
                           }
                         if (blen >= HGAP_MIN && SYMMETRIC)
-                          { Write_Overlap(ofile2,ovlb,tbytes);
-                            bhits += 1;
+                          { if (novlb >= BOmax)
+                              { BOmax = 1.2*novlb + MATCH_CHUNK;
+                                bmatch = Realloc(bmatch,sizeof(Path)*BOmax,
+                                                        "Reallocating match vector");
+                                if (bmatch == NULL)
+                                  exit (1);
+                              }
+                            if (tbuf->top + bpath->tlen > tbuf->max)
+                              { tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
+                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
+                                                      "Reallocating trace vector");
+                                if (tbuf->trace == NULL)
+                                  exit (1);
+                              }
+                            bmatch[novlb] = *bpath;
+                            bmatch[novlb].trace = tbuf->trace + tbuf->top;
+                            memcpy(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
+                            novlb += 1;
+                            tbuf->top += bpath->tlen;
                           }
 
 #ifdef TEST_GATHER
                         printf("  [%5d,%5d] x [%5d,%5d] = %4d",
-                               bpath->abpos,bpath->aepos,bpath->bbpos,bpath->bepos,bpath->diffs);
+                               apath->abpos,apath->aepos,apath->bbpos,apath->bepos,apath->diffs);
 #endif
 #ifdef SHOW_OVERLAP
                         printf("\n\n                    %d(%d) vs %d(%d)\n\n",
-                               ovlb->aread,ovlb->alen,ovlb->bread,ovlb->blen);
+                               ovla->aread,ovla->alen,ovla->bread,ovla->blen);
                         Print_ACartoon(stdout,align,ALIGN_INDENT);
 #ifdef SHOW_ALIGNMENT
-                        if (small)
-                          Decompress_TraceTo16(ovlb);
                         Compute_Trace_ALL(align,work);
                         printf("\n                      Diff = %d\n",align->path->diffs);
                         Print_Alignment(stdout,align,work,
@@ -1425,7 +1760,44 @@ static void *report_thread(void *arg)
               else
                 lasta[d] = 0;
           }
+
+         
+         { int i;
+
+#ifdef TEST_CONTAIN
+           if (novla > 1 || novlb > 1)
+             printf("\n%5d vs %5d:\n",ar,br);
+#endif
+
+           if (novla > 1)
+             { if (novlb > 1)
+                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf);
+               else
+                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf);
+             }
+           else if (novlb > 1)
+             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf);
+
+           for (i = 0; i < novla; i++)
+             { ovla->path = amatch[i];
+               if (small)
+                 Compress_TraceTo8(ovla);
+               Write_Overlap(ofile1,ovla,tbytes);
+             }
+           for (i = 0; i < novlb; i++)
+             { ovlb->path = bmatch[i];
+               if (small)
+                 Compress_TraceTo8(ovlb);
+               Write_Overlap(ofile2,ovlb,tbytes);
+             }
+           ahits += novla;
+           bhits += novlb;
+         }
       }
+
+  free(tbuf->trace);
+  free(bmatch);
+  free(amatch);
 
   data->nfilt  = nfilt;
   data->ncheck = ahits + bhits;
@@ -1453,7 +1825,8 @@ static void *report_thread(void *arg)
  ********************************************************************************************/
 
 void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
-                  int self, int comp, Align_Spec *aspec)
+                  void *vasort, int alen, void *vbsort, int blen,
+                  int comp, Align_Spec *aspec)
 { THREAD     threads[NTHREADS];
   Merge_Arg  parmm[NTHREADS];
   Lex_Arg    parmx[NTHREADS];
@@ -1466,31 +1839,13 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
   int64     nfilt, ncheck;
 
   KmerPos  *asort, *bsort;
-  int       alen, blen;
-
   int64     atot, btot;
+
+  asort = (KmerPos *) vasort;
+  bsort = (KmerPos *) vbsort;
 
   atot = ablock->totlen;
   btot = bblock->totlen;
-
-  if (comp)
-    { asort = Csort;
-      alen  = Clen;
-    }
-  else
-    { asort = Asort;
-      alen  = Alen;
-    }
-
-  if (self)
-    { bsort = Asort;
-      blen  = Alen;
-    }
-  else
-    { if (VERBOSE)
-        printf("\nBuilding index for %s\n",bname);
-      bsort = sort_kmers(bblock,&blen);
-    }
 
   { int64 powr;
     int   i, nbyte;
@@ -1535,7 +1890,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
     MG_alist = asort;
     MG_blist = bsort;
-    MG_self  = self;
+    MG_self  = (aname == bname);
 
     parmm[0].abeg = parmm[0].bbeg = 0;
     for (i = 1; i < NTHREADS; i++)
@@ -1573,10 +1928,10 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           for (j = 0; j < MAXGRAM; j++)
             histo[j] += parmm[i].hitgram[j];
 
-        if (self || (int64) (MEM_LIMIT/sizeof(Double)) > Alen + Clen + 2*blen)
-          avail = (MEM_LIMIT/sizeof(Double) - (Alen + Clen)) / 2;
+        if (asort == bsort || (int64) (MEM_LIMIT/sizeof(Double)) > alen + 2*blen)
+          avail = (MEM_LIMIT/sizeof(Double) - alen) / 2;
         else
-          avail = MEM_LIMIT/sizeof(Double) - (Alen + Clen + blen);
+          avail = MEM_LIMIT/sizeof(Double) - (alen + blen);
         avail *= .98;
 
         tom = 0;
@@ -1590,26 +1945,30 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
         if (limit == 1)
           { fprintf(stderr,"\nError: Insufficient ");
             if (MEM_LIMIT == MEM_PHYSICAL)
-              fprintf(stderr," physical memory, reduce block size\n");
+              fprintf(stderr," physical memory (%.1fGb), reduce block size\n",
+                             (1.*MEM_LIMIT)/0x40000000ll);
             else
-              fprintf(stderr," memory allocation, reduce block size or increase allocation\n");
+              { fprintf(stderr," memory allocation (%.1fGb),",(1.*MEM_LIMIT)/0x40000000ll);
+                fprintf(stderr," reduce block size or increase allocation\n");
+              }
             fflush(stderr);
             exit (1);
           }
-        else if (limit < 10)
+        if (limit < 10)
           { fprintf(stderr,"\nWarning: Sensitivity hampered by low ");
             if (MEM_LIMIT == MEM_PHYSICAL)
-              fprintf(stderr," physical memory, reduce block size\n");
+              fprintf(stderr," physical memory (%.1fGb), reduce block size\n",
+                             (1.*MEM_LIMIT)/0x40000000ll);
             else
-              fprintf(stderr," memory allocation, reduce block size or increase allocation\n");
+              { fprintf(stderr," memory allocation (%.1fGb),",(1.*MEM_LIMIT)/0x40000000ll);
+                fprintf(stderr," reduce block size or increase allocation\n");
+              }
             fflush(stderr);
           }
-        else
-          { if (VERBOSE)
-              { printf("   Capping mutual k-mer matches over %d (effectively -t%d)\n",
-                       limit,(int) sqrt(1.*limit));
-                fflush(stdout);
-              }
+        if (VERBOSE)
+          { printf("   Capping mutual k-mer matches over %d (effectively -t%d)\n",
+                   limit,(int) sqrt(1.*limit));
+            fflush(stdout);
           }
 
         for (i = 0; i < NTHREADS; i++)
@@ -1630,26 +1989,26 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     if (VERBOSE)
       { printf("   Hit count = ");
         Print_Number(nhits,0,stdout);
-        if (self || nhits >= blen)
+        if (asort == bsort || nhits >= blen)
           printf("\n   Highwater of %.2fGb space\n",
-                       (1. * (Alen + Clen + 2*nhits)) / 67108864);
+                       (1. * (alen + 2*nhits)) / 67108864);
         else
           printf("\n   Highwater of %.2fGb space\n",
-                       (1. * (Alen + Clen + blen + nhits)) / 67108864);
+                       (1. * (alen + blen + nhits)) / 67108864);
         fflush(stdout);
       }
 
     if (nhits == 0)
       goto zerowork;
 
-    if (self)
+    if (asort == bsort)
       hhit = work1 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
                                          "Allocating dazzler hit vectors");
     else
       { if (nhits >= blen)
           bsort = (KmerPos *) Realloc(bsort,sizeof(SeedPair)*(nhits+1),
                                        "Reallocating dazzler sort vectors");
-        hhit  = work1 = (SeedPair *) bsort;
+        hhit = work1 = (SeedPair *) bsort;
       }
     khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),"Allocating dazzler hit vectors");
     if (hhit == NULL || khit == NULL || bsort == NULL)
@@ -1678,7 +2037,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     printf("\nSETUP SORT:\n");
     for (i = 0; i < HOW_MANY && i < nhits; i++)
       { SeedPair *c = khit+i;
-        printf(" %5d / %5d / %5d /%5d\n",c->aread,c->bread,c->apos,c->bpos);
+        printf(" %5d / %5d / %5d /%5d\n",c->aread,c->bread,c->apos,c->apos-c->diag);
       }
 #endif
   }
@@ -1705,7 +2064,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     printf("\nCROSS SORT %lld:\n",nhits);
     for (i = 0; i < HOW_MANY && i <= nhits; i++)
       { SeedPair *c = khit+i;
-        printf(" %5d / %5d / %5d /%5d\n",c->aread,c->bread,c->apos,c->bpos);
+        printf(" %5d / %5d / %5d /%5d\n",c->aread,c->bread,c->apos,c->apos-c->diag);
       }
 #endif
   }
@@ -1719,7 +2078,9 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     MR_bblock = bblock;
     MR_hits   = khit;
     MR_comp   = comp;
-    MR_two    = ! self && SYMMETRIC;
+    MR_two    = ! MG_self && SYMMETRIC;
+    MR_spec   = aspec;
+    MR_tspace = Trace_Spacing(aspec);
 
     parmr[0].beg = 0;
     for (i = 1; i < NTHREADS; i++)
@@ -1748,13 +2109,12 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
         parmr[i].lastp = parmr[i].score + w;
         parmr[i].lasta = parmr[i].lastp + w;
         parmr[i].work  = New_Work_Data();
-        parmr[i].aspec = aspec;
 
         parmr[i].ofile1 =
              Fopen(Catenate(aname,".",bname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
         if (parmr[i].ofile1 == NULL)
           exit (1);
-        if (self)
+        if (MG_self)
           parmr[i].ofile2 = parmr[i].ofile1;
         else if (SYMMETRIC)
           { parmr[i].ofile2 = 
@@ -1796,19 +2156,18 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
 zerowork:
   { FILE *ofile;
-    int   i, tspace;
+    int   i;
 
     nhits  = 0;
-    tspace = Trace_Spacing(aspec);
     for (i = 0; i < NTHREADS; i++)
       { ofile = Fopen(Catenate(aname,".",bname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
         fwrite(&nhits,sizeof(int64),1,ofile);
-        fwrite(&tspace,sizeof(int),1,ofile);
+        fwrite(&MR_tspace,sizeof(int),1,ofile);
         fclose(ofile);
-        if (! self)
+        if (! MG_self & SYMMETRIC)
           { ofile = Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
             fwrite(&nhits,sizeof(int64),1,ofile);
-            fwrite(&tspace,sizeof(int),1,ofile);
+            fwrite(&MR_tspace,sizeof(int),1,ofile);
             fclose(ofile);
           }
       }

@@ -40,8 +40,7 @@
  *  Compressed data base module.  Auxiliary routines to open and manipulate a data base for
  *    which the sequence and read information are separated into two separate files, and the
  *    sequence is compressed into 2-bits for each base.  Support for tracks of additional
- *    information, and trimming according to the current partition.  Eventually will also
- *    support compressed quality information.
+ *    information, and trimming according to the current partition.
  *
  *  Author :  Gene Myers
  *  Date   :  July 2013
@@ -509,6 +508,8 @@ int Open_DB(char* path, HITS_DB *db)
   nreads = ulast-ufirst;
   if (part <= 0)
     { db->reads = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+2),"Allocating Open_DB index");
+      if (db->reads == NULL)
+        goto error2;
       db->reads += 1;
       if (fread(db->reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
         { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
@@ -521,7 +522,9 @@ int Open_DB(char* path, HITS_DB *db)
       int        i, r, maxlen;
       int64      totlen;
 
-      reads  = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+2),"Allocating Open_DB index");
+      reads = (HITS_READ *) Malloc(sizeof(HITS_READ)*(nreads+2),"Allocating Open_DB index");
+      if (reads == NULL)
+        goto error2;
       reads += 1;
 
       fseeko(index,sizeof(HITS_READ)*ufirst,SEEK_CUR);
@@ -677,6 +680,111 @@ void Trim_DB(HITS_DB *db)
     { db->reads = Realloc(reads-1,sizeof(HITS_READ)*(j+2),NULL);
       db->reads += 1;
     }
+}
+
+// The DB has already been trimmed, but a track over the untrimmed DB needs to be loaded.
+//   Trim the track by rereading the untrimmed DB index from the file system.
+
+static int Late_Track_Trim(HITS_DB *db, HITS_TRACK *track, int ispart)
+{ int         i, j, r;
+  int         allflag, cutoff;
+  int         ureads;
+  char       *root;
+  HITS_READ   read;
+  FILE       *indx;
+
+  if (!db->trimmed) return (0);
+
+  if (db->cutoff <= 0 && db->all) return (0);
+
+  cutoff = db->cutoff;
+  if (db->all)
+    allflag = 0;
+  else
+    allflag = DB_BEST;
+
+  root = rindex(db->path,'/') + 2;
+  indx = Fopen(Catenate(db->path,"","",".idx"),"r");
+  fseeko(indx,sizeof(HITS_DB) + sizeof(HITS_READ)*db->ufirst,SEEK_SET);
+  if (ispart)
+    ureads = ((int *) (db->reads))[-1];
+  else
+    ureads = db->ureads;
+
+  if (strcmp(track->name,".@qvs") == 0)
+    { EPRINTF(EPLACE,"%s: Cannot load QV track after trimming\n",Prog_Name);
+      fclose(indx);
+      EXIT(1);
+    }
+
+  { int   *anno4, size;
+    int64 *anno8;
+    char  *anno, *data;
+
+    size = track->size;
+    data = (char *) track->data; 
+    if (data == NULL)
+      { anno = (char *) track->anno;
+        j = r = 0;
+        for (i = r = 0; i < ureads; i++, r += size)
+          { if (fread(&read,sizeof(HITS_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { memmove(anno+j,anno+r,size);
+                j += size;
+              }
+            r += size;
+          }
+        memmove(anno+j,anno+r,size);
+      }
+    else if (size == 4)
+      { int ai;
+
+        anno4 = (int *) (track->anno);
+        j = anno4[0] = 0;
+        for (i = 0; i < ureads; i++)
+          { if (fread(&read,sizeof(HITS_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { ai = anno4[i];
+                anno4[j+1] = anno4[j] + (anno4[i+1]-ai);
+                memmove(data+anno4[j],data+ai,anno4[i+1]-ai);
+                j += 1;
+              }
+          }
+        track->data = Realloc(track->data,anno4[j],NULL);
+      }
+    else // size == 8
+      { int64 ai;
+
+        anno8 = (int64 *) (track->anno);
+        j = anno8[0] = 0;
+        for (i = 0; i < ureads; i++)
+          { if (fread(&read,sizeof(HITS_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { ai = anno8[i];
+                anno8[j+1] = anno8[j] + (anno8[i+1]-ai);
+                memmove(data+anno8[j],data+ai,anno8[i+1]-ai);
+                j += 1;
+              }
+          }
+        track->data = Realloc(track->data,anno8[j],NULL);
+      }
+    track->anno = Realloc(track->anno,track->size*(j+1),NULL);
+  }
+
+  fclose(indx);
+  return (0);
 }
 
 // Shut down an open 'db' by freeing all associated space, including tracks and QV structures, 
@@ -969,9 +1077,9 @@ void Close_QVs(HITS_DB *db)
 //    -1: Track is not the right size of DB either trimmed or untrimmed
 //    -2: Could not find the track 
 
-int Check_Track(HITS_DB *db, char *track)
+int Check_Track(HITS_DB *db, char *track, int *kind)
 { FILE       *afile;
-  int         tracklen, ispart;
+  int         tracklen, size, ispart;
   int         ureads, treads;
 
   afile = NULL;
@@ -988,7 +1096,16 @@ int Check_Track(HITS_DB *db, char *track)
 
   if (fread(&tracklen,sizeof(int),1,afile) != 1)
     return (-1);
+  if (fread(&size,sizeof(int),1,afile) != 1)
+    return (-1);
 
+  if (size == 0)
+    *kind = MASK_TRACK;
+  else if (size > 0)
+    *kind = CUSTOM_TRACK;
+  else
+    return (-1);
+  
   fclose(afile);
 
   if (ispart)
@@ -1000,10 +1117,10 @@ int Check_Track(HITS_DB *db, char *track)
       treads = db->treads;
     }
 
-  if (tracklen == treads)
-    return (1);
-  else if (tracklen == ureads)
+  if (tracklen == ureads)
     return (0);
+  else if (tracklen == treads)
+    return (1);
   else
     return (-1);
 }
@@ -1067,10 +1184,13 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
     { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
       goto error;
     }
-  if (size <= 0)
+
+  if (size < 0)
     { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
       goto error;
     }
+  if (size == 0)
+    size = 8;
 
   if (ispart)
     { ureads = ((int *) (db->reads))[-1];
@@ -1082,22 +1202,29 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
     }
 
   if (db->trimmed)
-    { if (tracklen != treads)
+    { if (tracklen != treads && tracklen != ureads)
         { EPRINTF(EPLACE,"%s: Track '%s' not same size as database !\n",Prog_Name,track);
           goto error;
         }
       if ( ! ispart && db->part > 0)
-        fseeko(afile,size*db->tfirst,SEEK_CUR);
+        { if (tracklen == treads)
+            fseeko(afile,size*db->tfirst,SEEK_CUR);
+          else
+            fseeko(afile,size*db->ufirst,SEEK_CUR);
+        }
     }
   else
     { if (tracklen != ureads)
-        { EPRINTF(EPLACE,"%s: Track '%s' not same size as database !\n",Prog_Name,track);
+        { if (tracklen == treads)
+            EPRINTF(EPLACE,"%s: Track '%s' is for a trimmed DB !\n",Prog_Name,track);
+          else
+            EPRINTF(EPLACE,"%s: Track '%s' not same size as database !\n",Prog_Name,track);
           goto error;
         }
       if ( ! ispart && db->part > 0)
         fseeko(afile,size*db->ufirst,SEEK_CUR);
     }
-  nreads = db->nreads;
+  nreads = tracklen;   // db->nreads;  works?
 
   anno = (void *) Malloc(size*(nreads+1),"Allocating Track Anno Vector");
   if (anno == NULL)
@@ -1166,6 +1293,11 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
   record->anno = anno;
   record->size = size;
 
+  if (db->trimmed && tracklen != treads)
+    { if (Late_Track_Trim(db,record,ispart))
+        goto error;
+    }
+
   if (db->tracks != NULL && strcmp(db->tracks->name,".@qvs") == 0)
     { record->next     = db->tracks->next;
       db->tracks->next = record;
@@ -1178,7 +1310,7 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
   return (record);
 
 error:
-  if (record == NULL)
+  if (record != NULL)
     free(record);
   if (data != NULL)
     free(data);

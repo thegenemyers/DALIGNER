@@ -1,6 +1,6 @@
-CFLAGS = -O3 -Wall -Wextra -fno-strict-aliasing
+CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = daligner HPCdaligner HPCmapper LAsort LAmerge LAsplit LAcat LAshow LAcheck
+ALL = daligner HPCdaligner HPCmapper LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAindex
 
 all: $(ALL)
 
@@ -22,6 +22,9 @@ LAmerge: LAmerge.c align.h DB.c DB.h QV.c QV.h
 LAshow: LAshow.c align.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAshow LAshow.c align.c DB.c QV.c -lm
 
+LAdump: LAdump.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o LAdump LAdump.c align.c DB.c QV.c -lm
+
 LAcat: LAcat.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAcat LAcat.c DB.c QV.c -lm
 
@@ -33,6 +36,8 @@ LAcheck: LAcheck.c align.c align.h DB.c DB.h QV.c QV.h
 
 LAupgrade.Dec.31.2014: LAupgrade.Dec.31.2014.c align.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAupgrade.Dec.31.2014 LAupgrade.Dec.31.2014.c align.c DB.c QV.c -lm
+LAindex: LAindex.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o LAindex LAindex.c align.c DB.c QV.c -lm
 
 LIBRARY_HEADERS = align.h DB.h QV.h
 LIBRARY_SOURCES = align.c DB.c QV.c

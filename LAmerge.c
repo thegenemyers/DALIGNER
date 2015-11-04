@@ -120,6 +120,57 @@ static void reheap(int s, Overlap **heap, int hsize)
     heap[c] = hs;
 }
 
+  //  Heap sort of records according to (aread,abpos) order
+
+#define MAPARE(lp,rp)				\
+  if (lp->aread > rp->aread)			\
+    bigger = 1;					\
+  else if (lp->aread < rp->aread)		\
+    bigger = 0;					\
+  else if (lp->path.abpos > rp->path.abpos)	\
+    bigger = 1;					\
+  else						\
+    bigger = 0;
+
+static void maheap(int s, Overlap **heap, int hsize)
+{ int      c, l, r;
+  int      bigger;
+  Overlap *hs, *hr, *hl;
+
+  c  = s;
+  hs = heap[s];
+  while ((l = 2*c) <= hsize)
+    { r  = l+1;
+      hl = heap[l];
+      if (r > hsize)
+        bigger = 1;
+      else
+        { hr = heap[r];
+          MAPARE(hr,hl)
+        }
+      if (bigger)
+        { MAPARE(hs,hl)
+          if (bigger)
+            { heap[c] = hl;
+              c = l;
+            }
+          else
+            break;
+        }
+      else
+        { MAPARE(hs,hr)
+          if (bigger)
+            { heap[c] = hr;
+              c = r;
+            }
+          else
+            break;
+        }
+    }
+  if (c != s)
+    heap[c] = hs;
+}
+
 #ifdef DEBUG
 
 static void showheap(Overlap **heap, int hsize)
@@ -168,6 +219,7 @@ int main(int argc, char *argv[])
   char     *optr, *otop;
 
   int       VERBOSE;
+  int       MAP_SORT;
 
   //  Process command line
 
@@ -179,12 +231,13 @@ int main(int argc, char *argv[])
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
-        { ARG_FLAGS("v") }
+        { ARG_FLAGS("vc") }
       else
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];
+    VERBOSE  = flags['v'];
+    MAP_SORT = flags['c'];
 
     if (argc < 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
@@ -295,8 +348,13 @@ int main(int argc, char *argv[])
     }
 
   if (hsize > 3)
-    for (i = hsize/2; i > 1; i--)
-      reheap(i,heap,hsize);
+    { if (MAP_SORT)
+        for (i = hsize/2; i > 1; i--)
+          maheap(i,heap,hsize);
+      else
+        for (i = hsize/2; i > 1; i--)
+          reheap(i,heap,hsize);
+    }
 
   //  While the heap is not empty do
 
@@ -305,7 +363,10 @@ int main(int argc, char *argv[])
       IO_block *src;
       int64     tsize, span;
 
-      reheap(1,heap,hsize);
+      if (MAP_SORT)
+        maheap(1,heap,hsize);
+      else
+        reheap(1,heap,hsize);
 
       ov  = heap[1];
       src = in + (ov - ovls);

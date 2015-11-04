@@ -375,24 +375,27 @@ HITS_TRACK *Merge_Tracks(HITS_DB *block, int mtop, int64 nsize)
   return (ntrack);
 }
 
-static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int kmer, int *isdam)
-{ static HITS_DB  block;
-  int             i, status, stop;
+static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop, int kmer)
+{ int i, isdam, status, kind, stop;
 
-  status = Open_DB(name,&block);
-  if (status < 0)
+  isdam = Open_DB(name,block);
+  if (isdam < 0)
     exit (1);
-  *isdam = status;
 
   for (i = 0; i < mtop; i++)
-    { status = Check_Track(&block,mask[i]);
-      if (status > mstat[i])
+    { status = Check_Track(block,mask[i],&kind);
+      if (status >= 0)
+        if (kind == MASK_TRACK)
+          mstat[i] = 0;
+        else
+          mstat[i] = -3;
+      else
         mstat[i] = status;
-      if (status == 0)
-        Load_Track(&block,mask[i]);
+      if (status == 0 && kind == MASK_TRACK)
+        Load_Track(block,mask[i]);
     }
 
-  Trim_DB(&block);
+  Trim_DB(block);
 
   stop = 0;
   for (i = 0; i < mtop; i++)
@@ -400,14 +403,14 @@ static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int kmer,
       int64      *anno;
       int         j;
 
-      status = Check_Track(&block,mask[i]);
-      if (status < 0)
+      status = Check_Track(block,mask[i],&kind);
+      if (status < 0 || kind != MASK_TRACK)
         continue;
       stop += 1;
-      track = Load_Track(&block,mask[i]);
+      track = Load_Track(block,mask[i]);
 
       anno = (int64 *) (track->anno); 
-      for (j = 0; j <= block.nreads; j++)
+      for (j = 0; j <= block->nreads; j++)
         anno[j] /= sizeof(int);
     }
 
@@ -415,27 +418,27 @@ static HITS_DB *read_DB(char *name, char **mask, int *mstat, int mtop, int kmer,
     { int64       nsize;
       HITS_TRACK *track;
 
-      nsize = Merge_Size(&block,stop);
-      track = Merge_Tracks(&block,stop,nsize);
+      nsize = Merge_Size(block,stop);
+      track = Merge_Tracks(block,stop,nsize);
 
-      while (block.tracks != NULL)
-        Close_Track(&block,block.tracks->name);
+      while (block->tracks != NULL)
+        Close_Track(block,block->tracks->name);
 
-      block.tracks = track;
+      block->tracks = track;
     }
 
-  if (block.cutoff < kmer)
-    { for (i = 0; i < block.nreads; i++)
-        if (block.reads[i].rlen < kmer)
+  if (block->cutoff < kmer)
+    { for (i = 0; i < block->nreads; i++)
+        if (block->reads[i].rlen < kmer)
           { fprintf(stderr,"%s: Block %s contains reads < %dbp long !  Run DBsplit.\n",
                            Prog_Name,name,kmer);
             exit (1);
           }
     }
 
-  Read_All_Sequences(&block,0);
+  Read_All_Sequences(block,0);
 
-  return (&block);
+  return (isdam);
 }
 
 static void complement(char *s, int len)
@@ -454,72 +457,107 @@ static void complement(char *s, int len)
     *s = (char) (3-*s);
 }
 
-static HITS_DB *complement_DB(HITS_DB *block)
-{ static HITS_DB cblock;
-  int            i, nreads;
+static HITS_DB *complement_DB(HITS_DB *block, int inplace)
+{ static HITS_DB _cblock, *cblock = &_cblock;
+  int            nreads;
   HITS_READ     *reads;
   char          *seq;
-  float          x;
   
   nreads = block->nreads;
   reads  = block->reads;
-  seq    = (char *) Malloc(block->reads[nreads].boff+1,"Allocating dazzler sequence block");
-  if (seq == NULL)
-    exit (1);
-  *seq++ = 4;
-  memcpy(seq,block->bases,block->reads[nreads].boff);
+  if (inplace)
+    { seq = (char *) block->bases;
+      cblock = block;
+    }
+  else
+    { seq  = (char *) Malloc(block->reads[nreads].boff+1,"Allocating dazzler sequence block");
+      if (seq == NULL)
+        exit (1);
+      *seq++ = 4;
+      memcpy(seq,block->bases,block->reads[nreads].boff);
+      *cblock = *block;
+      cblock->bases  = (void *) seq;
+      cblock->tracks = NULL;
+    }
 
-  for (i = 0; i < nreads; i++)
-    complement(seq+reads[i].boff,reads[i].rlen);
+  { int   i;
+    float x;
 
-  cblock = *block;
-  cblock.bases = (void *) seq;
+    x = cblock->freq[0];
+    cblock->freq[0] = cblock->freq[3];
+    cblock->freq[3] = x;
 
-  x = cblock.freq[0];
-  cblock.freq[0] = cblock.freq[3];
-  cblock.freq[3] = x;
+    x = cblock->freq[1];
+    cblock->freq[1] = cblock->freq[2];
+    cblock->freq[2] = x;
 
-  x = cblock.freq[1];
-  cblock.freq[1] = cblock.freq[2];
-  cblock.freq[2] = x;
+    for (i = 0; i < nreads; i++)
+      complement(seq+reads[i].boff,reads[i].rlen);
+  }
 
-  { HITS_TRACK *t, *dust;
+  { HITS_TRACK *src, *trg;
     int        *data, *tata;
-    int         p, rlen;
-    int64       j, *tano;
+    int         i, x, rlen;
+    int64      *tano, *anno;
+    int64       j, k;
 
-    for (t = block->tracks; t != NULL; t = t->next)
-      { tano = (int64 *) t->anno;
-        tata = (int *) t->data;
+    for (src = block->tracks; src != NULL; src = src->next)
+      { tano = (int64 *) src->anno;
+        tata = (int   *) src->data;
 
-        data = (int *) Malloc(sizeof(int)*tano[nreads],"Allocating dazzler .dust index");
-        dust = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),"Allocating dazzler .dust track");
-        if (data == NULL || dust == NULL)
-          exit (1);
+        if (inplace)
+          { data = tata;
+            anno = tano;
+            trg  = src;
+          }
+        else
+          { data = (int *) Malloc(sizeof(int)*tano[nreads],
+                                  "Allocating dazzler interval track data");
+            anno = (int64 *) Malloc(sizeof(int)*(nreads+1),
+                                    "Allocating dazzler interval track index");
+            trg  = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),
+                                         "Allocating dazzler interval track header");
+            if (data == NULL || trg == NULL || anno == NULL)
+              exit (1);
 
-        dust->next = NULL;
-        dust->name = t->name;
-        dust->size = 4;
-        dust->anno = (void *) tano;
-        dust->data = (void *) data;
-        cblock.tracks = dust;
+            trg->name = Strdup(src->name,"Copying track name");
+            if (trg->name == NULL)
+              exit (1);
 
-        p = 0;
+            trg->size = 4;
+            trg->anno = (void *) anno;
+            trg->data = (void *) data;
+            trg->next = cblock->tracks;
+            cblock->tracks = trg;
+          }
+
         for (i = 0; i < nreads; i++)
           { rlen = reads[i].rlen;
-            for (j = tano[i+1]-1; j >= tano[i]; j--)
-              data[p++] = rlen - tata[j];
+            anno[i] = tano[i];
+            j = tano[i+1]-1;
+            k = tano[i];
+            while (k < j)
+              { x = data[j];
+                data[j--] = rlen - data[k];
+                data[k++] = rlen - x;
+              }
+            if (k == j)
+              data[k] = rlen - data[k];
           }
+        anno[nreads] = tano[nreads];
       }
   }
 
-  return (&cblock);
+  return (cblock);
 }
 
 int main(int argc, char *argv[])
-{ HITS_DB     ablock,  bblock, cblock;
+{ HITS_DB    _ablock, _bblock;
+  HITS_DB    *ablock = &_ablock, *bblock = &_bblock;
   char       *afile,  *bfile;
   char       *aroot,  *broot;
+  void       *aindex, *bindex;
+  int         alen,    blen;
   Align_Spec *asettings;
   int         isdam;
   int         MMAX, MTOP, *MSTAT;
@@ -612,7 +650,6 @@ int main(int argc, char *argv[])
                 if (MASK == NULL || MSTAT == NULL)
                   exit (1);
               }
-            MSTAT[MTOP]  = -2;
             MASK[MTOP++] = argv[i]+2;
             break;
         }
@@ -641,27 +678,24 @@ int main(int argc, char *argv[])
 
   /* Read in the reads in A */
 
-  afile  = argv[1];
-  ablock = *read_DB(afile,MASK,MSTAT,MTOP,KMER_LEN,&isdam);
-  cblock = *complement_DB(&ablock);
+  afile = argv[1];
+  isdam = read_DB(ablock,afile,MASK,MSTAT,MTOP,KMER_LEN);
   if (isdam)
     aroot = Root(afile,".dam");
   else
     aroot = Root(afile,".db");
 
-  if (ablock.cutoff >= HGAP_MIN)
-    HGAP_MIN = ablock.cutoff;
-
-  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock.freq);
+  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq);
 
   /* Compare against reads in B in both orientations */
 
   { int i, j;
 
+    broot = NULL;
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
         if (strcmp(afile,bfile) != 0)
-          { bblock = *read_DB(bfile,MASK,MSTAT,MTOP,KMER_LEN,&isdam);
+          { isdam = read_DB(bblock,bfile,MASK,MSTAT,MTOP,KMER_LEN);
             if (isdam)
               broot = Root(bfile,".dam");
             else
@@ -674,27 +708,40 @@ int main(int argc, char *argv[])
                   printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,MASK[i]);
                 else if (MSTAT[j] == -1)
                   printf("%s: Warning: %s track not sync'd with relevant db.\n",Prog_Name,MASK[i]);
+                else if (MSTAT[j] == -3)
+                  printf("%s: Warning: %s track is not a mask track.\n",Prog_Name,MASK[i]);
               }
 
             if (VERBOSE)
               printf("\nBuilding index for %s\n",aroot);
-            Build_Table(&ablock);
+            aindex = Sort_Kmers(ablock,&alen);
+          }
 
+        if (strcmp(afile,bfile) != 0)
+          { if (VERBOSE)
+              printf("\nBuilding index for %s\n",broot);
+            bindex = Sort_Kmers(bblock,&blen);
+            Match_Filter(aroot,ablock,broot,bblock,aindex,alen,bindex,blen,0,asettings);
+
+            bblock = complement_DB(bblock,1);
             if (VERBOSE)
-              printf("\nBuilding index for c(%s)\n",aroot);
-            Build_Table(&cblock);
-          }
-      
-        if (strcmp(afile,bfile) == 0)
-          { Match_Filter(aroot,&ablock,aroot,&ablock,1,0,asettings);
-            Match_Filter(aroot,&cblock,aroot,&ablock,1,1,asettings);
-          }
-        else
-          { Match_Filter(aroot,&ablock,broot,&bblock,0,0,asettings);
-            Match_Filter(aroot,&cblock,broot,&bblock,0,1,asettings);
-            Close_DB(&bblock);
+              printf("\nBuilding index for c(%s)\n",broot);
+            bindex = Sort_Kmers(bblock,&blen);
+            Match_Filter(aroot,ablock,broot,bblock,aindex,alen,bindex,blen,1,asettings);
+
             free(broot);
           }
+        else
+          { Match_Filter(aroot,ablock,aroot,ablock,aindex,alen,aindex,alen,0,asettings);
+
+            bblock = complement_DB(ablock,0);
+            if (VERBOSE)
+              printf("\nBuilding index for c(%s)\n",aroot);
+            bindex = Sort_Kmers(bblock,&blen);
+            Match_Filter(aroot,ablock,aroot,bblock,aindex,alen,bindex,blen,1,asettings);
+          }
+
+        Close_DB(bblock);
       }
   }
 
