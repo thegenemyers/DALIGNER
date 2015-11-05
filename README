@@ -242,11 +242,12 @@ LAindex takes a series of one or more sorted .las files and produces a "pile
 index" for each one.  If the input file has name "X.las", then the name of its
 index file is ".X.las.idx".  For each A-read pile encoded in the .las file,
 the index contains the offset to the first local alignment with A in the file.
-This allows programs that process piles to more efficiently read just the piles
-they need at any momement at time, as opposed to haveing to sequentially scan
-through the .las file.  The index file also contains the four numbers % P, + T,
-% T, and @ T described for LAdump above, in the first four 64-bit integers
-of the index in the order given.
+The index starts with four 64-bit integers that encode the numbers % P, + T, % T,
+and @ T described for LAdump above, and then an offset for each pile beginning
+with the first A-read in the file (which may not be read 0). The index is meant
+to allow programs that process piles to more efficiently read just the piles
+they need at any momment int time, as opposed to having to sequentially scan
+through the .las file.
 
 7. LAcat <source:las> > <target>.las
 

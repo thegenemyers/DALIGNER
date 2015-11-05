@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
         char       *iptr, *itop;
         int64       tlen;
     
-        optr = 4*sizeof(int64);
+        optr = sizeof(int64) + sizeof(int32);
         iptr = iblock;
         itop = iblock + fread(iblock,1,bsize,input);
     
@@ -171,16 +171,21 @@ int main(int argc, char *argv[])
     
             w = (Overlap *) (iptr - ptrsize);
     
-            tlen  = w->path.tlen;
-            if (w->aread != alst)
-              { if (sdeg > smax)
-                  smax = sdeg;
-                if (odeg > omax)
-                  omax = odeg;
-                fwrite(&optr,sizeof(int64),1,output);
-    	        odeg = sdeg = 0;
+            tlen = w->path.tlen;
+            if (alst < 0)
+              { fwrite(&optr,sizeof(int64),1,output);
                 alst = w->aread;
               }
+            else
+              while (alst < w->aread)
+                { if (sdeg > smax)
+                    smax = sdeg;
+                  if (odeg > omax)
+                    omax = odeg;
+                  fwrite(&optr,sizeof(int64),1,output);
+    	          odeg = sdeg = 0;
+                  alst += 1;
+                }
             if (tlen > tmax)
               tmax = tlen;
             ttot += tlen;
