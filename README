@@ -206,8 +206,8 @@ uppercase should be used for DNA sequence instead of the default lowercase.  If 
 -o option is set then only alignments that are proper overlaps (a sequence end occurs
 at the each end of the alignment) are displayed.
 
-5. LAdump [-ocdt] <src1:db|dam> [ <src2:db|dam> ]
-                  <align:las> [ <reads:FILE> | <reads:range> ... ]
+5. LAdump [-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ]
+                      <align:las> [ <reads:FILE> | <reads:range> ... ]
 
 Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
 piles in an .las file and select which information to show about them.  The difference
