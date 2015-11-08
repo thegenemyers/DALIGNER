@@ -59,6 +59,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <pthread.h>
+#include <stddef.h>
 
 #include "DB.h"
 #include "filter.h"
@@ -1250,10 +1251,17 @@ static int Entwine(Path *jpath, Path *kpath, int *where)
 //    the trace point with coordinate ap. Place this result in a big growing buffer,
 //    that gets reset when fusion is called with path1 = NULL
 
-static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
+static void Fusion(
+	Path *path1, int ap, Path *path2, Trace_Buffer *tbuf,
+	Path *amatch,
+	int64 novla,
+	Path *bmatch,
+	int64 novlb
+	)
 { int     k, k1, k2;
   int     len, diff;
   uint16 *trace;
+  int64_t z;
 
   k1 = 2 * ((ap/MR_tspace) - (path1->abpos/MR_tspace));
   k2 = 2 * ((ap/MR_tspace) - (path2->abpos/MR_tspace));
@@ -1261,10 +1269,24 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
   len = k1+(path2->tlen-k2);
 
   if (tbuf->top + len >= tbuf->max)
-    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
+    { uint16 * const prevtrace = tbuf->trace;
+      tbuf->max = 1.2*(tbuf->top+len) + 1000;
       tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
       if (tbuf->trace == NULL)
         exit (1);
+      if ( tbuf->trace != prevtrace )
+      {
+        for ( z = 0; z < novla; ++z )
+        {
+          ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
+          amatch[z].trace = tbuf->trace + offset;
+        }
+        for ( z = 0; z < novlb; ++z )
+        {
+          ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
+          bmatch[z].trace = tbuf->trace + offset;
+        }
+      }
     }
   trace = tbuf->trace+tbuf->top;
   tbuf->top += len;
@@ -1296,7 +1318,16 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
 }
 
 
-static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buffer *tbuf)
+static int Handle_Redundancies(
+	Path *amatch,
+	int novls,
+	Path *bmatch,
+	Trace_Buffer *tbuf,
+	Path *pass_amatch,
+	int64 pass_novla,
+	Path *pass_bmatch,
+	int64 pass_novlb
+)
 { Path *jpath, *kpath;
   int   j, k, no;
   int   dist, awhen, bwhen;
@@ -1327,9 +1358,9 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                 { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(jpath,awhen,kpath,tbuf);
+                                  Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
                                   amatch[k] = *jpath;
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
 #ifdef TEST_CONTAIN
                                   printf("  Really 1");
 #endif
@@ -1338,9 +1369,9 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                 { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(jpath,awhen,kpath,tbuf);
+                                  Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
                                   amatch[k] = *jpath;
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
                                   bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 2");
@@ -1348,7 +1379,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                 }
                             }
                           else
-                            { Fusion(jpath,awhen,kpath,tbuf);
+                            { Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
                               amatch[k] = *jpath;
 #ifdef TEST_CONTAIN
                               printf("  Really 3");
@@ -1386,8 +1417,8 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                 { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(kpath,awhen,jpath,tbuf);
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
+                                  Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
                                   bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 4");
@@ -1397,15 +1428,15 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                 { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(kpath,awhen,jpath,tbuf);
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                                  Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
 #ifdef TEST_CONTAIN
                                   printf("  Really 5");
 #endif
                                 }
                             }
                           else
-                            { Fusion(kpath,awhen,jpath,tbuf);
+                            { Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
 #ifdef TEST_CONTAIN
                               printf("  Really 6");
 #endif
@@ -1514,6 +1545,7 @@ static void *report_thread(void *arg)
 
   int    AOmax, BOmax;
   int    novla, novlb;
+  int64  z;
   Path  *amatch, *bmatch;
 
   Trace_Buffer _tbuf, *tbuf = &_tbuf;
@@ -1677,15 +1709,29 @@ static void *report_thread(void *arg)
                                   exit (1);
                               }
                             if (tbuf->top + apath->tlen > tbuf->max)
-                              { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
-                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
+                              { uint16 * prevtrace = tbuf->trace;
+                                tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
+                                tbuf->trace = Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
                                   exit (1);
+                                if ( tbuf->trace != prevtrace )
+                                {
+                                  for ( z = 0; z < novla; ++z )
+                                  {
+                                    ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
+                                    amatch[z].trace = tbuf->trace + offset;
+                                  }
+                                  for ( z = 0; z < novlb; ++z )
+                                  {
+                                    ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
+                                    bmatch[z].trace = tbuf->trace + offset;
+                                  }
+                                }
                               }
                             amatch[novla] = *apath;
                             amatch[novla].trace = tbuf->trace + tbuf->top;
-                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(uint16)*apath->tlen);
                             novla += 1;
                             tbuf->top += apath->tlen;
                           }
@@ -1698,11 +1744,26 @@ static void *report_thread(void *arg)
                                   exit (1);
                               }
                             if (tbuf->top + bpath->tlen > tbuf->max)
-                              { tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
+                              { uint16 * prevtrace = tbuf->trace;
+                                tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
                                 tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
                                   exit (1);
+
+                                if ( tbuf->trace != prevtrace )
+                                {
+                                  for ( z = 0; z < novla; ++z )
+                                  {
+                                    ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
+                                    amatch[z].trace = tbuf->trace + offset;
+                                  }
+                                  for ( z = 0; z < novlb; ++z )
+                                  {
+                                    ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
+                                    bmatch[z].trace = tbuf->trace + offset;
+                                  }
+                                }
                               }
                             bmatch[novlb] = *bpath;
                             bmatch[novlb].trace = tbuf->trace + tbuf->top;
@@ -1771,12 +1832,12 @@ static void *report_thread(void *arg)
 
            if (novla > 1)
              { if (novlb > 1)
-                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf);
+                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf,amatch,novla,bmatch,novlb);
                else
-                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf);
+                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf,amatch,novla,bmatch,novlb);
              }
            else if (novlb > 1)
-             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf);
+             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf,amatch,novla,bmatch,novlb);
 
            for (i = 0; i < novla; i++)
              { ovla->path = amatch[i];
