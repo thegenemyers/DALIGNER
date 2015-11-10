@@ -1152,9 +1152,9 @@ static Align_Spec *MR_spec;
 static int         MR_tspace;
 
 typedef struct
-  { uint64   max;
-    uint64   top;
-    uint16  *trace;
+  { int     max;
+    int     top;
+    uint16 *trace;
   } Trace_Buffer;
 
 static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
@@ -1163,8 +1163,8 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
   int   num, den, min;
   int   strt, iflare, oflare;
 
-  uint16 *ktrace = tbuf->trace + (uint64) (kpath->trace);
-  uint16 *jtrace = tbuf->trace + (uint64) (jpath->trace);
+  uint16 *ktrace = (uint16 *) tbuf->trace + (uint64) (kpath->trace);
+  uint16 *jtrace = (uint16 *) tbuf->trace + (uint64) (jpath->trace);
 
   min   = 10000;
   num   = 0;
@@ -1266,14 +1266,13 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
       if (tbuf->trace == NULL)
         exit (1);
     }
-
-  trace = tbuf->trace + tbuf->top;
+  trace = tbuf->trace+tbuf->top;
   tbuf->top += len;
 
   diff = 0;
   len  = 0;
   if (k1 > 0)
-    { uint16 *t = tbuf->trace + (uint64) (path1->trace);
+    { uint16 *t = (uint16 *) (path1->trace);
       for (k = 0; k < k1; k += 2)
         { trace[len++] = t[k];
           trace[len++] = t[k+1];
@@ -1281,7 +1280,7 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
         }
     }
   if (k2 < path2->tlen)
-    { uint16 *t = tbuf->trace + (uint64) (path2->trace);
+    { uint16 *t = (uint16 *) (path2->trace);
       for (k = k2; k < path2->tlen; k += 2)
         { trace[len++] = t[k];
           trace[len++] = t[k+1];
@@ -1292,7 +1291,7 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
   path1->aepos = path2->aepos;
   path1->bepos = path2->bepos;
   path1->diffs = diff;
-  path1->trace = (void *) (trace - tbuf->trace);
+  path1->trace = (uint64) (trace - tbuf->trace);
   path1->tlen  = len;
 }
 
@@ -1439,12 +1438,12 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
   return (novls);
 }
 
-void Diagonal_Span(Path *path, int *mind, int *maxd)
+void Diagonal_Span(Path *path, Trace_Buffer *buf, int *mind, int *maxd)
 { uint16 *points;
   int     i, tlen;
   int     dd, low, hgh;
 
-  points = path->trace;
+  points = tbuf->trace + (uint64) (path->trace);
   tlen   = path->tlen;
 
   dd = path->abpos - path->bbpos;
@@ -1654,7 +1653,7 @@ static void *report_thread(void *arg)
 
                     { int low, hgh, ae;
 
-                      Diagonal_Span(apath,&low,&hgh);
+                      Diagonal_Span(apath,tbuf,&low,&hgh);
                       if (diag < low)
                         low = diag;
                       else if (diag > hgh)
@@ -1781,14 +1780,12 @@ static void *report_thread(void *arg)
 
            for (i = 0; i < novla; i++)
              { ovla->path = amatch[i];
-               ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
                if (small)
                  Compress_TraceTo8(ovla);
                Write_Overlap(ofile1,ovla,tbytes);
              }
            for (i = 0; i < novlb; i++)
              { ovlb->path = bmatch[i];
-               ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
                if (small)
                  Compress_TraceTo8(ovlb);
                Write_Overlap(ofile2,ovlb,tbytes);

@@ -552,7 +552,7 @@ int main(int argc, char *argv[])
     if (nblocks1 > 1)
       { int pow, mway;
 
-        //  Determine most balance mway for merging in ceil(log_mrg lblock) levels
+        //  Determine most balance mway for merging in ceil(log_mrg nblock1) levels
 
         pow = 1;
         for (level = 0; pow < nblocks1; level++)
@@ -601,10 +601,10 @@ int main(int argc, char *argv[])
                       else
                         printf(" L%d.%d.%d",i+1,j,p);
                       for (k = low; k <= hgh; k++)
-                        printf(" L%d.%d.%d",i,j,k);
+                        printf(" L%d.%d.%d",i,k,j);
                       printf(" && rm");
                       for (k = low; k <= hgh; k++)
-                        printf(" L%d.%d.%d.las",i,j,k);
+                        printf(" L%d.%d.%d.las",i,k,j);
 #ifdef LSF
                       printf("\"");
 #endif
