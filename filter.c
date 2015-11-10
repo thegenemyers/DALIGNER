@@ -59,7 +59,6 @@
 #include <unistd.h>
 #include <math.h>
 #include <pthread.h>
-#include <stddef.h>
 
 #include "DB.h"
 #include "filter.h"
@@ -1153,19 +1152,19 @@ static Align_Spec *MR_spec;
 static int         MR_tspace;
 
 typedef struct
-  { int     max;
-    int     top;
-    uint16 *trace;
+  { uint64   max;
+    uint64   top;
+    uint16  *trace;
   } Trace_Buffer;
 
-static int Entwine(Path *jpath, Path *kpath, int *where)
+static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
 { int   ac, b2, y2, ae;
   int   i, j, k;
   int   num, den, min;
   int   strt, iflare, oflare;
 
-  uint16 *ktrace = (uint16 *) kpath->trace;
-  uint16 *jtrace = (uint16 *) jpath->trace;
+  uint16 *ktrace = tbuf->trace + (uint64) (kpath->trace);
+  uint16 *jtrace = tbuf->trace + (uint64) (jpath->trace);
 
   min   = 10000;
   num   = 0;
@@ -1251,17 +1250,10 @@ static int Entwine(Path *jpath, Path *kpath, int *where)
 //    the trace point with coordinate ap. Place this result in a big growing buffer,
 //    that gets reset when fusion is called with path1 = NULL
 
-static void Fusion(
-	Path *path1, int ap, Path *path2, Trace_Buffer *tbuf,
-	Path *amatch,
-	int64 novla,
-	Path *bmatch,
-	int64 novlb
-	)
+static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
 { int     k, k1, k2;
   int     len, diff;
   uint16 *trace;
-  int64_t z;
 
   k1 = 2 * ((ap/MR_tspace) - (path1->abpos/MR_tspace));
   k2 = 2 * ((ap/MR_tspace) - (path2->abpos/MR_tspace));
@@ -1269,32 +1261,19 @@ static void Fusion(
   len = k1+(path2->tlen-k2);
 
   if (tbuf->top + len >= tbuf->max)
-    { uint16 * const prevtrace = tbuf->trace;
-      tbuf->max = 1.2*(tbuf->top+len) + 1000;
+    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
       tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
       if (tbuf->trace == NULL)
         exit (1);
-      if ( tbuf->trace != prevtrace )
-      {
-        for ( z = 0; z < novla; ++z )
-        {
-          ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
-          amatch[z].trace = tbuf->trace + offset;
-        }
-        for ( z = 0; z < novlb; ++z )
-        {
-          ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
-          bmatch[z].trace = tbuf->trace + offset;
-        }
-      }
     }
-  trace = tbuf->trace+tbuf->top;
+
+  trace = tbuf->trace + tbuf->top;
   tbuf->top += len;
 
   diff = 0;
   len  = 0;
   if (k1 > 0)
-    { uint16 *t = (uint16 *) (path1->trace);
+    { uint16 *t = tbuf->trace + (uint64) (path1->trace);
       for (k = 0; k < k1; k += 2)
         { trace[len++] = t[k];
           trace[len++] = t[k+1];
@@ -1302,7 +1281,7 @@ static void Fusion(
         }
     }
   if (k2 < path2->tlen)
-    { uint16 *t = (uint16 *) (path2->trace);
+    { uint16 *t = tbuf->trace + (uint64) (path2->trace);
       for (k = k2; k < path2->tlen; k += 2)
         { trace[len++] = t[k];
           trace[len++] = t[k+1];
@@ -1313,21 +1292,12 @@ static void Fusion(
   path1->aepos = path2->aepos;
   path1->bepos = path2->bepos;
   path1->diffs = diff;
-  path1->trace = trace;
+  path1->trace = (void *) (trace - tbuf->trace);
   path1->tlen  = len;
 }
 
 
-static int Handle_Redundancies(
-	Path *amatch,
-	int novls,
-	Path *bmatch,
-	Trace_Buffer *tbuf,
-	Path *pass_amatch,
-	int64 pass_novla,
-	Path *pass_bmatch,
-	int64 pass_novlb
-)
+static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buffer *tbuf)
 { Path *jpath, *kpath;
   int   j, k, no;
   int   dist, awhen, bwhen;
@@ -1350,28 +1320,28 @@ static int Handle_Redundancies(
           if (jpath->abpos < kpath->abpos)
 
             { if (kpath->abpos <= jpath->aepos && kpath->bbpos <= jpath->bepos)
-                { dist = Entwine(jpath,kpath,&awhen);
+                { dist = Entwine(jpath,kpath,tbuf,&awhen);
                   if (dist == 0)
                     { if (kpath->aepos > jpath->aepos)
                         { if (hasB)
                             { if (MR_comp)
-                                { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
+                                { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(jpath,awhen,kpath,tbuf);
                                   amatch[k] = *jpath;
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
 #ifdef TEST_CONTAIN
                                   printf("  Really 1");
 #endif
                                 }
                               else
-                                { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
+                                { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(jpath,awhen,kpath,tbuf);
                                   amatch[k] = *jpath;
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
                                   bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 2");
@@ -1379,7 +1349,7 @@ static int Handle_Redundancies(
                                 }
                             }
                           else
-                            { Fusion(jpath,awhen,kpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                            { Fusion(jpath,awhen,kpath,tbuf);
                               amatch[k] = *jpath;
 #ifdef TEST_CONTAIN
                               printf("  Really 3");
@@ -1402,7 +1372,7 @@ static int Handle_Redundancies(
           else // kpath->abpos <= jpath->abpos
 
             { if (jpath->abpos <= kpath->aepos && jpath->bbpos <= kpath->bepos)
-                { dist = Entwine(kpath,jpath,&awhen);
+                { dist = Entwine(kpath,jpath,tbuf,&awhen);
                   if (dist == 0)
                     { if (kpath->abpos == jpath->abpos)
                         { if (kpath->aepos < jpath->aepos)
@@ -1414,29 +1384,29 @@ static int Handle_Redundancies(
                       else if (jpath->aepos > kpath->aepos)
                         { if (hasB)
                             { if (MR_comp)
-                                { dist = Entwine(bmatch+j,bmatch+k,&bwhen);
+                                { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(kpath,awhen,jpath,tbuf);
+                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
                                   bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 4");
 #endif
                                 }
                               else
-                                { dist = Entwine(bmatch+k,bmatch+j,&bwhen);
+                                { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
-                                  Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                                  Fusion(kpath,awhen,jpath,tbuf);
+                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
 #ifdef TEST_CONTAIN
                                   printf("  Really 5");
 #endif
                                 }
                             }
                           else
-                            { Fusion(kpath,awhen,jpath,tbuf,pass_amatch,pass_novla,pass_bmatch,pass_novlb);
+                            { Fusion(kpath,awhen,jpath,tbuf);
 #ifdef TEST_CONTAIN
                               printf("  Really 6");
 #endif
@@ -1474,7 +1444,7 @@ void Diagonal_Span(Path *path, int *mind, int *maxd)
   int     i, tlen;
   int     dd, low, hgh;
 
-  points = (uint16 *) path->trace;
+  points = path->trace;
   tlen   = path->tlen;
 
   dd = path->abpos - path->bbpos;
@@ -1545,7 +1515,6 @@ static void *report_thread(void *arg)
 
   int    AOmax, BOmax;
   int    novla, novlb;
-  int64  z;
   Path  *amatch, *bmatch;
 
   Trace_Buffer _tbuf, *tbuf = &_tbuf;
@@ -1709,29 +1678,15 @@ static void *report_thread(void *arg)
                                   exit (1);
                               }
                             if (tbuf->top + apath->tlen > tbuf->max)
-                              { uint16 * prevtrace = tbuf->trace;
-                                tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
-                                tbuf->trace = Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,
+                              { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
+                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
                                   exit (1);
-                                if ( tbuf->trace != prevtrace )
-                                {
-                                  for ( z = 0; z < novla; ++z )
-                                  {
-                                    ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
-                                    amatch[z].trace = tbuf->trace + offset;
-                                  }
-                                  for ( z = 0; z < novlb; ++z )
-                                  {
-                                    ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
-                                    bmatch[z].trace = tbuf->trace + offset;
-                                  }
-                                }
                               }
                             amatch[novla] = *apath;
-                            amatch[novla].trace = tbuf->trace + tbuf->top;
-                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(uint16)*apath->tlen);
+                            amatch[novla].trace = (void *) (tbuf->top);
+                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
                             novla += 1;
                             tbuf->top += apath->tlen;
                           }
@@ -1744,29 +1699,14 @@ static void *report_thread(void *arg)
                                   exit (1);
                               }
                             if (tbuf->top + bpath->tlen > tbuf->max)
-                              { uint16 * prevtrace = tbuf->trace;
-                                tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
+                              { tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
                                 tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
                                   exit (1);
-
-                                if ( tbuf->trace != prevtrace )
-                                {
-                                  for ( z = 0; z < novla; ++z )
-                                  {
-                                    ptrdiff_t const offset = (uint16 *)amatch[z].trace - prevtrace;
-                                    amatch[z].trace = tbuf->trace + offset;
-                                  }
-                                  for ( z = 0; z < novlb; ++z )
-                                  {
-                                    ptrdiff_t const offset = (uint16 *)bmatch[z].trace - prevtrace;
-                                    bmatch[z].trace = tbuf->trace + offset;
-                                  }
-                                }
                               }
                             bmatch[novlb] = *bpath;
-                            bmatch[novlb].trace = tbuf->trace + tbuf->top;
+                            bmatch[novlb].trace = (void *) (tbuf->top);
                             memcpy(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
                             novlb += 1;
                             tbuf->top += bpath->tlen;
@@ -1832,21 +1772,23 @@ static void *report_thread(void *arg)
 
            if (novla > 1)
              { if (novlb > 1)
-                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf,amatch,novla,bmatch,novlb);
+                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf);
                else
-                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf,amatch,novla,bmatch,novlb);
+                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf);
              }
            else if (novlb > 1)
-             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf,amatch,novla,bmatch,novlb);
+             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf);
 
            for (i = 0; i < novla; i++)
              { ovla->path = amatch[i];
+               ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
                if (small)
                  Compress_TraceTo8(ovla);
                Write_Overlap(ofile1,ovla,tbytes);
              }
            for (i = 0; i < novlb; i++)
              { ovlb->path = bmatch[i];
+               ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
                if (small)
                  Compress_TraceTo8(ovlb);
                Write_Overlap(ofile2,ovlb,tbytes);
