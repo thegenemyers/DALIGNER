@@ -326,7 +326,10 @@ static Double *lex_sort(int bytes[16], Double *src, Double *trg, Lex_Arg *parmx)
         { x = 0;
           for (i = 0; i < NTHREADS; i++)
             { parmx[i].beg = x;
-              parmx[i].end = x = LEX_zsize*(i+1);
+              x = LEX_zsize*(i+1);
+              if (x > len)
+                x = len;
+              parmx[i].end = x;
               for (j = 0; j < BPOWR; j++)
                 parmx[i].tptr[j] = 0;
             }
@@ -892,6 +895,7 @@ static int find_tuple(uint64 x, KmerPos *a, int n)
 static KmerPos  *MG_alist;
 static KmerPos  *MG_blist;
 static SeedPair *MG_hits;
+static int       MG_comp;
 static int       MG_self;
 
 typedef struct
@@ -937,10 +941,15 @@ static void *count_thread(void *arg)
               if (IDENTITY)
                 do
                   { ar = asort[ia].read;
-                    while (db == cb && bsort[ib].read < ar)
-                      db = bsort[++ib].code;
-                    while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < asort[ia].rpos)
-                      db = bsort[++ib].code;
+                    if (MG_comp)
+                      while (db == cb && bsort[ib].read <= ar)
+                        db = bsort[++ib].code;
+                    else
+                      { while (db == cb && bsort[ib].read < ar)
+                          db = bsort[++ib].code;
+                        while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < asort[ia].rpos)
+                          db = bsort[++ib].code;
+                      }
                     ct += (ib-jb);
                   }
                 while ((da = asort[++ia].code) == ca);
@@ -1064,10 +1073,15 @@ static void *merge_thread(void *arg)
                     for (a = ja; a < ia; a++)
                       { ap = asort[a].rpos;
                         ar = asort[a].read;
-                        while (db == cb && bsort[ib].read < ar)
-                          db = bsort[++ib].code;
-                        while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
-                          db = bsort[++ib].code;
+                        if (MG_comp)
+                          while (db == cb && bsort[ib].read <= ar)
+                            db = bsort[++ib].code;
+                        else
+                          { while (db == cb && bsort[ib].read < ar)
+                              db = bsort[++ib].code;
+                            while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
+                              db = bsort[++ib].code;
+                          }
                         if ((ct = ib-jb) > 0)
                           { kptr[ap & BMASK] += ct;
                             for (b = jb; b < ib; b++)
@@ -1146,7 +1160,6 @@ static void *merge_thread(void *arg)
 static HITS_DB    *MR_ablock;
 static HITS_DB    *MR_bblock;
 static SeedPair   *MR_hits;
-static int         MR_comp;
 static int         MR_two;
 static Align_Spec *MR_spec;
 static int         MR_tspace;
@@ -1324,7 +1337,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                   if (dist == 0)
                     { if (kpath->aepos > jpath->aepos)
                         { if (hasB)
-                            { if (MR_comp)
+                            { if (MG_comp)
                                 { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
@@ -1383,7 +1396,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                         }
                       else if (jpath->aepos > kpath->aepos)
                         { if (hasB)
-                            { if (MR_comp)
+                            { if (MG_comp)
                                 { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
                                   if (dist != 0)
                                     continue;
@@ -1527,7 +1540,7 @@ static void *report_thread(void *arg)
   //  In ovl and align roles of A and B are reversed, as the B sequence must be the
   //    complemented sequence !!
 
-  align->flags = ovla->flags = ovlb->flags = MR_comp;
+  align->flags = ovla->flags = ovlb->flags = MG_comp;
   align->path  = apath;
 
   if (MR_tspace <= TRACE_XOVR)
@@ -1569,6 +1582,7 @@ static void *report_thread(void *arg)
     else
       { int   ar, br;
         int   alen, blen;
+        int   doA, doB;
         int   setaln, amark, amark2;
         int   apos, bpos, diag;
         int64 lidx, sidx;
@@ -1636,6 +1650,9 @@ static void *report_thread(void *arg)
                         align->blen = blen;
                         ovlb->bread = ovla->aread = ar + afirst;
                         ovlb->aread = ovla->bread = br + bfirst;
+                        doA = (alen >= HGAP_MIN);
+                        doB = (SYMMETRIC && blen >= HGAP_MIN &&
+                                   (ovla->aread != ovlb->bread || !MG_self || !MG_comp));
                       }
 #ifdef TEST_GATHER
                     else
@@ -1669,7 +1686,7 @@ static void *report_thread(void *arg)
                     }
 
                     if ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos) >= MINOVER)
-                      { if (alen >= HGAP_MIN)
+                      { if (doA)
                           { if (novla >= AOmax)
                               { AOmax = 1.2*novla + MATCH_CHUNK;
                                 amatch = Realloc(amatch,sizeof(Path)*AOmax,
@@ -1690,7 +1707,7 @@ static void *report_thread(void *arg)
                             novla += 1;
                             tbuf->top += apath->tlen;
                           }
-                        if (blen >= HGAP_MIN && SYMMETRIC)
+                        if (doB)
                           { if (novlb >= BOmax)
                               { BOmax = 1.2*novlb + MATCH_CHUNK;
                                 bmatch = Realloc(bmatch,sizeof(Path)*BOmax,
@@ -1879,7 +1896,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   if (VERBOSE)
     { if (comp)
-        printf("\nComparing c(%s) to %s\n",aname,bname);
+        printf("\nComparing %s to c(%s)\n",aname,bname);
       else
         printf("\nComparing %s to %s\n",aname,bname);
     }
@@ -1894,6 +1911,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     MG_alist = asort;
     MG_blist = bsort;
     MG_self  = (aname == bname);
+    MG_comp  = comp;
 
     parmm[0].abeg = parmm[0].bbeg = 0;
     for (i = 1; i < NTHREADS; i++)
@@ -1945,7 +1963,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           }
         limit = j;
 
-        if (limit == 1)
+        if (limit <= 1)
           { fprintf(stderr,"\nError: Insufficient ");
             if (MEM_LIMIT == MEM_PHYSICAL)
               fprintf(stderr," physical memory (%.1fGb), reduce block size\n",
@@ -2080,7 +2098,6 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     MR_ablock = ablock;
     MR_bblock = bblock;
     MR_hits   = khit;
-    MR_comp   = comp;
     MR_two    = ! MG_self && SYMMETRIC;
     MR_spec   = aspec;
     MR_tspace = Trace_Spacing(aspec);
