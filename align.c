@@ -608,7 +608,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
       int     am, ac, ap;
       char   *a;
 
-      if (low <= vmin || hgh >= vmax)
+      if (low-1 <= vmin || hgh+1 >= vmax)
         { int   span, wing;
           int64 move;
           int64 vd, md, had, hbd, nad, nbd, td;
@@ -1272,7 +1272,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
       int    am, ac, ap;
       char  *a;
 
-      if (low <= vmin || hgh >= vmax)
+      if (low-1 <= vmin || hgh+1 >= vmax)
         { int   span, wing;
           int64 move, vd, md, had, hbd, nad, nbd, td;
 
