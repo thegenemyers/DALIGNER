@@ -255,9 +255,9 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
     match = 1.-match;
   bias = (int) ((match+.025)*20.-1.);
   if (match < .2)
-    { EPRINTF(EPLACE,"Base bias worse than 80/20%% ! (New_Align_Spec)\n");
-      free(spec);
-      EXIT(NULL);
+    { fprintf(stderr,"Warning: Base bias worse than 80/20%% ! (New_Align_Spec)\n");
+      fprintf(stderr,"         Capping bias at this ratio.\n");
+      bias = 3; 
     }
 
   spec->ave_path = (int) (PATH_LEN * (1. - Bias_Factor[bias] * (1. - ave_corr)));
@@ -608,6 +608,9 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
       int     am, ac, ap;
       char   *a;
 
+      low -= 1;
+      hgh += 1;
+
       if (low <= vmin || hgh >= vmax)
         { int   span, wing;
           int64 move;
@@ -684,20 +687,22 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
           T  =  _T-vmin;
         }
 
-      if (low > minp)
-        { low -= 1;
-          NA[low] = NA[low+1];
+      if (low >= minp)
+        { NA[low] = NA[low+1];
           NB[low] = NB[low+1];
           V[low]  = -1;
         }
-      if (hgh < maxp)
-        { hgh += 1;
-          NA[hgh] = NA[hgh-1];
+      else
+        low += 1;
+
+      if (hgh <= maxp)
+        { NA[hgh] = NA[hgh-1];
           NB[hgh] = NB[hgh-1];
           V[hgh]  = am = -1;
         }
       else
-        am = V[hgh];
+        am = V[--hgh];
+
       dif += 1;
 
       ac = V[hgh+1] = V[low-1] = -1;
@@ -1272,6 +1277,9 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
       int    am, ac, ap;
       char  *a;
 
+      low -= 1;
+      hgh += 1;
+
       if (low <= vmin || hgh >= vmax)
         { int   span, wing;
           int64 move, vd, md, had, hbd, nad, nbd, td;
@@ -1347,20 +1355,22 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
           T  =  _T-vmin;
         }
 
-      if (low > minp)
-        { low -= 1;
-          NA[low] = NA[low+1];
+      if (low >= minp)
+        { NA[low] = NA[low+1];
           NB[low] = NB[low+1];
           V[low]  = ap = INT32_MAX;
         }
       else
-        ap = V[low]; 
-      if (hgh < maxp)
-        { hgh += 1;
-          NA[hgh] = NA[hgh-1];
+        ap = V[++low]; 
+
+      if (hgh <= maxp)
+        { NA[hgh] = NA[hgh-1];
           NB[hgh] = NB[hgh-1];
           V[hgh] = INT32_MAX;
         }
+      else
+        hgh -= 1;
+
       dif += 1;
 
       ac = V[hgh+1] = V[low-1] = INT32_MAX;
