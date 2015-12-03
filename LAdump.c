@@ -59,7 +59,7 @@
 #include "align.h"
 
 static char *Usage =
-    "[-ocdt] <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]";
+    "[-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]";
 
 #define LAST_READ_SYMBOL  '$'
 
