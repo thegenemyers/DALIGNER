@@ -1652,7 +1652,7 @@ static void *report_thread(void *arg)
                         ovlb->aread = ovla->bread = br + bfirst;
                         doA = (alen >= HGAP_MIN);
                         doB = (SYMMETRIC && blen >= HGAP_MIN &&
-                                   (ovla->aread != ovlb->bread || !MG_self || !MG_comp));
+                                   (ar != br || !MG_self || !MG_comp));
                       }
 #ifdef TEST_GATHER
                     else
