@@ -1007,7 +1007,8 @@ static void *count_thread(void *arg)
   return (NULL);
 }
 
-  //  Produce the merged list now that the list has been allocated and the appropriate cutoff determined.
+  //  Produce the merged list now that the list has been allocated and
+  //    the appropriate cutoff determined.
 
 static void *merge_thread(void *arg)
 { Merge_Arg  *data  = (Merge_Arg *) arg;
@@ -1048,10 +1049,15 @@ static void *merge_thread(void *arg)
                 do
                   { ar = asort[ia].read;
                     ap = asort[ia].rpos;
-                    while (db == cb && bsort[ib].read < ar)
-                      db = bsort[++ib].code;
-                    while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
-                      db = bsort[++ib].code;
+                    if (MG_comp)
+                      while (db == cb && bsort[ib].read <= ar)
+                        db = bsort[++ib].code;
+                    else
+                      { while (db == cb && bsort[ib].read < ar)
+                          db = bsort[++ib].code;
+                        while (db == cb && bsort[ib].read == ar && bsort[ib].rpos < ap)
+                          db = bsort[++ib].code;
+                      }
                     ct += (ib-jb);
                   }
                 while ((da = asort[++ia].code) == ca);
