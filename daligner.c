@@ -513,7 +513,7 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
         else
           { data = (int *) Malloc(sizeof(int)*tano[nreads],
                                   "Allocating dazzler interval track data");
-            anno = (int64 *) Malloc(sizeof(int)*(nreads+1),
+            anno = (int64 *) Malloc(sizeof(int64)*(nreads+1),
                                     "Allocating dazzler interval track index");
             trg  = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),
                                          "Allocating dazzler interval track header");
@@ -537,12 +537,12 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
             j = tano[i+1]-1;
             k = tano[i];
             while (k < j)
-              { x = data[j];
-                data[j--] = rlen - data[k];
+              { x = tata[j];
+                data[j--] = rlen - tata[k];
                 data[k++] = rlen - x;
               }
             if (k == j)
-              data[k] = rlen - data[k];
+              data[k] = rlen - tata[k];
           }
         anno[nreads] = tano[nreads];
       }
