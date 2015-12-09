@@ -559,6 +559,8 @@ int main(int argc, char *argv[])
                 aseq = Load_Subread(db1,ovl->aread,amin,amax,abuffer,0);
                 if (!self)
                   bseq = Load_Subread(db2,ovl->bread,bmin,bmax,bbuffer,0);
+                else
+                  bseq = aseq;
 
                 aln->aseq = aseq - amin;
                 if (COMP(aln->flags))
