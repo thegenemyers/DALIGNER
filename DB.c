@@ -798,7 +798,8 @@ void Close_DB(HITS_DB *db)
     free(((char *) (db->bases)) - 1);
   else if (db->bases != NULL)
     fclose((FILE *) db->bases);
-  free(db->reads-1);
+  if (db->reads != NULL)
+    free(db->reads-1);
   free(db->path);
 
   Close_QVs(db);

@@ -691,7 +691,8 @@ int main(int argc, char *argv[])
 
   { int i, j;
 
-    broot = NULL;
+    aindex = NULL;
+    broot  = NULL;
     for (i = 2; i < argc; i++)
       { bfile = argv[i];
         if (strcmp(afile,bfile) != 0)
@@ -739,6 +740,9 @@ int main(int argc, char *argv[])
               printf("\nBuilding index for c(%s)\n",aroot);
             bindex = Sort_Kmers(bblock,&blen);
             Match_Filter(aroot,ablock,aroot,bblock,aindex,alen,bindex,blen,1,asettings);
+
+            bblock->reads = NULL;  //  ablock & bblock share "reads" vector, don't let Close_DB
+                                   //     free it !
           }
 
         Close_DB(bblock);

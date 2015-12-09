@@ -1180,7 +1180,10 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
 { int   ac, b2, y2, ae;
   int   i, j, k;
   int   num, den, min;
-  int   strt, iflare, oflare;
+#ifdef SEE_ENTWINE
+  int   strt = 1;
+  int   iflare, oflare;
+#endif
 
   uint16 *ktrace = tbuf->trace + (uint64) (kpath->trace);
   uint16 *jtrace = tbuf->trace + (uint64) (jpath->trace);
@@ -1188,7 +1191,6 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
   min   = 10000;
   num   = 0;
   den   = 0;
-  strt  = 1;
 
 #ifdef SEE_ENTWINE
   printf("\n");
@@ -1244,11 +1246,13 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
         }
       num += i;
       den += 1;
+#ifdef SEE_ENTWINE
       if (strt)
         { strt   = 0;
           iflare = i;
         }
       oflare = i;
+#endif
     }
 
 #ifdef SEE_ENTWINE
@@ -1609,6 +1613,7 @@ static void *report_thread(void *arg)
         printf("%5d vs %5d : %5d x %5d\n",br+bfirst,ar+afirst,blen,alen);
 #endif
         setaln = 1;
+        doA = doB = 0;
         amark2 = 0;
         novla  = novlb = 0;
         tbuf->top = 0;
@@ -2190,7 +2195,7 @@ zerowork:
         fwrite(&nhits,sizeof(int64),1,ofile);
         fwrite(&MR_tspace,sizeof(int),1,ofile);
         fclose(ofile);
-        if (! MG_self & SYMMETRIC)
+        if (! MG_self && SYMMETRIC)
           { ofile = Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
             fwrite(&nhits,sizeof(int64),1,ofile);
             fwrite(&MR_tspace,sizeof(int),1,ofile);

@@ -1914,7 +1914,7 @@ static int forward_extend(_Work_Data *work, _Align_Spec *spec, Alignment *align,
   int    *HA, *NA;
   int    *_HA, *_NA;
   Pebble *cells;
-  int     avail, cmax, boff;
+  int     avail, cmax;
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
@@ -1956,11 +1956,6 @@ static int forward_extend(_Work_Data *work, _Align_Spec *spec, Alignment *align,
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
     avail = 0;
-
-    if (COMP(align->flags))
-      boff = align->blen % TRACE_SPACE;
-    else
-      boff = 0;
   }
 
   /* Compute 0-wave starting from mid-line */
@@ -2433,7 +2428,7 @@ static int reverse_extend(_Work_Data *work, _Align_Spec *spec, Alignment *align,
   int    *HA, *NA;
   int    *_HA, *_NA;
   Pebble *cells;
-  int     avail, cmax, boff;
+  int     avail, cmax;
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
@@ -2475,11 +2470,6 @@ static int reverse_extend(_Work_Data *work, _Align_Spec *spec, Alignment *align,
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
     avail = 0;
-
-    if (COMP(align->flags))
-      boff = align->blen % TRACE_SPACE;
-    else
-      boff = 0;
   }
 
   more  = 1;
