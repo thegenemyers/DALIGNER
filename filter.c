@@ -1873,6 +1873,8 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
   atot = ablock->totlen;
   btot = bblock->totlen;
 
+  MR_tspace = Trace_Spacing(aspec);
+
   { int64 powr;
     int   i, nbyte;
 
@@ -2106,7 +2108,6 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     MR_hits   = khit;
     MR_two    = ! MG_self && SYMMETRIC;
     MR_spec   = aspec;
-    MR_tspace = Trace_Spacing(aspec);
 
     parmr[0].beg = 0;
     for (i = 1; i < NTHREADS; i++)
