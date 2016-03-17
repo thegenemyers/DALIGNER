@@ -287,6 +287,10 @@ int main(int argc, char *argv[])
       SYSTEM_ERROR
     if (fread(&tspace,sizeof(int),1,input) != 1)
       SYSTEM_ERROR
+    if (tspace <= 0)
+      { fprintf(stderr,"%s: Garbage .las file, trace spacing <= 0 !\n",Prog_Name);
+        exit (1);
+      }
 
     if (tspace <= TRACE_XOVR)
       { small  = 1;

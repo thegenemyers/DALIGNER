@@ -13,6 +13,8 @@
 
 #ifndef _QV_COMPRESSOR
 
+#include <stdio.h>
+
 #define _QV_COMPRESSOR
 
 #if defined(__cplusplus)

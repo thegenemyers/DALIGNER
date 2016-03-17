@@ -102,7 +102,8 @@ extern char Ebuffer[];
 #define ARG_POSITIVE(var,name)                                                          \
   var = strtol(argv[i]+2,&eptr,10);                                                     \
   if (*eptr != '\0' || argv[i][2] == '\0')                                              \
-    { fprintf(stderr,"%s: -%c argument is not an integer\n",Prog_Name,argv[i][1]);      \
+    { fprintf(stderr,"%s: -%c '%s' argument is not an integer\n",			\
+                     Prog_Name,argv[i][1],argv[i]+2);      				\
       exit (1);                                                                         \
     }                                                                                   \
   if (var <= 0)                                                                         \
@@ -113,7 +114,8 @@ extern char Ebuffer[];
 #define ARG_NON_NEGATIVE(var,name)                                                      \
   var = strtol(argv[i]+2,&eptr,10);                                                     \
   if (*eptr != '\0' || argv[i][2] == '\0')                                              \
-    { fprintf(stderr,"%s: -%c argument is not an integer\n",Prog_Name,argv[i][1]);      \
+    { fprintf(stderr,"%s: -%c '%s' argument is not an integer\n",			\
+                     Prog_Name,argv[i][1],argv[i]+2);      				\
       exit (1);                                                                         \
     }                                                                                   \
   if (var < 0)	                                                                        \
@@ -124,7 +126,8 @@ extern char Ebuffer[];
 #define ARG_REAL(var)                                                                   \
   var = strtod(argv[i]+2,&eptr);                                                        \
   if (*eptr != '\0' || argv[i][2] == '\0')                                              \
-    { fprintf(stderr,"%s: -%c argument is not a real number\n",Prog_Name,argv[i][1]);   \
+    { fprintf(stderr,"%s: -%c '%s' argument is not a real number\n",			\
+                     Prog_Name,argv[i][1],argv[i]+2);      				\
       exit (1);                                                                         \
     }
 

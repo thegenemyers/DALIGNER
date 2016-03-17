@@ -8,18 +8,17 @@
  *    each encoding a given found local alignment between two of the sequences.  The -v
  *    option turns on a verbose reporting mode that gives statistics on each major stage.
  *
- *    There cannot be more than 65,535 reads in a given db, and each read must be less than
- *    66,535 characters long.
- *
  *    The filter operates by looking for a pair of diagonal bands of width 2^'s' that contain
  *    a collection of exact matching 'k'-mers between the two sequences, such that the total
- *    number of bases covered by 'k'-mer hits is 'h'.  k cannot be larger than 15 in the
+ *    number of bases covered by 'k'-mer hits is 'h'.  k cannot be larger than 32 in the
  *    current implementation.
  *
  *    Some k-mers are significantly over-represented (e.g. homopolymer runs).  These are
- *    suppressed as seed hits, with the parameter 'm' -- any k-mer that occurs more than
- *    'm' times in either the subject or target is not counted as a seed hit.  If the -m
- *    option is absent then no k-mer is suppressed.
+ *    suppressed as seed hits, with the parameter 't' -- any k-mer that occurs more than
+ *    't' times in either the subject or target is not counted as a seed hit.  If the -t
+ *    option is absent then no k-mer is suppressed.  Alternatively, the option -M specifies
+ *    that 't' is dynamically set to the largest value such that less than -M memory is
+ *    used.
  *
  *    For each subject, target pair, say XXX and YYY, the program outputs a file containing
  *    overlaps of the form XXX.YYY.[C|N]#.las where C implies that the reads in XXX were
@@ -178,7 +177,7 @@ static void reheap(int s, Event **heap, int hsize)
     heap[c] = hs;
 }
 
-int64 Merge_Size(HITS_DB *block, int mtop)
+static int64 merge_size(HITS_DB *block, int mtop)
 { Event       ev[mtop+1];
   Event      *heap[mtop+2];
   int         r, mhalf;
@@ -250,7 +249,7 @@ int64 Merge_Size(HITS_DB *block, int mtop)
   return (nsize);
 }
 
-HITS_TRACK *Merge_Tracks(HITS_DB *block, int mtop, int64 nsize)
+static HITS_TRACK *merge_tracks(HITS_DB *block, int mtop, int64 nsize)
 { HITS_TRACK *ntrack;
   Event       ev[mtop+1];
   Event      *heap[mtop+2];
@@ -351,9 +350,13 @@ static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop
         if (kind == MASK_TRACK)
           mstat[i] = 0;
         else
-          mstat[i] = -3;
+          { if (mstat[i] != 0)
+              mstat[i] = -3;
+          }
       else
-        mstat[i] = status;
+        { if (mstat[i] == -2)
+            mstat[i] = status;
+        }
       if (status == 0 && kind == MASK_TRACK)
         Load_Track(block,mask[i]);
     }
@@ -381,8 +384,8 @@ static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop
     { int64       nsize;
       HITS_TRACK *track;
 
-      nsize = Merge_Size(block,stop);
-      track = Merge_Tracks(block,stop,nsize);
+      nsize = merge_size(block,stop);
+      track = merge_tracks(block,stop,nsize);
 
       while (block->tracks != NULL)
         Close_Track(block,block->tracks->name);
@@ -571,6 +574,10 @@ int main(int argc, char *argv[])
             break;
           case 'k':
             ARG_POSITIVE(KMER_LEN,"K-mer length")
+            if (KMER_LEN > 32)
+              { fprintf(stderr,"%s: K-mer length must be 32 or less\n",Prog_Name);
+                exit (1);
+              }
             break;
           case 'w':
             ARG_POSITIVE(BIN_SHIFT,"Log of bin width")
@@ -631,6 +638,9 @@ int main(int argc, char *argv[])
         fprintf(stderr,"       %*s %s\n",(int) strlen(Prog_Name),"",Usage[2]);
         exit (1);
       }
+
+    for (j = 0; j < MTOP; j++)
+      MSTAT[j] = -2;
   }
 
   MINOVER *= 2;

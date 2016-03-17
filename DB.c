@@ -54,7 +54,9 @@ void *Malloc(int64 size, char *mesg)
 }
 
 void *Realloc(void *p, int64 size, char *mesg)
-{ if ((p = realloc(p,size)) == NULL)
+{ if (size <= 0)
+    size = 1;
+  if ((p = realloc(p,size)) == NULL)
     { if (mesg == NULL)
         EPRINTF(EPLACE,"%s: Out of memory\n",Prog_Name);
       else
@@ -1059,16 +1061,22 @@ int Check_Track(HITS_DB *db, char *track, int *kind)
     return (-2);
 
   if (fread(&tracklen,sizeof(int),1,afile) != 1)
-    return (-1);
+    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      exit (1);
+    }
   if (fread(&size,sizeof(int),1,afile) != 1)
-    return (-1);
+    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      exit (1);
+    }
 
   if (size == 0)
     *kind = MASK_TRACK;
   else if (size > 0)
     *kind = CUSTOM_TRACK;
   else
-    return (-1);
+    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      exit (1);
+    }
   
   fclose(afile);
 
