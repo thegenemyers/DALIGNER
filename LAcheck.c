@@ -28,6 +28,7 @@ int main(int argc, char *argv[])
   int        VERBOSE;
   int        SORTED;
   int        ISTWO;
+  int        status;
 
   //  Process options
 
@@ -119,6 +120,7 @@ int main(int argc, char *argv[])
 
     //  For each file do
 
+    status = 0;
     for (i = 2+ISTWO; i < argc; i++)
       { char     *pwd, *root;
         FILE     *input;
@@ -292,9 +294,13 @@ int main(int argc, char *argv[])
             Print_Number(novl,0,stderr);
             fprintf(stderr," all OK\n");
           }
+        goto cleanup;
 
       error:
-        fclose(input);
+        status = 1;
+      cleanup:
+        if (input != NULL)
+          fclose(input);
         free(pwd);
         free(root);
       }
@@ -306,5 +312,5 @@ int main(int argc, char *argv[])
   if (ISTWO)
     Close_DB(db2);
 
-  exit (0);
+  exit (status);
 }

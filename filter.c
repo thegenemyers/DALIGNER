@@ -1318,7 +1318,8 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
 static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buffer *tbuf)
 { Path *jpath, *kpath;
   int   j, k, no;
-  int   dist, awhen, bwhen;
+  int   dist;
+  int   awhen = 0, bwhen = 0;
   int   hasB;
 
 #ifdef TEST_CONTAIN
@@ -1539,7 +1540,8 @@ static void *report_thread(void *arg)
 
   Double *hitc;
   int     minhit;
-  uint64  cpair, npair;
+  uint64  cpair;
+  uint64  npair = 0;
   int64   nidx, eidx;
 
   //  In ovl and align roles of A and B are reversed, as the B sequence must be the

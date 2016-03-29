@@ -44,6 +44,7 @@ static int power(int base, int exp)
 int main(int argc, char *argv[])
 { int   nblocks1, nblocks2;
   int   useblock1, useblock2;
+  int   usepath1, usepath2;
   int   fblock, lblock;
 #ifdef LSF
   int   jobid;
@@ -211,10 +212,12 @@ int main(int argc, char *argv[])
       }
 
     useblock1 = 1;
-    if (fscanf(dbvis,"blocks = %d\n",&nblocks1) != 1)
+    if (fscanf(dbvis,"blocks = %d\n",&nblocks1) != 1 || nblocks1 == 1)
       { useblock1 = 0;
         nblocks1  = 1;
       }
+
+    usepath1 = (strcmp(pwd1,".") != 0);
 
     fclose(dbvis);
   }
@@ -251,17 +254,19 @@ int main(int argc, char *argv[])
       }
 
     useblock2 = 1;
-    if (fscanf(dbvis,"blocks = %d\n",&nblocks2) != 1)
+    if (fscanf(dbvis,"blocks = %d\n",&nblocks2) != 1 || nblocks2 == 1)
       { useblock2 = 0;
         nblocks2  = 1;
       }
+
+    usepath2 = (strcmp(pwd2,".") != 0);
 
     fclose(dbvis);
   }
 
   //  Set range fblock-lblock checking that DB.<fblock-1>.las exists & DB.<fblock>.las does not
 
-  { char *eptr, *fptr;
+  { char *eptr, *fptr, *src2;
     FILE *file;
 
     if (argc == 4)
@@ -291,42 +296,48 @@ int main(int argc, char *argv[])
         lblock = nblocks2;
       }
 
+    if (usepath2)
+      src2 = Strdup(Catenate(pwd2,"/",root2,""),"Allocating small string!");
+    else
+      src2 = Strdup(root2,"Allocating small string!");
+    if (src2 == NULL)
+      exit (1);
+
     if (fblock > 1)
-      { file = fopen(Catenate(root1,".",root2,Numbered_Suffix(".",fblock-1,".las")),"r");
+      { file = fopen(Catenate(src2,".",root1,Numbered_Suffix(".",fblock-1,".las")),"r");
         if (file == NULL)
           { fprintf(stderr,"%s: File %s.%s.%d.las should already be present!\n",
-                           Prog_Name,root1,root2,fblock-1);
+                           Prog_Name,src2,root1,fblock-1);
             exit (1);
           }
         else
           fclose(file);
       }
     if (useblock2)
-      { file = fopen(Catenate(root1,".",root2,Numbered_Suffix(".",fblock,".las")),"r");
+      { file = fopen(Catenate(src2,".",root1,Numbered_Suffix(".",fblock,".las")),"r");
         if (file != NULL)
           { fprintf(stderr,"%s: File %s.%s.%d.las should not yet exist!\n",
-                           Prog_Name,root1,root2,fblock);
+                           Prog_Name,src2,root1,fblock);
             exit (1);
           }
       }
     else
-      { file = fopen(Catenate(root1,".",root2,".las"),"r");
+      { file = fopen(Catenate(src2,".",root1,".las"),"r");
         if (file != NULL)
           { fprintf(stderr,"%s: File %s.%s.las should not yet exist!\n",
-                           Prog_Name,root1,root2);
+                           Prog_Name,src2,root1);
             exit (1);
           }
       }
+
+    free(src2);
   }
 
   { int level, njobs;
-    int i, j, k;
-    int usepath1, usepath2;
+    int i, j, k, t;
+    char orient[2] = { 'C', 'N' };
 
     //  Produce all necessary daligner jobs ...
-
-    usepath1 = (strcmp(pwd1,".") != 0);
-    usepath2 = (strcmp(pwd2,".") != 0);
 
     njobs = nblocks1 * ( (lblock-fblock)/DUNIT + 1);
 
@@ -335,12 +346,12 @@ int main(int argc, char *argv[])
 #ifdef LSF
     jobid = 1;
 #endif
-    for (i = 1; i <= nblocks1; i++)
+    for (i = fblock; i <= lblock; i++)
       { int bits;
         int low, hgh;
 
-        bits = (lblock-fblock)/DUNIT+1;
-        low  = fblock;
+        bits = (nblocks1-1)/DUNIT+1;
+        low  = 1;
         for (j = 1; j <= bits; j++)
           {
 #ifdef LSF
@@ -372,28 +383,23 @@ int main(int argc, char *argv[])
               printf(" -M%d",MINT);
             for (k = 0; k < MTOP; k++)
               printf(" -m%s",MASK[k]);
-            if (useblock1)
-              if (usepath1)
-                printf(" %s/%s.%d",pwd1,root1,i);
-              else
-                printf(" %s.%d",root1,i);
-            else
-              if (usepath1)
-                printf(" %s/%s",pwd1,root1);
-              else
-                printf(" %s",root1);
-	    hgh = fblock + (((lblock-fblock)+1)*j)/bits;
+
+            printf(" ");
+            if (usepath2)
+              printf("%s/",pwd2);
+            printf("%s",root2);
+            if (useblock2)
+              printf(".%d",i);
+
+	    hgh = 1 + (nblocks1*j)/bits;
             for (k = low; k < hgh; k++)
-              if (useblock2)
-                if (usepath2)
-                  printf(" %s/%s.%d",pwd2,root2,k);
-                else
-                  printf(" %s.%d",root2,k);
-              else
-                if (usepath2)
-                  printf(" %s/%s",pwd2,root2);
-                else
-                  printf(" %s",root2);
+              { printf(" ");
+                if (usepath1)
+                  printf("%s/",pwd1);
+                printf("%s",root1);
+                if (useblock1)
+                  printf(".%d",k);
+              }
 #ifdef LSF
             printf("\"");
 #endif
@@ -409,106 +415,109 @@ int main(int argc, char *argv[])
 #ifdef LSF
     jobid = 1;
 #endif
-    for (i = 1; i <= nblocks1; i++)
-      for (j = fblock; j <= lblock; j++)
+    for (j = fblock; j <= lblock; j++)
+      for (i = 1; i <= nblocks1; i++)
         {
 #ifdef LSF
           printf(LSF_MERGE,jobid++);
           printf(" \"");
 #endif
-          printf("LAsort");
+          printf("LAsort ");
           if (VON)
-            printf(" -v");
+            printf("-v ");
           if (CON)
-            printf(" -c");
+            printf("-c ");
           for (k = 0; k < NTHREADS; k++)
-            { if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.C%d",root2,j,k);
-              else
-                printf(".%s.C%d",root2,k);
-              if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.N%d",root2,j,k);
-              else
-                printf(".%s.N%d",root2,k);
-            }
-          printf(" && LAmerge");
+            for (t = 0; t < 2; t++)
+              { printf("%s",root2);
+                if (useblock2)
+                  printf(".%d",j);
+                printf(".%s",root1);
+                if (useblock1)
+                  printf(".%d",i);
+                printf(".%c%d ",orient[t],k);
+              }
+
+          printf("&& LAmerge ");
           if (VON)
-            printf(" -v");
+            printf("-v ");
           if (CON)
-            printf(" -c");
+            printf("-c ");
           if (nblocks1 == 1)
-            if (useblock2)
-              printf(" %s.%s.%d",root1,root2,j);
-            else
-              printf(" %s.%s",root1,root2);
+            { if (usepath2)
+                printf("%s/",pwd2);
+              printf("%s.%s",root2,root1);
+              if (useblock2)
+                printf(".%d",j);
+            }
           else
-            printf(" L1.%d.%d",i,j);
+            printf("L1.%d.%d",j,i);
+
           for (k = 0; k < NTHREADS; k++)
-            { if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.C%d.S",root2,j,k);
-              else
-                printf(".%s.C%d.S",root2,k);
-              if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.N%d.S",root2,j,k);
-              else
-                printf(".%s.N%d.S",root2,k);
-            }
-          printf(" && rm");
-          for (k = 0; k < NTHREADS; k++)
-            { if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.C%d.S.las",root2,j,k);
-              else
-                printf(".%s.C%d.S.las",root2,k);
-              if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.N%d.S.las",root2,j,k);
-              else
-                printf(".%s.N%d.S.las",root2,k);
-              if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.C%d.las",root2,j,k);
-              else
-                printf(".%s.C%d.las",root2,k);
-              if (useblock1)
-                printf(" %s.%d",root1,i);
-              else
-                printf(" %s",root1);
-              if (useblock2)
-                printf(".%s.%d.N%d.las",root2,j,k);
-              else
-                printf(".%s.N%d.las",root2,k);
-            }
+            for (t = 0; t < 2; t++)
+              { printf(" %s",root2);
+                if (useblock2)
+                  printf(".%d",j);
+                printf(".%s",root1);
+                if (useblock1)
+                  printf(".%d",i);
+                printf(".%c%d.S",orient[t],k);
+              }
 #ifdef LSF
           printf("\"");
 #endif
           printf("\n");
         }
+
+    //  Check .las files (optional)
+
+    printf("# Check all level 1 .las files (optional but recommended)\n");
+
+    for (j = fblock; j <= lblock; j++)
+      for (i = 1; i <= nblocks1; i++)
+        { printf("LAcheck -vS ");
+          if (usepath2)
+            printf("%s/%s ",pwd2,root2);
+          else
+            printf("%s ",root2);
+          if (usepath1)
+            printf("%s/%s ",pwd1,root1);
+          else
+            printf("%s ",root1);
+          if (nblocks1 == 1)
+            { if (usepath2)
+                printf("%s/",pwd2);
+              printf("%s.%s",root2,root1);
+              if (useblock2)
+                printf(".%d",j);
+            }
+          else
+            printf("L1.%d.%d",j,i);
+          printf("\n");
+        }
+
+    //  Clean up (optional)
+
+    printf("# Remove initial .las files (optional)\n");
+
+    for (j = fblock; j <= lblock; j++)
+      for (i = 1; i <= nblocks1; i++)
+        for (t = 0; t < 4; t++)
+          { printf("rm");
+            for (k = 0; k < NTHREADS; k++)
+              { printf(" %s",root2);
+                if (useblock2)
+                  printf(".%d",j);
+                printf(".%s",root1);
+                if (useblock1)
+                  printf(".%d",i);
+                printf(".%c%d",orient[t%2],k);
+                if (t >= 2)
+                  printf(".S");
+                printf(".las");
+              }
+            printf("\n");
+          }
 
     //  Higher level merges (if lblock > 1)
 
@@ -551,27 +560,74 @@ int main(int argc, char *argv[])
                       printf(LSF_MERGE,jobid++);
                       printf(" \"");
 #endif
-                      printf("LAmerge");
+                      printf("LAmerge ");
                       if (VON)
-                        printf(" -v");
+                        printf("-v ");
                       if (CON)
-                        printf(" -c");
+                        printf("-c ");
                       if (i == level)
-                        if (useblock2)
-                          printf(" %s.%s.%d",root1,root2,j);
-                        else
-                          printf(" %s.%s",root1,root2);
+                        { if (usepath2)
+                            printf("%s/",pwd2);
+                          printf("%s.%s",root2,root1);
+                          if (useblock2)
+                            printf(".%d",j);
+                        }
                       else
-                        printf(" L%d.%d.%d",i+1,j,p);
+                        printf("L%d.%d.%d",j,i+1,p);
                       for (k = low; k <= hgh; k++)
-                        printf(" L%d.%d.%d",i,k,j);
-                      printf(" && rm");
-                      for (k = low; k <= hgh; k++)
-                        printf(" L%d.%d.%d.las",i,k,j);
+                        printf(" L%d.%d.%d",i,j,k);
+
 #ifdef LSF
                       printf("\"");
 #endif
 		      printf("\n");
+                      low = hgh+1;
+                    }
+                }
+
+              //  Check new .las (optional)
+
+              printf("# Check all level %d .las files (optional but recommended)\n",i+1);
+
+              for (j = fblock; j <= lblock; j++) 
+                { low = 1;
+                  for (p = 1; p <= bits; p++)
+                    { hgh = (cnt*p)/bits;
+                      printf("LAcheck -vS ");
+                      if (usepath2)
+                        printf("%s/%s ",pwd2,root2);
+                      else
+                        printf("%s ",root2);
+                      if (usepath1)
+                        printf("%s/%s ",pwd1,root1);
+                      else
+                        printf("%s ",root1);
+                      if (i == level)
+                        { if (usepath2)
+                            printf("%s/",pwd2);
+                          printf("%s.%s",root2,root1);
+                          if (useblock2)
+                            printf(".%d",j);
+                        }
+                      else
+                        printf("L%d.%d.%d",j,i+1,p);
+                      printf("\n");
+                      low = hgh+1;
+                    }
+                }
+
+              //  Cleanup (optional)
+
+              printf("# Remove level %d .las files (optional)\n",i);
+
+              for (j = fblock; j <= lblock; j++) 
+                { low = 1;
+                  for (p = 1; p <= bits; p++)
+                    { hgh = (cnt*p)/bits;
+                      printf("rm");
+                      for (k = low; k <= hgh; k++)
+                        printf(" L%d.%d.%d.las",i,j,k);
+                      printf("\n");
                       low = hgh+1;
                     }
                 }

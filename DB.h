@@ -308,6 +308,10 @@ void Trim_DB(HITS_DB *db);
 
 void Close_DB(HITS_DB *db);
 
+  // Return the size in bytes of the given DB
+
+int64 sizeof_DB(HITS_DB *db);
+
   // If QV pseudo track is not already in db's track list, then load it and set it up.
   //   The database must not have been trimmed yet.  -1 is returned if a .qvs file is not
   //   present, and 1 is returned if an error (reported to EPLACE) occured and INTERACTIVE
