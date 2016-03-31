@@ -778,6 +778,43 @@ void Close_DB(HITS_DB *db)
 }
 
 
+// Return the size in bytes of the memory occupied by a given DB
+
+int64 sizeof_DB(HITS_DB *db)
+{ int64       s;
+  HITS_TRACK *t;
+
+  s = sizeof(HITS_DB)
+    + sizeof(HITS_READ)*(db->nreads+2)
+    + strlen(db->path)+1
+    + (db->totlen+db->nreads+4);
+
+  t = db->tracks;
+  if (t != NULL && strcmp(t->name,".@qvs") == 0)
+    { HITS_QV *q = (HITS_QV *) t;
+      s += sizeof(HITS_QV)
+         + sizeof(uint16) * db->nreads
+         + q->ncodes * sizeof(QVcoding)
+         + 6;
+      t = t->next;
+    }
+
+  for (; t != NULL; t = t->next)
+    { s += sizeof(HITS_TRACK)
+         + strlen(t->name)+1
+         + t->size * (db->nreads+1);
+      if (t->data != NULL)
+        { if (t->size == 8)
+            s += sizeof(int)*((int64 *) t->anno)[db->nreads];
+          else //  t->size == 4
+            s += sizeof(int)*((int *) t->anno)[db->nreads];
+        }
+    }
+
+  return (s);
+}
+
+
 /*******************************************************************************************
  *
  *  QV LOAD & CLOSE ROUTINES
@@ -793,7 +830,7 @@ int Load_QVs(HITS_DB *db)
   uint16      *table;
   HITS_QV     *qvtrk;
   QVcoding    *coding, *nx;
-  int          ncodes;
+  int          ncodes = 0;
 
   if (db->tracks != NULL && strcmp(db->tracks->name,".@qvs") == 0)
     return (0);
@@ -879,16 +916,16 @@ int Load_QVs(HITS_DB *db)
         //    assign the tables # for each read in the block in "tables".
 
         rewind(istub);
-        fscanf(istub,DB_NFILE,&nfiles);
+        (void) fscanf(istub,DB_NFILE,&nfiles);
 
         first = 0;
         for (n = 0; n < fbeg; n++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
             first = last;
           }
 
         for (n = fbeg; n < fend; n++)
-          { fscanf(istub,DB_FDATA,&last,fname,prolog);
+          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
 
             i = n-fbeg;
             if (first < pfirst)
