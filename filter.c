@@ -2034,14 +2034,15 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
     if (asort == bsort)
       hhit = work1 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
-                                         "Allocating dazzler hit vectors");
+                                         "Allocating daligner hit vectors");
     else
       { if (nhits >= blen)
           bsort = (KmerPos *) Realloc(bsort,sizeof(SeedPair)*(nhits+1),
-                                       "Reallocating dazzler sort vectors");
+                                       "Reallocating daligner sort vectors");
         hhit = work1 = (SeedPair *) bsort;
       }
-    khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),"Allocating dazzler hit vectors");
+    khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
+                                        "Allocating daligner hit vectors");
     if (hhit == NULL || khit == NULL || bsort == NULL)
       exit (1);
 

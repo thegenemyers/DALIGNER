@@ -24,7 +24,7 @@
 
 static char *Usage[] =
   { "[-vb] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>]",
-    "      [-e<double(.85)] [-l<int(1000)>] [-s<int(100)] [-H<int>]",
+    "      [-e<double(.85)] [-l<int(1000)>] [-s<int(100)]",
     "      [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]",
     "      <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]"
   };
@@ -38,8 +38,10 @@ static int power(int base, int exp)
   return (pow);
 }
 
-#define LSF_ALIGN "bsub -q medium -n 4 -o ALIGN.out -e ALIGN.err -R span[hosts=1] -J align#%d"
-#define LSF_MERGE "bsub -q short -n 12 -o MERGE.out -e MERGE.err -R span[hosts=1] -J merge#%d"
+#define LSF_ALIGN "bsub -q medium -n 4 -o MAPALL.out -e MAPALL.err -R span[hosts=1] -J align#%d"
+#define LSF_SORT  "bsub -q short -n 12 -o SORT.ALL.out -e SORT.ALL.err -R span[hosts=1] -J sort#%d"
+#define LSF_MERGE \
+            "bsub -q short -n 12 -o MERGE.ALL%d.out -e MERGE.ALL%d.err -R span[hosts=1] -J merge#%d"
 
 int main(int argc, char *argv[])
 { int   nblocks1, nblocks2;
@@ -55,7 +57,7 @@ int main(int argc, char *argv[])
 
   int    MUNIT, DUNIT;
   int    VON, BON, CON;
-  int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
+  int    WINT, TINT, HINT, KINT, SINT, LINT, MINT;
   double EREL;
   int    MMAX, MTOP;
   char **MASK;
@@ -64,7 +66,7 @@ int main(int argc, char *argv[])
     int    flags[128];
     char  *eptr;
 
-    ARG_INIT("HPCmapper")
+    ARG_INIT("HPC.mapper")
 
     DUNIT = 4;
     MUNIT = 25;
@@ -72,7 +74,6 @@ int main(int argc, char *argv[])
     WINT  = 6;
     HINT  = 50;
     TINT  = 0;
-    HGAP  = 0;
     EREL  = 0.;
     LINT  = 1000;
     SINT  = 100;
@@ -102,9 +103,6 @@ int main(int argc, char *argv[])
             break;
           case 't':
             ARG_POSITIVE(TINT,"Tuple suppression frequency")
-            break;
-          case 'H':
-            ARG_POSITIVE(HGAP,"HGAP threshold (in bp.s)")
             break;
           case 'e':
             ARG_REAL(EREL)
@@ -276,6 +274,7 @@ int main(int argc, char *argv[])
                            Prog_Name,argv[3]);
             exit (1);
           }
+        useblock2 = 1;
         if (*eptr == '-')
           { lblock = strtol(eptr+1,&fptr,10);
             if (*fptr != '\0')
@@ -369,8 +368,6 @@ int main(int argc, char *argv[])
             printf(" -h%d",HINT);
             if (TINT > 0)
               printf(" -t%d",TINT);
-            if (HGAP > 0)
-              printf(" -H%d",HGAP);
             if (EREL > .1)
               printf(" -e%g",EREL);
             else
@@ -419,7 +416,7 @@ int main(int argc, char *argv[])
       for (i = 1; i <= nblocks1; i++)
         {
 #ifdef LSF
-          printf(LSF_MERGE,jobid++);
+          printf(LSF_SORT,jobid++);
           printf(" \"");
 #endif
           printf("LAsort ");
@@ -557,7 +554,7 @@ int main(int argc, char *argv[])
                   for (p = 1; p <= bits; p++)
                     { hgh = (cnt*p)/bits;
 #ifdef LSF
-                      printf(LSF_MERGE,jobid++);
+                      printf(LSF_MERGE,i,i,jobid++);
                       printf(" \"");
 #endif
                       printf("LAmerge ");

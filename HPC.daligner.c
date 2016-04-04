@@ -38,8 +38,10 @@ static int power(int base, int exp)
   return (pow);
 }
 
-#define LSF_ALIGN "bsub -q medium -n 4 -o ALIGN.out -e ALIGN.err -R span[hosts=1] -J align#%d"
-#define LSF_MERGE "bsub -q short -n 12 -o MERGE.out -e MERGE.err -R span[hosts=1] -J merge#%d"
+#define LSF_ALIGN "bsub -q medium -n 4 -o DALIGNER.out -e DALIGNER.err -R span[hosts=1] -J align#%d"
+#define LSF_SORT  "bsub -q short -n 12 -o SORT.DAL.out -e SORT.DAL.err -R span[hosts=1] -J sort#%d"
+#define LSF_MERGE \
+          "bsub -q short -n 12 -o MERGE.DAL.%d.out -e MERGE.DAL.%d.err -R span[hosts=1] -J merge#%d"
 
 int main(int argc, char *argv[])
 { int   nblocks;
@@ -63,7 +65,7 @@ int main(int argc, char *argv[])
     int    flags[128];
     char  *eptr;
 
-    ARG_INIT("HPCdaligner")
+    ARG_INIT("HPC.daligner")
 
     DUNIT = 4;
     MUNIT = 25;
@@ -232,6 +234,7 @@ int main(int argc, char *argv[])
                            Prog_Name,argv[2]);
             exit (1);
           }
+        useblock = 1;
         if (*eptr == '-')
           { lblock = strtol(eptr+1,&fptr,10);
             if (*fptr != '\0')
@@ -258,6 +261,9 @@ int main(int argc, char *argv[])
           { if (usepath)
               fprintf(stderr,"%s: File %s/%s.%d.las should already be present!\n",
                              Prog_Name,pwd,root,fblock-1);
+            else
+              fprintf(stderr,"%s: File %s.%d.las should already be present!\n",
+                             Prog_Name,root,fblock-1);
             exit (1);
           }
         else
@@ -379,7 +385,7 @@ int main(int argc, char *argv[])
       for (j = (i < fblock ? fblock : 1); j <= lblock; j++)
         {
 #ifdef LSF
-          printf(LSF_MERGE,jobid++);
+          printf(LSF_SORT,jobid++);
           printf(" \"");
 #endif
           printf("LAsort");
@@ -516,7 +522,7 @@ int main(int argc, char *argv[])
                   for (j = 1; j < fblock; j++)
                     {
 #ifdef LSF
-                      printf(LSF_MERGE,jobid++);
+                      printf(LSF_MERGE,i,i,jobid++);
                       printf(" \"");
 #endif
                       if (last)
@@ -530,7 +536,7 @@ int main(int argc, char *argv[])
                         { hgh = (dnt*p)/dits;
 #ifdef LSF
                           if (p > 1)
-                            { printf(LSF_MERGE,jobid++);
+                            { printf(LSF_MERGE,i,i,jobid++);
                               printf(" \"");
                             }
 #endif
@@ -564,7 +570,7 @@ int main(int argc, char *argv[])
                   for (p = 1; p <= bits; p++)
                     { hgh = (cnt*p)/bits;
 #ifdef LSF
-                      printf(LSF_MERGE,jobid++);
+                      printf(LSF_MERGE,i,i,jobid++);
                       printf(" \"");
 #endif
                       printf("LAmerge");
