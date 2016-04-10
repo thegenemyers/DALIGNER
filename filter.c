@@ -1959,10 +1959,11 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           for (j = 0; j < MAXGRAM; j++)
             histo[j] += parmm[i].hitgram[j];
 
-        if (asort == bsort || (int64) (MEM_LIMIT/sizeof(Double)) > alen + 2*blen)
-          avail = (MEM_LIMIT/sizeof(Double) - alen) / 2;
+        avail = (int64) (MEM_LIMIT - (sizeof_DB(ablock) + sizeof_DB(bblock))) / sizeof(Double);
+        if (asort == bsort || avail > alen + 2*blen)
+          avail = (avail - alen) / 2;
         else
-          avail = MEM_LIMIT/sizeof(Double) - (alen + blen);
+          avail = avail - (alen + blen);
         avail *= .98;
 
         tom = 0;
