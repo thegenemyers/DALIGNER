@@ -18,7 +18,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-v] <merge:las> <parts:las> ...";
+static char *Usage = "[-va] <merge:las> <parts:las> ...";
 
 #define MEMORY 4000   // in Mb
 
@@ -194,13 +194,13 @@ int main(int argc, char *argv[])
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
-        { ARG_FLAGS("vc") }
+        { ARG_FLAGS("va") }
       else
         argv[j++] = argv[i];
     argc = j;
 
     VERBOSE  = flags['v'];
-    MAP_SORT = flags['c'];
+    MAP_SORT = flags['a'];
 
     if (argc < 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);

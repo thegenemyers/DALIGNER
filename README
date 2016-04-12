@@ -29,7 +29,8 @@ were dropped to save space as they can always be gotten from the underlying DB.
 
                                       Author:  Gene Myers
                                       First:   July 17, 2013
-                                      Current: December 31, 2014
+                                      Current: April 10, 2016
+
 
   The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
@@ -120,33 +121,38 @@ on corrected reads, we typically run "daligner -k25 -w5 -h60 -e.95 -s500" and at
 these settings it is very fast.
 
 
-2. LAsort [-v] <align:las> ...
+2. LAsort [-va] <align:las> ...
 
 Sort each .las alignment file specified on the command line. For each file it reads in
 all the overlaps in the file and sorts them in lexicographical order of (a,b,o,ab)
 assuming each alignment is recorded as a[ab,ae] x b^o[bb,be]. It then writes them all
 to a file named <align>.S.las (assuming that the input file was <align>.las). With the
--v option set then the program reports the number of records read and written.
+-v option set then the program reports the number of records read and written. If the
+-a option is set then it sorts LAs in lexicographical order of (a,ab) alone, which is
+desired when sorting a mapping of reads to a reference.
 
 
-3. LAmerge [-v] <merge:las> <parts:las> ...
+3. LAmerge [-va] <merge:las> <parts:las> ...
 
 Merge the .las files <parts> into a singled sorted file <merge>, where it is assumed
 that  the input <parts> files are sorted. Due to operating system limits, the number of
 <parts> files must be <= 252.  With the -v option set the program reports the # of
-records read and written.
+records read and written.  The -a option indicates the sort is as describe for LAsort
+above.
+
 
 Used correctly, LAmerge and LAsort together allow one to perform an "external" sort
 that produces a collection of sorted files containing in aggregate all the local
 alignments found by the daligner, such that their concatenation is sorted in order of
-(a,b,o,ab). In particular, this means that all the alignments for a given a-read will
-be found consecutively in one of the files.  So computations that need to look at all
-the alignments for a given read can operate in simple sequential scans of these
-sorted files.
+(a,b,o,ab) (or (a,ab) if the -a option is set). In particular, this means that all the
+alignments for a given a-read will be found consecutively in one of the files.  So
+computations that need to look at all the alignments for a given read can operate in
+simple sequential scans of these sorted files.
 
 
 4. LAshow [-caroUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
-      <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]
+          <src1:db|dam> [ <src2:db|dam> ]
+          <align:las> [ <reads:FILE> | <reads:range> ... ]
 
 LAshow produces a printed listing of the local alignments contained in the specified
 .las file, where the a- and b-reads come from src1 or from src1 and scr2, respectively.
@@ -252,35 +258,42 @@ runs silently.  The exit status is 0 if every file is deemed good, and 1 if at l
 one of the files looks corrupted.
 
 
-10. HPCdaligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
-                        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
-                        [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
-                        <path:db|dam> [<first:int>[-<last:int>]]
+10. HPC.daligner [-vba] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)]
+                 [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-m<track>]+
+               ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-AI] [-H<int>]
+                 [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
+                 <reads:db|dam> [<first:int>[-<last:int>]]
 
-HPCdaligner writes a UNIX shell script to the standard output that consists of a
-sequence of commands that effectively run daligner on all pairs of blocks of a split
-database and then externally sorts and merges them using LAsort and LAmerge into a
-collection of alignment files with names <path>.#.las where # ranges from 1 to the
-number of blocks the data base is split into. These sorted files if concatenated by say
-LAcat would contain all the alignments in sorted order (of a-read, then b-read, ...).
-Moreover, all overlaps for a given a-read are guaranteed to not be split across files,
-so one can run artifact analyzers or error correction on each sorted file in parallel.
+HPC.daligner writes a UNIX shell script to the standard output that either performs an
+"overlap" computation on all the blocks in a single database, or a "comparison"
+computation on all pairs of blocks between two databases, depending on whether it is
+given one or two DB's as arguments (<ref> and <path>).  We describe the overlap script
+first and its effect first and then later the comparison script.
+
+An Overlap Script: consists of a sequence of commands that effectively run daligner on
+all pairs of blocks of a split database and then externally sorts and merges them using
+LAsort and LAmerge into a collection of alignment files with names <path>.#.las where #
+ranges from 1 to the number of blocks the data base is split into. These sorted files
+if concatenated by say LAcat would contain all the alignments in sorted order (of
+a-read, then b-read, ...).  Moreover, all overlaps for a given a-read are guaranteed
+to not be split across files, so one can run artifact analyzers or error correction on
+each sorted file in parallel.
 
 The data base must have been previously split by DBsplit and all the parameters, except
--v, -dal, and -deg, are passed through to the calls to daligner. The defaults for these
-parameters are as for daligner. The -v flag, for verbose-mode, is also passed to all
-calls to LAsort and LAmerge. -dal and -deg options are described later. For a database
-divided into N sub-blocks, the calls to daligner will produce in total 2TN^2 .las files
-assuming daligner runs with T threads. These will then be sorted and merged into N^2
-sorted .las files, one for each block pair. These are then merged in ceil(log_deg N)
-phases where the number of files decreases geometrically in -deg until there is 1 file
-per row of the N x N block matrix. So at the end one has N sorted .las files that when
+-a, -B, and -D, are passed through to the calls to daligner. The defaults for these
+parameters are as for daligner. The -v and -a flags are passed to all calls to LAsort
+and LAmerge. The -B and -D options are described later. For a database divided into N
+sub-blocks, the calls to daligner will produce in total 2TN^2 .las files assuming
+daligner runs with T threads. These will then be sorted and merged into N^2 sorted .las
+files, one for each block pair. These are then merged in ceil(log_deg N) phases where
+the number of files decreases geometrically in -deg until there is 1 file per row of
+the N x N block matrix. So at the end one has N sorted .las files that when
 concatenated would give a single large sorted overlap file.
 
-The -dal option (default 4) gives the desired number of block comparisons per call to
-daligner. Some must contain dal-1 comparisons, and the first dal-2 block comparisons
+The -B option (default 4) gives the desired number of block comparisons per call to
+daligner. Some must contain B-1 comparisons, and the first B-2 block comparisons
 even less, but the HPCdaligner "planner" does the best it can to give an average load
-of dal block comparisons per command. The -deg option (default 25) gives the maximum
+of dal block comparisons per command. The -D option (default 250) gives the maximum
 number of files that will be merged in a single LAmerge command. The planner makes the
 most even k-ary tree of merges, where the number of levels is ceil(log_deg N).
 
@@ -291,33 +304,29 @@ against each other and all previous blocks 1 through <first>-1, and then increme
 updates the .las files for blocks 1 through <first>-1, and creates the .las files for
 blocks <first> through <last>.
 
-Each UNIX command line output by the HPCdaligner can be a batch job (we use the &&
-operator to combine several commands into one line to make this so). Dependencies
-between jobs can be maintained simply by first running all the daligner jobs, then all
-the initial sort jobs, and then all the jobs in each phase of the external merge sort.
-Each of these phases is separated by an informative comment line for your scripting
-convenience.
+A Comparison Script: consists of a sequence of commands that effectively maps every
+read in the DB <reads> against a reference set of sequences in the DB <ref>, recording
+all the found local alignments in the sequence of files <reads>.1.<ref>.las,
+<reads>.2.<ref>.las, ... where <reads>.<ref>.k.las contains the alignments between all
+of <ref> and the k'th block of <reads>. The parameters are exactly the same as for the
+overlap script save that the -k, -h, and -e defaults are set more stringently for
+mapping, and the -A, -I , and -H options make no sense as <ref> and <reads> are
+expected to be distinct data sets.  If the integers <first> and <last> are missing then
+the script produced is for every block in the database <reads>. If <first> is present
+then HPC.daligner produces a script that compares blocks <first> through <last> (<last>
+= <first> if not present) of <reads>against DAM <ref>.
 
-
-9. HPCmapper [-vb] [-k<int(20)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>]
-                   [-e<double(.85)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
-                   [-m<track>]+ [-dal<int(4)>] [-deg<int(25)>]
-                   <ref:db|dam> <reads:db|dam> [<first:int>[-<last:int>]]
-
-HPCmapper writes a UNIX shell script to the standard output that consists of a
-sequence of commands that effectively "maps" every read in the DB <reads> against a
-reference set of sequences in the DB <ref>, recording all the found local alignments
-in the sequence of files <ref>.<reads>.1.las, <ref>.<reads>.2.las, ... where
-<ref>.<reads>.k.las contains the alignments between all of <ref> and the k'th
-block of <reads>.  The parameters are exactly the same as for HPCdaligner save that
-the -k, -h, and -e defaults are set appropriately for mapping, and the -A and -I
-options make no sense as <ref> and <reads> are expected to be distinct data sets.
-
-If the integers <first> and <last> are missing then the script produced is for every
-block in the database <reads>.  If <first> is present then HPCmapper produces an
-script that compares blocks <first> through <last> (<last> = <first> if not present)
-against DAM <ref>.
-
+The command scripts output by HPC.daligner and other HPC.<x> programs consists of
+command blocks each of which begins with a comment line (begins with #) followed by a
+potentially long list of lines each containing a shell command.  Command blocks whose
+comment mentions "jobs" and gives the number of said in parenthesis, we call parallel
+blocks because each command line in the block can be sent to a node in a cluster for
+independent execution, i.e. none of the commands in a block depend on another in the
+block.  The remaining command blocks we call house-keeping blocks because they can be
+executed by the shell on the launch/server node and the commands are either checking
+the integrity of .las files with LAcheck, or removing intermediate files with rm. Each
+block should be performed in the order given and should complete before the next block
+is performed.
 
 Example:
 

@@ -19,7 +19,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-v] <align:las> ...";
+static char *Usage = "[-va] <align:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -99,13 +99,13 @@ int main(int argc, char *argv[])
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
-        { ARG_FLAGS("vc") }
+        { ARG_FLAGS("va") }
       else
         argv[j++] = argv[i];
     argc = j;
 
     VERBOSE   = flags['v'];
-    MAP_ORDER = flags['c'];
+    MAP_ORDER = flags['a'];
 
     if (argc <= 1)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);

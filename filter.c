@@ -1959,10 +1959,11 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
           for (j = 0; j < MAXGRAM; j++)
             histo[j] += parmm[i].hitgram[j];
 
-        if (asort == bsort || (int64) (MEM_LIMIT/sizeof(Double)) > alen + 2*blen)
-          avail = (MEM_LIMIT/sizeof(Double) - alen) / 2;
+        avail = (int64) (MEM_LIMIT - (sizeof_DB(ablock) + sizeof_DB(bblock))) / sizeof(Double);
+        if (asort == bsort || avail > alen + 2*blen)
+          avail = (avail - alen) / 2;
         else
-          avail = MEM_LIMIT/sizeof(Double) - (alen + blen);
+          avail = avail - (alen + blen);
         avail *= .98;
 
         tom = 0;
@@ -2034,14 +2035,15 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
     if (asort == bsort)
       hhit = work1 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
-                                         "Allocating dazzler hit vectors");
+                                         "Allocating daligner hit vectors");
     else
       { if (nhits >= blen)
           bsort = (KmerPos *) Realloc(bsort,sizeof(SeedPair)*(nhits+1),
-                                       "Reallocating dazzler sort vectors");
+                                       "Reallocating daligner sort vectors");
         hhit = work1 = (SeedPair *) bsort;
       }
-    khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),"Allocating dazzler hit vectors");
+    khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
+                                        "Allocating daligner hit vectors");
     if (hhit == NULL || khit == NULL || bsort == NULL)
       exit (1);
 

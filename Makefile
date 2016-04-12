@@ -1,6 +1,6 @@
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = daligner HPC.daligner HPC.mapper LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAindex
+ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAindex
 
 all: $(ALL)
 
@@ -9,9 +9,6 @@ daligner: daligner.c filter.c filter.h align.c align.h DB.c DB.h QV.c QV.h
 
 HPC.daligner: HPC.daligner.c DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o HPC.daligner HPC.daligner.c DB.c QV.c -lm
-
-HPC.mapper: HPC.mapper.c DB.c DB.h QV.c QV.h
-	gcc $(CFLAGS) -o HPC.mapper HPC.mapper.c DB.c QV.c -lm
 
 LAsort: LAsort.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAsort LAsort.c DB.c QV.c -lm
