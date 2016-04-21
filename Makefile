@@ -1,3 +1,5 @@
+DEST_DIR = ~/bin
+
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
 ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAindex
@@ -44,8 +46,8 @@ clean:
 	rm -f daligner.tar.gz
 
 install:
-	cp $(ALL) ~/bin
+	cp $(ALL) $(DEST_DIR)
 
 package:
 	make clean
-	tar -zcf daligner.tar.gz README *.h *.c Makefile
+	tar -zcf daligner.tar.gz README Makefile *.h *.c
