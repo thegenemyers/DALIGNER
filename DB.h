@@ -265,7 +265,7 @@ typedef struct
 #define DB_NFILE  "files = %9d\n"   //  number of files
 #define DB_FDATA  "  %9d %s %s\n"   //  last read index + 1, fasta prolog, file name
 #define DB_NBLOCK "blocks = %9d\n"  //  number of blocks
-#define DB_PARAMS "size = %9lld cutoff = %9d all = %1d\n"  //  block size, len cutoff, all in well
+#define DB_PARAMS "size = %10lld cutoff = %9d all = %1d\n"  //  block size, len cutoff, all in well
 #define DB_BDATA  " %9d %9d\n"      //  First read index (untrimmed), first read index (trimmed)
 
 
