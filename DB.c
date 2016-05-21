@@ -841,8 +841,14 @@ int Load_QVs(HITS_DB *db)
     }
 
   if (db->reads[db->nreads-1].coff < 0)
-    { EPRINTF(EPLACE,"%s: The requested QVs have not been added to the DB!\n",Prog_Name);
-      EXIT(1);
+    { if (db->part > 0)
+        { EPRINTF(EPLACE,"%s: All QVs for this block have not been added to the DB!\n",Prog_Name);
+          EXIT(1);
+        }
+      else
+        { EPRINTF(EPLACE,"%s: All QVs for this DB have not been added!\n",Prog_Name);
+          EXIT(1);
+        }
     }
 
   //  Open .qvs, .idx, and .db files
@@ -857,8 +863,14 @@ int Load_QVs(HITS_DB *db)
   coding = NULL;
   qvtrk  = NULL;
 
-  root = rindex(db->path,'/') + 2;
-  istub = Fopen(Catenate(db->path,"/",root,".db"),"r");
+  root = rindex(db->path,'/');
+  if (root[1] == '.')
+    { *root = '\0';
+      istub = Fopen(Catenate(db->path,"/",root+2,".db"),"r");
+      *root = '/';
+    }
+  else
+    istub = Fopen(Catenate(db->path,"","",".db"),"r");
   if (istub == NULL)
     goto error;
 

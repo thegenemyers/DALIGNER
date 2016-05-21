@@ -855,7 +855,7 @@ static void Unpack_Tag(char *tags, int clen, char *qvs, int rlen, int rchar)
 
   // Read up to the next num entries or until eof from the .quiva file on input and record
   //   frequency statistics.  Copy these entries to the temporary file temp if != NULL.
-  //   If there is an error then 1 is returned, otherwise 0.
+  //   If there is an error then -1 is returned, otherwise the number of entries read.
 
 static uint64   delHist[256], insHist[256], mrgHist[256], subHist[256], delRun[256], subRun[256];
 static uint64   totChar;
@@ -866,7 +866,7 @@ static int      delChar, subChar;
 int QVcoding_Scan(FILE *input, int num, FILE *temp)
 { char *slash;
   int   rlen;
-  int   i;
+  int   i, r;
 
   //  Zero histograms
 
@@ -885,29 +885,30 @@ int QVcoding_Scan(FILE *input, int num, FILE *temp)
   //  Make a sweep through the .quiva entries, histogramming the relevant things
   //    and figuring out the run chars for the deletion and substition streams
 
+  r = 0;
   for (i = 0; i < num; i++)
     { int well, beg, end, qv;
 
       rlen = Read_Lines(input,1);
       if (rlen == -2)
-        EXIT(1);
+        EXIT(-1);
       if (rlen < 0)
         break;
 
       if (rlen == 0 || Read[0] != '@')
-        { EPRINTF(EPLACE,"Line %d: Header in quiv file is missing\n",Nline);
-          EXIT(1);
+        { EPRINTF(EPLACE,"Line %d: Header in quiva file is missing\n",Nline);
+          EXIT(-1);
         }
       slash = index(Read+1,'/');
       if (slash == NULL)
   	{ EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          EXIT(1);
+          EXIT(-1);
         }
       if (sscanf(slash+1,"%d/%d_%d RQ=0.%d\n",&well,&beg,&end,&qv) != 4)
         { EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          EXIT(1);
+          EXIT(-1);
         }
 
       if (temp != NULL)
@@ -917,7 +918,7 @@ int QVcoding_Scan(FILE *input, int num, FILE *temp)
       if (rlen < 0)
         { if (rlen == -1)
             EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
-          EXIT(1);
+          EXIT(-1);
         }
 
       if (temp != NULL)
@@ -958,9 +959,11 @@ int QVcoding_Scan(FILE *input, int num, FILE *temp)
         }
       if (subChar >= 0)
         Histogram_Runs( subRun,(uint8 *) (Read+4*Rmax),rlen,subChar);
+
+      r += 1;
     }
 
-  return (0);
+  return (r);
 }
 
   //   Using the statistics in the global stat tables, create the Huffman schemes and write

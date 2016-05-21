@@ -34,8 +34,6 @@
 //    value.  For such routines that were previously void, they are now int, and
 //    return 1 if an error occured, 0 otherwise.
 
-#undef INTERACTIVE
-
 #ifdef INTERACTIVE
 
 #define EPRINTF sprintf

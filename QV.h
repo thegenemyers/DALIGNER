@@ -55,7 +55,7 @@ int       Get_QV_Line();
 
   // Read up to the next num entries or until eof from the .quiva file on input and record
   //   frequency statistics.  Copy these entries to the temporary file temp if != NULL.
-  //   If there is an error then 1 is returned, otherwise 0.
+  //   If there is an error then -1 is returned, otherwise the number of entries read.
 
 int       QVcoding_Scan(FILE *input, int num, FILE *temp);
 
