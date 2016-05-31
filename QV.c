@@ -738,6 +738,12 @@ static int    Nline;         //  Referred by:  QVcoding_Scan
 char *QVentry()
 { return (Read); }
 
+void Set_QV_Line(int line)
+{ Nline = line; }
+
+int Get_QV_Line()
+{ return (Nline); }
+
 //  If nlines == 1 trying to read a single header, nlines = 5 trying to read 5 QV/fasta lines
 //    for a sequence.  Place line j at Read+j*Rmax and the length of every line is returned
 //    unless eof occurs in which case return -1.  If any error occurs return -2.
@@ -847,8 +853,9 @@ static void Unpack_Tag(char *tags, int clen, char *qvs, int rlen, int rchar)
  *
  ********************************************************************************************/
 
-  // Read .quiva file from input, recording stats in the histograms.  If zero is set then
-  //   start the stats anew with this file.
+  // Read up to the next num entries or until eof from the .quiva file on input and record
+  //   frequency statistics.  Copy these entries to the temporary file temp if != NULL.
+  //   If there is an error then -1 is returned, otherwise the number of entries read.
 
 static uint64   delHist[256], insHist[256], mrgHist[256], subHist[256], delRun[256], subRun[256];
 static uint64   totChar;
@@ -856,9 +863,10 @@ static int      delChar, subChar;
 
   // Referred by:  QVcoding_Scan, Create_QVcoding
 
-int QVcoding_Scan(FILE *input)
+int QVcoding_Scan(FILE *input, int num, FILE *temp)
 { char *slash;
   int   rlen;
+  int   i, r;
 
   //  Zero histograms
 
@@ -867,11 +875,8 @@ int QVcoding_Scan(FILE *input)
   bzero(insHist,sizeof(uint64)*256);
   bzero(subHist,sizeof(uint64)*256);
 
-  { int i;
-
-    for (i = 0; i < 256; i++)
-      delRun[i] = subRun[i] = 1;
-  }
+  for (i = 0; i < 256; i++)
+    delRun[i] = subRun[i] = 1;
 
   totChar    = 0;
   delChar    = -1;
@@ -880,37 +885,48 @@ int QVcoding_Scan(FILE *input)
   //  Make a sweep through the .quiva entries, histogramming the relevant things
   //    and figuring out the run chars for the deletion and substition streams
 
-  Nline = 0;
-  while (1)
+  r = 0;
+  for (i = 0; i < num; i++)
     { int well, beg, end, qv;
 
       rlen = Read_Lines(input,1);
       if (rlen == -2)
-        EXIT(1);
+        EXIT(-1);
       if (rlen < 0)
         break;
 
       if (rlen == 0 || Read[0] != '@')
-        { EPRINTF(EPLACE,"Line %d: Header in quiv file is missing\n",Nline);
-          EXIT(1);
+        { EPRINTF(EPLACE,"Line %d: Header in quiva file is missing\n",Nline);
+          EXIT(-1);
         }
       slash = index(Read+1,'/');
       if (slash == NULL)
   	{ EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          EXIT(1);
+          EXIT(-1);
         }
       if (sscanf(slash+1,"%d/%d_%d RQ=0.%d\n",&well,&beg,&end,&qv) != 4)
         { EPRINTF(EPLACE,"%s: Line %d: Header line incorrectly formatted ?\n",
                          Prog_Name,Nline);
-          EXIT(1);
+          EXIT(-1);
         }
+
+      if (temp != NULL)
+        fputs(Read,temp);
 
       rlen = Read_Lines(input,5);
       if (rlen < 0)
         { if (rlen == -1)
             EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
-          EXIT(1);
+          EXIT(-1);
+        }
+
+      if (temp != NULL)
+        { fputs(Read,temp);
+          fputs(Read+Rmax,temp);
+          fputs(Read+2*Rmax,temp);
+          fputs(Read+3*Rmax,temp);
+          fputs(Read+4*Rmax,temp);
         }
 
       Histogram_Seqs(delHist,(uint8 *) (Read),rlen);
@@ -943,9 +959,11 @@ int QVcoding_Scan(FILE *input)
         }
       if (subChar >= 0)
         Histogram_Runs( subRun,(uint8 *) (Read+4*Rmax),rlen,subChar);
+
+      r += 1;
     }
 
-  return (0);
+  return (r);
 }
 
   //   Using the statistics in the global stat tables, create the Huffman schemes and write
@@ -1275,7 +1293,7 @@ int Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy
   if (rlen < 0)
     { if (rlen == -1)
         EPRINTF(EPLACE,"Line %d: incomplete last entry of .quiv file\n",Nline);
-      EXIT (1);
+      EXIT (-1);
     }
 
   if (coding->delChar < 0)
@@ -1310,7 +1328,7 @@ int Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy
     Encode_Run(coding->subScheme, coding->sRunScheme, output,
                (uint8 *) (Read+4*Rmax), rlen, coding->subChar);
 
-  return (0);
+  return (rlen);
 }
 
 int Uncompress_Next_QVentry(FILE *input, char **entry, QVcoding *coding, int rlen)

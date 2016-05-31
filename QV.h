@@ -52,10 +52,16 @@ typedef struct
 int       Read_Lines(FILE *input, int nlines);
 char     *QVentry();
 
-  // Read the .quiva file on input and record frequency statistics.  If there is an error
-  //  then 1 is returned, otherwise 0.
+  // Get and set the line counter for error reporting
 
-int       QVcoding_Scan(FILE *input);
+void      Set_QV_Line(int line);
+int       Get_QV_Line();
+
+  // Read up to the next num entries or until eof from the .quiva file on input and record
+  //   frequency statistics.  Copy these entries to the temporary file temp if != NULL.
+  //   If there is an error then -1 is returned, otherwise the number of entries read.
+
+int       QVcoding_Scan(FILE *input, int num, FILE *temp);
 
   // Given QVcoding_Scan has been called at least once, create an encoding scheme based on
   //   the accumulated statistics and return a pointer to it.  The returned encoding object
@@ -77,8 +83,8 @@ void      Free_QVcoding(QVcoding *coding);
 
   //  Assuming the file pointer is positioned just beyond an entry header line, read the
   //    next set of 5 QV lines, compress them according to 'coding', and output.  If lossy
-  //    is set then the scheme is a lossy one.  A non-zero value is return only if an
-  //    error occured.
+  //    is set then the scheme is a lossy one.  A negative value is returned if an error
+  //    occurred, and the sequence length otherwise.
 
 int      Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy);
 

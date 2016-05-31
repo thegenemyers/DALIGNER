@@ -286,10 +286,13 @@ void daligner_script(int argc, char *argv[])
           if (CON)
             printf(" -a");
           if (lblock == 1)
-            if (usepath)
-              printf(" %s/%s",pwd,root);
-            else
-              printf(" %s",root);
+            { if (usepath)
+                printf(" %s/%s",pwd,root);
+              else
+                printf(" %s",root);
+              if (useblock)
+                printf(".1");
+            }
           else if (i < fblock)
             printf(" L1.%d.%d",i,(j-fblock)+1);
           else
@@ -321,10 +324,13 @@ void daligner_script(int argc, char *argv[])
           else
             printf(" %s",root);
           if (lblock == 1)
-            if (usepath)
-              printf(" %s/%s",pwd,root);
-            else
-              printf(" %s",root);
+            { if (usepath)
+                printf(" %s/%s",pwd,root);
+              else
+                printf(" %s",root);
+              if (useblock)
+                printf(".1");
+            }
           else if (i < fblock)
             printf(" L1.%d.%d",i,(j-fblock)+1);
           else

@@ -3221,6 +3221,7 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   char  mtag, dtag;
   int   prefa, prefb;
   int   aend, bend;
+  int   comp, blen;
   int   sa, sb;
   int   match, diff;
   char *N2A;
@@ -3250,6 +3251,9 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   aend = align->path->aepos;
   bend = align->path->bepos;
 
+  comp = COMP(align->flags);
+  blen = align->blen;
+
   Abuf[width] = Bbuf[width] = Dbuf[width] = '\0';
                                            /* buffer/output next column */
 #define COLUMN(x,y)							\
@@ -3258,15 +3262,18 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
     { fprintf(file,"\n");						\
       fprintf(file,"%*s",indent,"");					\
       if (coord > 0)							\
-        { if (sa <= aend)						\
+        { if (sa < aend)						\
             fprintf(file," %*d",coord,sa);				\
           else								\
             fprintf(file," %*s",coord,"");				\
           fprintf(file," %s\n",Abuf);					\
           fprintf(file,"%*s %*s %s\n",indent,"",coord,"",Dbuf);		\
           fprintf(file,"%*s",indent,"");				\
-          if (sb <= bend)						\
-            fprintf(file," %*d",coord,sb);				\
+          if (sb < bend)						\
+            if (comp)							\
+              fprintf(file," %*d",coord,blen-sb);			\
+            else							\
+              fprintf(file," %*d",coord,sb);				\
           else								\
             fprintf(file," %*s",coord,"");				\
           fprintf(file," %s",Bbuf);					\
@@ -3278,8 +3285,8 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
         }								\
       fprintf(file," %5.1f%%\n",(100.*diff)/(diff+match));		\
       o  = 0;								\
-      sa = i;								\
-      sb = j;								\
+      sa = i-1;								\
+      sb = j-1;								\
       match = diff = 0;							\
     }									\
   u = (x);								\
@@ -3313,8 +3320,8 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
       prefb = border;
     }
 
-  sa   = i;
-  sb   = j;
+  sa   = i-1;
+  sb   = j-1;
   mtag = ':';
   dtag = ':';
 
@@ -3422,15 +3429,18 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   fprintf(file,"\n");
   fprintf(file,"%*s",indent,"");
   if (coord > 0)
-    { if (sa <= aend)
+    { if (sa < aend)
         fprintf(file," %*d",coord,sa);
       else
         fprintf(file," %*s",coord,"");
       fprintf(file," %.*s\n",o,Abuf);
       fprintf(file,"%*s %*s %.*s\n",indent,"",coord,"",o,Dbuf);
       fprintf(file,"%*s",indent,"");
-      if (sb <= bend)
-        fprintf(file," %*d",coord,sb);
+      if (sb < bend)
+        if (comp)
+          fprintf(file," %*d",coord,blen-sb);
+        else
+          fprintf(file," %*d",coord,sb);
       else
         fprintf(file," %*s",coord,"");
       fprintf(file," %.*s",o,Bbuf);
@@ -3461,6 +3471,7 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   char  mtag, dtag;
   int   prefa, prefb;
   int   aend, bend;
+  int   comp, blen;
   int   sa, sb, s0;
   int   match, diff;
   char *N2A;
@@ -3494,21 +3505,27 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   aend = align->path->aepos;
   bend = align->path->bepos;
 
+  comp = COMP(align->flags);
+  blen = align->blen;
+
 #define BLOCK(x,y)							\
 { int u, v;								\
   if (i%block == 1 && i != s0 && x < 4 && o > 0)			\
     { fprintf(file,"\n");						\
       fprintf(file,"%*s",indent,"");					\
       if (coord > 0)							\
-        { if (sa <= aend)						\
+        { if (sa < aend)						\
             fprintf(file," %*d",coord,sa);				\
           else								\
             fprintf(file," %*s",coord,"");				\
           fprintf(file," %.*s\n",o,Abuf);				\
           fprintf(file,"%*s %*s %.*s\n",indent,"",coord,"",o,Dbuf);	\
           fprintf(file,"%*s",indent,"");				\
-          if (sb <= bend)						\
-            fprintf(file," %*d",coord,sb);				\
+          if (sb < bend)						\
+            if (comp)							\
+              fprintf(file," %*d",coord,blen-sb);			\
+            else							\
+              fprintf(file," %*d",coord,sb);				\
           else								\
             fprintf(file," %*s",coord,"");				\
           fprintf(file," %.*s",o,Bbuf);					\
@@ -3520,8 +3537,8 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
         }								\
       fprintf(file," %5.1f%%\n",(100.*diff)/(diff+match));		\
       o  = 0;								\
-      sa = i;								\
-      sb = j;								\
+      sa = i-1;								\
+      sb = j-1;								\
       match = diff = 0;							\
     }									\
   u = (x);								\
@@ -3567,8 +3584,8 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
     }
 
   s0   = i;
-  sa   = i;
-  sb   = j;
+  sa   = i-1;
+  sb   = j-1;
   mtag = ':';
   dtag = ':';
 
@@ -3676,15 +3693,18 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   fprintf(file,"\n");
   fprintf(file,"%*s",indent,"");
   if (coord > 0)
-    { if (sa <= aend)
+    { if (sa < aend)
         fprintf(file," %*d",coord,sa);
       else
         fprintf(file," %*s",coord,"");
       fprintf(file," %.*s\n",o,Abuf);
       fprintf(file,"%*s %*s %.*s\n",indent,"",coord,"",o,Dbuf);
       fprintf(file,"%*s",indent,"");
-      if (sb <= bend)
-        fprintf(file," %*d",coord,sb);
+      if (sb < bend)
+        if (comp)
+          fprintf(file," %*d",coord,blen-sb);
+        else
+          fprintf(file," %*d",coord,sb);
       else
         fprintf(file," %*s",coord,"");
       fprintf(file," %.*s",o,Bbuf);

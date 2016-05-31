@@ -481,9 +481,16 @@ int main(int argc, char *argv[])
         printf("..");
         Print_Number((int64) ovl->path.aepos,ai_wide,stdout);
         printf("] x [");
-        Print_Number((int64) ovl->path.bbpos,bi_wide,stdout);
-        printf("..");
-        Print_Number((int64) ovl->path.bepos,bi_wide,stdout);
+        if (COMP(ovl->flags))
+          { Print_Number((int64) (aln->blen - ovl->path.bbpos),bi_wide,stdout);
+            printf("..");
+            Print_Number((int64) (aln->blen - ovl->path.bepos),bi_wide,stdout);
+          }
+        else
+          { Print_Number((int64) ovl->path.bbpos,bi_wide,stdout);
+            printf("..");
+            Print_Number((int64) ovl->path.bepos,bi_wide,stdout);
+          }
         printf("]");
 
         if (ALIGN || CARTOON || REFERENCE)
