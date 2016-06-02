@@ -476,11 +476,21 @@ int main(int argc, char *argv[])
           printf(" c");
         else
           printf(" n");
-        printf("   [");
+        if (ovl->path.abpos == 0)
+          printf("   <");
+        else
+          printf("   [");
         Print_Number((int64) ovl->path.abpos,ai_wide,stdout);
         printf("..");
         Print_Number((int64) ovl->path.aepos,ai_wide,stdout);
-        printf("] x [");
+        if (ovl->path.aepos == aln->alen)
+          printf("> x ");
+        else
+          printf("] x ");
+        if (ovl->path.bbpos == 0)
+          printf("<");
+        else
+          printf("[");
         if (COMP(ovl->flags))
           { Print_Number((int64) (aln->blen - ovl->path.bbpos),bi_wide,stdout);
             printf("..");
@@ -491,7 +501,10 @@ int main(int argc, char *argv[])
             printf("..");
             Print_Number((int64) ovl->path.bepos,bi_wide,stdout);
           }
-        printf("]");
+        if (ovl->path.bepos == aln->blen)
+          printf(">");
+        else
+          printf("]");
 
         if (ALIGN || CARTOON || REFERENCE)
           { if (ALIGN || REFERENCE)
