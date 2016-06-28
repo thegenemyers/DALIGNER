@@ -115,9 +115,11 @@ typedef struct
      Calling it a second time on a given fragment restores it to its original state.
 ***/
 
-#define COMP(x)  ((x) & 0x1)
+#define COMP_FLAG  0x1
+#define ACOMP_FLAG 0x2   //  A-sequence is complemented, not B !  Only Local_Alignment notices
 
-#define COMP_FLAG 0x1
+#define COMP(x)   ((x) & COMP_FLAG)
+#define ACOMP(x)  ((x) & ACOMP_FLAG)
 
 typedef struct
   { Path   *path;

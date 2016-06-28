@@ -373,7 +373,7 @@ int main(int argc, char *argv[])
   for (i = 0; i < fway; i++)
     totl -= in[i].count;
   if (totl != 0)
-    { fprintf(stderr,"%s: Did not write all records (%lld)\n",argv[0],totl);
+    { fprintf(stderr,"%s: Did not write all records to %s (%lld)\n",argv[0],argv[1],totl);
       exit (1);
     }
 
