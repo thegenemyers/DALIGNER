@@ -1245,7 +1245,10 @@ HITS_TRACK *Load_Track(HITS_DB *db, char *track)
       if ( ! ispart && db->part > 0)
         fseeko(afile,size*db->ufirst,SEEK_CUR);
     }
-  nreads = db->nreads;
+  if (tracklen == treads)
+    nreads = ((int *) (db->reads))[-2];
+  else
+    nreads = ((int *) (db->reads))[-1];
 
   anno = (void *) Malloc(size*(nreads+1),"Allocating Track Anno Vector");
   if (anno == NULL)

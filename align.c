@@ -322,7 +322,7 @@ typedef struct
 static int VectorEl = 6*sizeof(int) + sizeof(BVEC);
 
 static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, Path *bpath,
-                        int *mind, int maxd, int mida, int minp, int maxp)
+                        int *mind, int maxd, int mida, int minp, int maxp, int aoff, int boff)
 { char *aseq  = align->aseq;
   char *bseq  = align->bseq;
   Path *apath = align->path;
@@ -339,7 +339,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
   int    *NA, *NB;
   int    *_NA, *_NB;
   Pebble *cells;
-  int     avail, cmax, boff;
+  int     avail, cmax;
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
@@ -385,11 +385,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
     avail = 0;
-
-    if (COMP(align->flags))
-      boff = align->blen % TRACE_SPACE;
-    else
-      boff = 0;
   }
 
   /* Compute 0-wave starting from mid-line */
@@ -426,7 +421,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
             work->cells  = (void *) cells;
           }
 
-        na = ((y+k)/TRACE_SPACE)*TRACE_SPACE;
+        na = (((y+k)+(TRACE_SPACE-aoff))/TRACE_SPACE-1)*TRACE_SPACE+aoff;
 #ifdef SHOW_TPS
         printf(" A %d: %d,%d,0,%d\n",avail,-1,k,na); fflush(stdout);
 #endif
@@ -978,15 +973,6 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     apath->bepos = trimy;
     apath->diffs = trimd;
     apath->tlen  = atlen;
-    if (COMP(align->flags))
-      { bpath->abpos = align->blen - apath->bepos;
-        bpath->bbpos = align->alen - apath->aepos;
-      }
-    else
-      { bpath->aepos = apath->bepos;
-        bpath->bepos = apath->aepos;
-      }
-    bpath->diffs = trimd;
     bpath->tlen  = btlen;
   }
 
@@ -997,7 +983,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
 /*** Reverse Wave ***/
 
 static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, Path *bpath,
-                        int mind, int maxd, int mida, int minp, int maxp)
+                        int mind, int maxd, int mida, int minp, int maxp, int aoff, int boff)
 { char *aseq  = align->aseq - 1;
   char *bseq  = align->bseq - 1;
   Path *apath = align->path;
@@ -1014,7 +1000,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
   int    *NA, *NB;
   int    *_NA, *_NB;
   Pebble *cells;
-  int     avail, cmax, boff;
+  int     avail, cmax;
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
@@ -1060,11 +1046,6 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     cells = (Pebble *) (work->cells);
     cmax  = work->celmax;
     avail = 0;
-
-    if (COMP(align->flags))
-      boff = align->blen % TRACE_SPACE;
-    else
-      boff = 0;
   }
 
   more  = 1;
@@ -1099,7 +1080,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
             work->cells  = (void *) cells;
           }
 
-        na = ((y+k+TRACE_SPACE-1)/TRACE_SPACE-1)*TRACE_SPACE;
+        na = (((y+k)+(TRACE_SPACE-aoff)-1)/TRACE_SPACE-1)*TRACE_SPACE+aoff;
 #ifdef SHOW_TPS
         printf(" A %d: -1,%d,0,%d\n",avail,k,na+TRACE_SPACE); fflush(stdout);
 #endif
@@ -1572,7 +1553,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
 #ifdef SHOW_TRAIL
     printf("  A path = (%5d,%5d)\n",b+k,b); fflush(stdout);
 #endif
-    if ((b+k)%TRACE_SPACE != 0)
+    if ((b+k)%TRACE_SPACE != aoff)
       { h = cells[h].ptr;
         if (h < 0)
           { a = trimy;
@@ -1700,15 +1681,6 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     apath->diffs = apath->diffs + trimd;
     apath->tlen  = apath->tlen  - atlen;
     apath->trace = atrace + atlen;
-    if (COMP(align->flags))
-      { bpath->aepos = align->blen - apath->bbpos;
-        bpath->bepos = align->alen - apath->abpos;
-      }
-    else
-      { bpath->abpos = apath->bbpos;
-        bpath->bbpos = apath->abpos;
-      }
-    bpath->diffs = bpath->diffs + trimd;
     bpath->tlen  = bpath->tlen  - btlen;
     bpath->trace = btrace + btlen;
   }
@@ -1727,6 +1699,7 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   _Align_Spec *spec = (_Align_Spec *) espec;
 
   Path *apath, *bpath;
+  int   aoff, boff;
   int   minp, maxp;
   int   selfie;
 
@@ -1783,7 +1756,20 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   else
     maxp = hgh+hbord;
 
-  if (forward_wave(work,spec,align,bpath,&low,hgh,anti,minp,maxp))
+  if (ACOMP(align->flags))
+    { aoff = align->alen % spec->trace_space;
+      boff = 0;
+    }
+  else if (COMP(align->flags))
+    { aoff = 0;
+      boff = align->blen % spec->trace_space;
+    }
+  else
+    { aoff = 0;
+      boff = 0;
+    }
+
+  if (forward_wave(work,spec,align,bpath,&low,hgh,anti,minp,maxp,aoff,boff))
     EXIT(NULL);
 
 #ifdef DEBUG_PASSES
@@ -1792,7 +1778,7 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
          apath->aepos,apath->bepos,apath->diffs);
 #endif
 
-  if (reverse_wave(work,spec,align,bpath,low,low,anti,minp,maxp))
+  if (reverse_wave(work,spec,align,bpath,low,low,anti,minp,maxp,aoff,boff))
     EXIT(NULL);
 
 #ifdef DEBUG_PASSES
@@ -1800,11 +1786,43 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
          (anti+low)/2,(anti-low)/2,apath->abpos,apath->bbpos,apath->diffs);
 #endif
 
-  if (COMP(align->flags))
+  bpath->diffs = apath->diffs;
+  if (ACOMP(align->flags))
+    { uint16 *trace = (uint16 *) apath->trace;
+      uint16  p;
+      int     i, j;
+
+      bpath->aepos = apath->bepos;
+      bpath->bepos = apath->aepos;
+      bpath->abpos = apath->bbpos;
+      bpath->bbpos = apath->abpos;
+
+      apath->abpos = align->alen - bpath->bepos;
+      apath->bbpos = align->blen - bpath->aepos;
+      apath->aepos = align->alen - bpath->bbpos;
+      apath->bepos = align->blen - bpath->abpos;
+      i = apath->tlen-2;
+      j = 0;
+      while (j < i)
+        { p = trace[i];
+          trace[i] = trace[j];
+          trace[j] = p;
+          p = trace[i+1];
+          trace[i+1] = trace[j+1];
+          trace[j+1] = p;
+          i -= 2;
+          j += 2;
+        }
+    }
+  else if (COMP(align->flags))
     { uint16 *trace = (uint16 *) bpath->trace;
       uint16  p;
       int     i, j;
 
+      bpath->abpos = align->blen - apath->bepos;
+      bpath->bbpos = align->alen - apath->aepos;
+      bpath->aepos = align->blen - apath->bbpos;
+      bpath->bepos = align->alen - apath->abpos;
       i = bpath->tlen-2;
       j = 0;
       while (j < i)
@@ -1818,13 +1836,19 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
           j += 2;
         }
     }
+  else
+    { bpath->aepos = apath->bepos;
+      bpath->bepos = apath->aepos;
+      bpath->abpos = apath->bbpos;
+      bpath->bbpos = apath->abpos;
+    }
 
 #ifdef DEBUG_POINTS
   { uint16 *trace = (uint16 *) apath->trace;
     int     a, h;
 
     printf("\nA-path (%d,%d)->(%d,%d)",apath->abpos,apath->bbpos,apath->aepos,apath->bepos);
-    printf(" %c\n",(COMP(align->flags) ? 'c' : 'n'));
+    printf(" %c\n",((COMP(align->flags) || ACOMP(align->flags)) ? 'c' : 'n'));
     a = apath->bbpos;
     for (h = 1; h < apath->tlen; h += 2)
       { int dif = trace[h-1];
@@ -1838,7 +1862,8 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
     int     a, h;
 
     printf("\nB-path (%d,%d)->(%d,%d)",bpath->abpos,bpath->bbpos,bpath->aepos,bpath->bepos);
-    printf(" %c [%d,%d]\n",(COMP(align->flags) ? 'c' : 'n'),align->blen,align->alen);
+    printf(" %c [%d,%d]\n",((COMP(align->flags) || ACOMP(align->flags)) ? 'c' : 'n'),
+                           align->blen,align->alen);
     a = bpath->bbpos;
     for (h = 1; h < bpath->tlen; h += 2)
       { int dif = trace[h-1];

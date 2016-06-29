@@ -476,11 +476,21 @@ int main(int argc, char *argv[])
           printf(" c");
         else
           printf(" n");
-        printf("   [");
+        if (ovl->path.abpos == 0)
+          printf("   <");
+        else
+          printf("   [");
         Print_Number((int64) ovl->path.abpos,ai_wide,stdout);
         printf("..");
         Print_Number((int64) ovl->path.aepos,ai_wide,stdout);
-        printf("] x [");
+        if (ovl->path.aepos == aln->alen)
+          printf("> x ");
+        else
+          printf("] x ");
+        if (ovl->path.bbpos == 0)
+          printf("<");
+        else
+          printf("[");
         if (COMP(ovl->flags))
           { Print_Number((int64) (aln->blen - ovl->path.bbpos),bi_wide,stdout);
             printf("..");
@@ -491,7 +501,24 @@ int main(int argc, char *argv[])
             printf("..");
             Print_Number((int64) ovl->path.bepos,bi_wide,stdout);
           }
-        printf("]");
+        if (ovl->path.bepos == aln->blen)
+          printf(">");
+        else
+          printf("]");
+
+        if (CARTOON)
+          { printf("  (");
+            Print_Number(tps,tp_wide,stdout);
+            printf(" trace pts)\n\n");
+          }
+        else
+          { printf("  ~  %4.1f%%   (",(200.*ovl->path.diffs) /
+                    ((ovl->path.aepos - ovl->path.abpos) + (ovl->path.bepos - ovl->path.bbpos)) );
+            Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
+            printf(" diffs, ");
+            Print_Number(tps,tp_wide,stdout);
+            printf(" trace pts)\n");
+          }
 
         if (ALIGN || CARTOON || REFERENCE)
           { if (ALIGN || REFERENCE)
@@ -559,29 +586,11 @@ int main(int argc, char *argv[])
                   }
               }
             if (CARTOON)
-              { printf("  (");
-                Print_Number(tps,tp_wide,stdout);
-                printf(" trace pts)\n\n");
-                Alignment_Cartoon(stdout,aln,INDENT,mx_wide);
-              }
-            else
-              { printf(" :   = ");
-                Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
-                printf(" diffs  (");
-                Print_Number(tps,tp_wide,stdout);
-                printf(" trace pts)\n");
-              }
+              Alignment_Cartoon(stdout,aln,INDENT,mx_wide);
             if (REFERENCE)
               Print_Reference(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,mx_wide);
             if (ALIGN)
               Print_Alignment(stdout,aln,work,INDENT,WIDTH,BORDER,UPPERCASE,mx_wide);
-          }
-        else
-          { printf(" :   < ");
-            Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
-            printf(" diffs  (");
-            Print_Number(tps,tp_wide,stdout);
-            printf(" trace pts)\n");
           }
       }
 

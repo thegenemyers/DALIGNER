@@ -1197,6 +1197,12 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
   b2 = kpath->bbpos;
   k  = kpath->abpos/MR_tspace;
 
+  if (jpath->abpos == kpath->abpos)
+    { min = abs(y2-b2);
+      if (min == 0)
+        *where = kpath->abpos;
+    }
+
   if (j < k)
     { ac = k*MR_tspace;
 
@@ -1248,6 +1254,15 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
         }
       oflare = i;
 #endif
+    }
+
+  if (jpath->aepos == kpath->aepos)
+    { i = abs(y2-b2);
+      if (i <= min)
+        { min = i;
+          if (i == 0)
+            *where = kpath->aepos;
+        }
     }
 
 #ifdef SEE_ENTWINE
@@ -1330,11 +1345,13 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
 
   hasB = (bmatch != NULL);
 
-  no = 0;
   for (j = 1; j < novls; j++)
     { jpath = amatch+j;
-      for (k = no; k >= 0; k--)
+      for (k = j-1; k >= 0; k--)
         { kpath = amatch+k;
+
+          if (kpath->abpos < 0)
+            continue;
 
           if (jpath->abpos < kpath->abpos)
 
@@ -1348,8 +1365,8 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                   if (dist != 0)
                                     continue;
                                   Fusion(jpath,awhen,kpath,tbuf);
-                                  amatch[k] = *jpath;
                                   Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                                  bmatch[j] = bmatch[k];
 #ifdef TEST_CONTAIN
                                   printf("  Really 1");
 #endif
@@ -1359,9 +1376,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                   if (dist != 0)
                                     continue;
                                   Fusion(jpath,awhen,kpath,tbuf);
-                                  amatch[k] = *jpath;
                                   Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
-                                  bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 2");
 #endif
@@ -1369,21 +1384,16 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                             }
                           else
                             { Fusion(jpath,awhen,kpath,tbuf);
-                              amatch[k] = *jpath;
 #ifdef TEST_CONTAIN
                               printf("  Really 3");
 #endif
                             }
+                          k = j;
                         }
-                      else
-                        { amatch[k] = *jpath;
-                          if (hasB)
-                            bmatch[k] = bmatch[j];
-                        }
+                      kpath->abpos = -1;
 #ifdef TEST_CONTAIN
                       printf("  Fuse! A %d %d\n",j,k);
 #endif
-                      break;
                     }
                 }
             }
@@ -1394,10 +1404,10 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                 { dist = Entwine(kpath,jpath,tbuf,&awhen);
                   if (dist == 0)
                     { if (kpath->abpos == jpath->abpos)
-                        { if (kpath->aepos < jpath->aepos)
-                            { amatch[k] = *jpath;
+                        { if (kpath->aepos > jpath->aepos)
+                            { *jpath = *kpath;
                               if (hasB)
-                                bmatch[k] = bmatch[j];
+                                bmatch[j] = bmatch[k];
                             }
                         }
                       else if (jpath->aepos > kpath->aepos)
@@ -1407,8 +1417,8 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                   if (dist != 0)
                                     continue;
                                   Fusion(kpath,awhen,jpath,tbuf);
+                                  *jpath = *kpath;
                                   Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
-                                  bmatch[k] = bmatch[j];
 #ifdef TEST_CONTAIN
                                   printf("  Really 4");
 #endif
@@ -1418,7 +1428,9 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                                   if (dist != 0)
                                     continue;
                                   Fusion(kpath,awhen,jpath,tbuf);
+                                  *jpath = *kpath;
                                   Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                                  bmatch[j] = bmatch[k];
 #ifdef TEST_CONTAIN
                                   printf("  Really 5");
 #endif
@@ -1426,28 +1438,36 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
                             }
                           else
                             { Fusion(kpath,awhen,jpath,tbuf);
+                              *jpath = *kpath;
 #ifdef TEST_CONTAIN
                               printf("  Really 6");
 #endif
                             }
+                          k = j;
                         }
+                      else
+                        { *jpath = *kpath;
+                          if (hasB)
+                            bmatch[j] = bmatch[k];
+                        }
+                      kpath->abpos = -1;
 #ifdef TEST_CONTAIN
                       printf("  Fuse! B %d %d\n",j,k);
 #endif
-                      break;
                     }
                 }
             }
         }
-      if (k < 0)
-        { no += 1;
-          amatch[no] = *jpath;
-          if (hasB)
-            bmatch[no] = bmatch[j];
-        }
     }
 
-  novls = no+1;
+  no = 0;
+  for (j = 0; j < novls; j++)
+    if (amatch[j].abpos >= 0)
+      { if (hasB)
+          bmatch[no] = bmatch[j];
+        amatch[no++] = amatch[j];
+      }
+  novls = no;
 
 #ifdef TEST_CONTAIN
   for (j = 0; j < novls; j++)
