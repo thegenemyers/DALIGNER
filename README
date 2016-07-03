@@ -268,24 +268,29 @@ to allow programs that process piles to more efficiently read just the piles
 they need at any momment int time, as opposed to having to sequentially scan
 through the .las file.
 
-7. LAcat <source:las> > <target>.las
+7. LAcat [-v] <source:las> > <target>.las
 
-Given argument <source>, find all files <source>.1.las, <source>.2.las, ...
-<source>.n.<las> where <source>.i.las exists for every i in [1,n].  Then
-concatenate these files in order into a single .las file and pipe the result
-to the standard output.
+Given template name <source> that contains a single #-sign somewhere within it,
+find all files that match it when the # is replace by i for i in 1,2,3,...  and
+a .las extension is added if not present.  Then concatenate these files in order
+into a single .las file and pipe the result to the standard output.  The -v
+option reports the files concatenated and the number of la's within them to
+standard error (as the standard output receives the concatenated file).
 
 
-8. LAsplit <target:las> (<parts:int> | <path:db|dam>) < <source>.las
+8. LAsplit [-v] <target:las> (<parts:int> | <path:db|dam>) < <source>.las
 
 If the second argument is an integer n, then divide the alignment file <source>, piped
 in through the standard input, as evenly as possible into n alignment files with the
-name <target>.i.las for i in [1,n], subject to the restriction that all alignment
-records for a given a-read are in the same file.
+names specified by template <target>, subject to the restriction that all alignment
+records for a given a-read are in the same file.  The name of the n files is the
+string <target> where the single #-sign that occurs somewhere in it is replaced
+by i for i in [1,n] and a .las extension is added if necessary.
 
 If the second argument refers to a database <path>.db that has been partitioned, then
 divide the input alignment file into block .las files where all records whose a-read is
-in <path>.i.db are in <align>.i.las.
+in <path>.i.db are in the i'th file generated from the template <target>.  The -v
+option reports the files produced and the number of la's within them to standard error.
 
 
 9. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
