@@ -19,7 +19,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "<align:las> (<parts:int> | <path:db|dam>) < <source>.las";
+static char *Usage = "-v <align:las> (<parts:int> | <path:db|dam>) < <source>.las";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -29,14 +29,32 @@ int main(int argc, char *argv[])
   int64     novl, bsize, ovlsize, ptrsize;
   int       parts, tspace, tbytes;
   int       olast, blast;
-  char     *root, *pwd;
+  char     *pwd, *root, *root2;
 
-  Prog_Name = Strdup("LAsplit","");
+  int       VERBOSE;
 
-  if (argc != 3)
-    { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-      exit (1);
-    }
+  //  Process options
+
+  { int i, j, k;
+    int flags[128];
+
+    ARG_INIT("LAsplit")
+
+    j = 1;
+    for (i = 1; i < argc; i++)
+      if (argv[i][0] == '-')
+        { ARG_FLAGS("v") }
+      else
+        argv[j++] = argv[i];
+    argc = j;
+
+    VERBOSE = flags['v'];
+
+    if (argc != 3)
+      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        exit (1);
+      }
+  }
 
   { char *eptr;
     int   nfiles, cutoff, all;
@@ -98,6 +116,17 @@ int main(int argc, char *argv[])
   pwd   = PathTo(argv[1]);
   root  = Root(argv[1],".las");
 
+  root2 = index(root,'#');
+  if (root2 == NULL)
+    { fprintf(stderr,"%s: No #-sign in source name '%s'\n",Prog_Name,root);
+      exit (1);
+    }
+  if (index(root2+1,'#') != NULL)
+    { fprintf(stderr,"%s: Two or more occurences of #-sign in source name '%s'\n",Prog_Name,root);
+      exit (1);
+    }
+  *root2++ = '\0';
+
   if (fread(&novl,sizeof(int64),1,stdin) != 1)
     SYSTEM_ERROR
   if (fread(&tspace,sizeof(int),1,stdin) != 1)
@@ -106,6 +135,9 @@ int main(int argc, char *argv[])
     tbytes = sizeof(uint8);
   else
     tbytes = sizeof(uint16);
+
+  if (VERBOSE)
+    fprintf(stderr,"  Distributing %lld la\'s\n",novl);
 
   { int      i, j;
     Overlap *w;
@@ -119,7 +151,7 @@ int main(int argc, char *argv[])
 
     hgh = 0;
     for (i = 0; i < parts; i++)
-      { output = Fopen(Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las")),"w");
+      { output = Fopen(Catenate(pwd,"/",Numbered_Suffix(root,i+1,root2),".las"),"w");
         if (output == NULL)
           exit (1);
 
@@ -193,6 +225,9 @@ int main(int argc, char *argv[])
         rewind(output);
         povl = hgh-low;
         fwrite(&povl,sizeof(int64),1,output);
+
+        if (VERBOSE)
+          fprintf(stderr,"  Split off %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
 
         fclose(output);
       }

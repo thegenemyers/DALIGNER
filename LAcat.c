@@ -19,7 +19,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "<source:las> > <target>.las";
+static char *Usage = "[-v] <source:las> > <target>.las";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -28,14 +28,32 @@ int main(int argc, char *argv[])
   FILE     *input;
   int64     novl, bsize, ovlsize, ptrsize;
   int       tspace, tbytes;
-  char     *pwd, *root;
+  char     *pwd, *root, *root2;
 
-  Prog_Name = Strdup("LAcat","");
+  int       VERBOSE;
 
-  if (argc <= 1)
-    { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-      exit (1);
-    }
+  //  Process options
+
+  { int i, j, k;
+    int flags[128];
+
+    ARG_INIT("LAcat")
+
+    j = 1;
+    for (i = 1; i < argc; i++)
+      if (argv[i][0] == '-')
+        { ARG_FLAGS("v") }
+      else
+        argv[j++] = argv[i];
+    argc = j;
+
+    VERBOSE = flags['v'];
+
+    if (argc <= 1)
+      { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        exit (1);
+      }
+  }
 
   ptrsize = sizeof(void *);
   ovlsize = sizeof(Overlap) - ptrsize;
@@ -49,6 +67,17 @@ int main(int argc, char *argv[])
   pwd    = PathTo(argv[1]);
   root   = Root(argv[1],".las");
 
+  root2 = index(root,'#');
+  if (root2 == NULL)
+    { fprintf(stderr,"%s: No #-sign in source name '%s'\n",Prog_Name,root);
+      exit (1);
+    }
+  if (index(root2+1,'#') != NULL)
+    { fprintf(stderr,"%s: Two or more occurences of #-sign in source name '%s'\n",Prog_Name,root);
+      exit (1);
+    }
+  *root2++ = '\0';
+
   { int64    povl;
     int      i, mspace;
 
@@ -57,7 +86,7 @@ int main(int argc, char *argv[])
     mspace = 0;
     tbytes = 0;
     for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
+      { char *name = Catenate(pwd,"/",Numbered_Suffix(root,i+1,root2),".las");
         if ((input = fopen(name,"r")) == NULL) break;
 
         if (fread(&povl,sizeof(int64),1,input) != 1)
@@ -94,13 +123,16 @@ int main(int argc, char *argv[])
     otop = oblock + bsize;
 
     for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",root,Numbered_Suffix(".",i+1,".las"));
+      { char *name = Catenate(pwd,"/",Numbered_Suffix(root,i+1,root2),".las");
         if ((input = fopen(name,"r")) == NULL) break;
 
         if (fread(&povl,sizeof(int64),1,input) != 1)
           SYSTEM_ERROR
         if (fread(&mspace,sizeof(int),1,input) != 1)
           SYSTEM_ERROR
+
+        if (VERBOSE)
+          fprintf(stderr,"  Concatenating %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
 
         iptr = iblock;
         itop = iblock + fread(iblock,1,bsize,input);
@@ -147,6 +179,9 @@ int main(int argc, char *argv[])
     if (optr > oblock)
       fwrite(oblock,1,optr-oblock,stdout);
   }
+
+  if (VERBOSE)
+    fprintf(stderr,"  Totalling %lld la\'s\n",novl);
 
   free(pwd);
   free(root);
