@@ -40,15 +40,6 @@ static int    MMAX, MTOP;
 static char **MASK;
 static char  *ONAME;
 
-static int power(int base, int exp)
-{ int i, pow;
-
-  pow = 1;
-  for (i = 0; i < exp; i++)
-    pow *= base;
-  return (pow);
-}
-
 #define LSF_ALIGN "bsub -q medium -n 4 -o DALIGNER.out -e DALIGNER.err -R span[hosts=1] -J align#%d"
 #define LSF_SORT  "bsub -q short -n 12 -o SORT.DAL.out -e SORT.DAL.err -R span[hosts=1] -J sort#%d"
 #define LSF_MERGE \
@@ -495,21 +486,15 @@ void daligner_script(int argc, char *argv[])
     //  Higher level merges (if lblock > 1)
 
     if (lblock > 1)
-      { int  pow, mway;
-        int  stage;
+      { int pow, stage;
 
-        //  Determine most balance mway for merging in ceil(log_mrg lblock) levels
+        //  Determine the number of merging levels
 
         stage = 5;
 
         pow = 1;
         for (level = 0; pow < lblock; level++)
           pow *= DUNIT;
-
-        for (mway = DUNIT; mway >= 3; mway--)
-          if (power(mway,level) < lblock)
-            break;
-        mway += 1;
 
         //  Issue the commands for each merge level
 
@@ -526,8 +511,8 @@ void daligner_script(int argc, char *argv[])
                   out = fopen(name,"w");
                 }
 
-              bits = (cnt-1)/mway+1;
-              dits = (dnt-1)/mway+1;
+              bits = (cnt-1)/DUNIT+1;
+              dits = (dnt-1)/DUNIT+1;
 
               //  Incremental update merges
 
@@ -1181,7 +1166,7 @@ void mapper_script(int argc, char *argv[])
 #endif
     for (j = fblock; j <= lblock; j++)
       for (i = 1; i <= nblocks1; )
-        { k = j+BUNIT;
+        { k = i+BUNIT;
           if (k > nblocks1)
             k = nblocks1;
 #ifdef LSF
@@ -1259,21 +1244,15 @@ void mapper_script(int argc, char *argv[])
     //  Higher level merges (if lblock > 1)
 
     if (nblocks1 > 1)
-      { int pow, mway;
-        int  stage;
+      { int pow, stage;
 
-        //  Determine most balance mway for merging in ceil(log_mrg nblock1) levels
+        //  Determine the number of merging levels
 
         stage = 5;
 
         pow = 1;
         for (level = 0; pow < nblocks1; level++)
           pow *= DUNIT;
-
-        for (mway = DUNIT; mway >= 3; mway--)
-          if (power(mway,level) < nblocks1)
-            break;
-        mway += 1;
 
         //  Issue the commands for each merge level
 
@@ -1289,7 +1268,7 @@ void mapper_script(int argc, char *argv[])
                   out = fopen(name,"w");
                 }
 
-              bits = (cnt-1)/mway+1;
+              bits = (cnt-1)/DUNIT+1;
               fprintf(out,"# Level %d jobs (%d)\n",i,bits*((lblock-fblock)+1));
 
               //  Block merges
@@ -1353,7 +1332,7 @@ void mapper_script(int argc, char *argv[])
 #endif
               for (j = fblock; j <= lblock; j++) 
                 for (p = 1; p <= bits; )
-                  { k = j+BUNIT;
+                  { k = p+BUNIT;
                     if (k > bits)
                       k = bits;
 #ifdef LSF

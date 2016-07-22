@@ -175,14 +175,17 @@ void Number_Read(char *s);    //  Convert read from letters to numbers
 #define DB_CSS  0x0400   //  This is the second or later of a group of reads from a given insert
 #define DB_BEST 0x0800   //  This is the longest read of a given insert (may be the only 1)
 
+//  Fields have different interpretations if a .db versus a .dam
+
 typedef struct
-  { int     origin; //  Well #
+  { int     origin; //  Well # (DB), Contig # (DAM)
     int     rlen;   //  Length of the sequence (Last pulse = fpulse + rlen)
-    int     fpulse; //  First pulse
+    int     fpulse; //  First pulse (DB), left index of contig in scaffold (DAM)
     int64   boff;   //  Offset (in bytes) of compressed read in 'bases' file, or offset of
                     //    uncompressed bases in memory block
-    int64   coff;   //  Offset (in bytes) of compressed quiva streams in 'quiva' file
-    int     flags;  //  QV of read + flags above
+    int64   coff;   //  Offset (in bytes) of compressed quiva streams in '.qvs' file (DB),
+                    //  Offset (in bytes) of scaffold header string in '.hdr' file (DAM)
+    int     flags;  //  QV of read + flags above (DB only)
   } HITS_READ;
 
 //  A track can be of 3 types:
