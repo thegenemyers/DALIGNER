@@ -1189,12 +1189,12 @@ void mapper_script(int argc, char *argv[])
                   fprintf(out,"%s",root2);
                   if (useblock2)
                     fprintf(out,".%d",j);
-                  fprintf(out,".%s",root1);
+                  fprintf(out,".%s ",root1);
                 }
               else
                 { if (DON)
                     fprintf(out,"work%d/",j);
-                  fprintf(out,"L1.%d.%d",j,i);
+                  fprintf(out,"L1.%d.%d ",j,i);
                 }
               i += 1;
             }
@@ -1355,12 +1355,12 @@ void mapper_script(int argc, char *argv[])
                             fprintf(out,"%s",root2);
                             if (useblock2)
                               fprintf(out,".%d",j);
-                            fprintf(out,".%s",root1);
+                            fprintf(out,".%s ",root1);
                           }
                         else
                           { if (DON)
                               fprintf(out,"work%d/",j);
-                            fprintf(out,"L%d.%d.%d",i+1,j,p);
+                            fprintf(out,"L%d.%d.%d ",i+1,j,p);
                           }
                         p += 1;
                       }
