@@ -117,7 +117,10 @@ static int    Kshift;         //  2*Kmer
 static uint64 Kmask;          //  4^Kmer-1
 static int    TooFrequent;    //  (Suppress != 0) ? Suppress : INT32_MAX
 
-int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin)
+static int    NTHREADS;       //  Adjusted downward to nearest power of 2
+static int    NSHIFT;         //  NTHREADS = 1 << NSHIFT
+
+int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nthread)
 { if (kmer <= 1)
     return (1);
 
@@ -136,6 +139,13 @@ int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin)
     TooFrequent = INT32_MAX;
   else
     TooFrequent = Suppress;
+
+  NTHREADS = 1;
+  NSHIFT   = 0;
+  while (2*NTHREADS <= nthread)
+    { NTHREADS *= 2;
+      NSHIFT   += 1;
+    }
 
   return (0);
 }
@@ -164,7 +174,7 @@ typedef struct
   { int64  beg;
     int64  end;
     int64  tptr[BPOWR];
-    int64  sptr[NTHREADS*BPOWR];
+    int64 *sptr;
   } Lex_Arg;
 
 static void *lex_thread(void *arg)
@@ -656,6 +666,9 @@ void *Sort_Kmers(HITS_DB *block, int *len)
   int       kmers, nreads;
   int       i, j, x, z;
   uint64    h;
+
+  for (i = 0; i < NTHREADS; i++)
+    parmx[i].sptr = (int64 *) alloca(NTHREADS*BPOWR*sizeof(int64));
 
   for (i = 0; i < 16; i++)
     mersort[i] = 0;
@@ -1899,6 +1912,9 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
 
   { int64 powr;
     int   i, nbyte;
+
+    for (i = 0; i < NTHREADS; i++)
+      parmx[i].sptr = (int64 *) alloca(NTHREADS*BPOWR*sizeof(int64));
 
     for (i = 0; i < 16; i++)
       pairsort[i] = 0;

@@ -461,6 +461,14 @@ int main(int argc, char *argv[])
             
         if (ALIGN || CARTOON || REFERENCE)
           printf("\n");
+
+        if (BEST_CHAIN(ovl->flags))
+          printf("> ");
+        else if (CHAIN_START(ovl->flags))
+          printf("+ ");
+        else if (CHAIN_NEXT(ovl->flags))
+          printf(" -");
+
         if (FLIP)
           { Flip_Alignment(aln,0);
             Print_Number((int64) ovl->bread+1,ar_wide+1,stdout);

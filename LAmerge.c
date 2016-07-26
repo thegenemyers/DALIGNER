@@ -41,6 +41,10 @@ static char *Usage = "[-va] <merge:las> <parts:las> ...";
     bigger = 0;					\
   else if (lp->path.abpos > rp->path.abpos)	\
     bigger = 1;					\
+  else if (lp->path.abpos < rp->path.abpos)	\
+    bigger = 0;					\
+  else if (lp > rp)				\
+    bigger = 1;					\
   else						\
     bigger = 0;
 
@@ -91,6 +95,10 @@ static void reheap(int s, Overlap **heap, int hsize)
   else if (lp->aread < rp->aread)		\
     bigger = 0;					\
   else if (lp->path.abpos > rp->path.abpos)	\
+    bigger = 1;					\
+  else if (lp->path.abpos < rp->path.abpos)	\
+    bigger = 0;					\
+  else if (lp > rp)				\
     bigger = 1;					\
   else						\
     bigger = 0;
@@ -334,31 +342,33 @@ int main(int argc, char *argv[])
       ov  = heap[1];
       src = in + (ov - ovls);
 
-      src->count += 1;
+      do
+        { src->count += 1;
 
-      tsize = ov->path.tlen*tbytes;
-      span  = osize + tsize;
-      if (src->ptr + span > src->top)
-        ovl_reload(src,bsize);
-      if (optr + span > otop)
-        { fwrite(oblock,1,optr-oblock,output);
-          optr = oblock;
-        }
+          tsize = ov->path.tlen*tbytes;
+          span  = osize + tsize;
+          if (src->ptr + span > src->top)
+            ovl_reload(src,bsize);
+          if (optr + span > otop)
+            { fwrite(oblock,1,optr-oblock,output);
+              optr = oblock;
+            }
 
-      memcpy(optr,((char *) ov) + psize,osize);
-      optr += osize;
-      memcpy(optr,src->ptr,tsize);
-      optr += tsize;
+          memcpy(optr,((char *) ov) + psize,osize);
+          optr += osize;
+          memcpy(optr,src->ptr,tsize);
+          optr += tsize;
 
-      src->ptr += tsize;
-      if (src->ptr < src->top)
-        { *ov       = *((Overlap *) (src->ptr - psize));
+          src->ptr += tsize;
+          if (src->ptr >= src->top)
+            { heap[1] = heap[hsize];
+              hsize  -= 1;
+              break;
+            }
+          *ov       = *((Overlap *) (src->ptr - psize));
           src->ptr += osize;
         }
-      else
-        { heap[1] = heap[hsize];
-          hsize  -= 1;
-        }
+      while (CHAIN_NEXT(ov->flags));
     }
 
   //  Flush output buffer and wind up

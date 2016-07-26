@@ -24,10 +24,10 @@
 
 static char *Usage[] =
   { "[-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)>] [-s<int(100)]",
-    "        [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-m<track>]+",
+    "        [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]",
     "      ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)>] [-AI] [-H<int>] |",
     "        [-k<int(20)>] [-h<int(50)>] [-e<double(.85)>]  <ref:db|dam>   )",
-    "        [-f<name>] <reads:db|dam> [<first:int>[-<last:int>]"
+    "        [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]"
   };
 
   //  Command Options
@@ -35,6 +35,7 @@ static char *Usage[] =
 static int    DUNIT, BUNIT;
 static int    VON, BON, AON, ION, CON, DON;
 static int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
+static int    NTHREADS;
 static double EREL;
 static int    MMAX, MTOP;
 static char **MASK;
@@ -237,6 +238,8 @@ void daligner_script(int argc, char *argv[])
               fprintf(out," -s%d",SINT);
             if (MINT >= 0)
               fprintf(out," -M%d",MINT);
+            if (NTHREADS != 4)
+              fprintf(out," -T%d",NTHREADS);
             for (k = 0; k < MTOP; k++)
               fprintf(out," -m%s",MASK[k]);
             if (useblock)
@@ -1033,6 +1036,8 @@ void mapper_script(int argc, char *argv[])
               fprintf(out," -l%d",LINT);
             if (SINT != 100)
               fprintf(out," -s%d",SINT);
+            if (NTHREADS != 4)
+              fprintf(out," -T%d",NTHREADS);
             if (MINT >= 0)
               fprintf(out," -M%d",MINT);
             for (k = 0; k < MTOP; k++)
@@ -1173,28 +1178,29 @@ void mapper_script(int argc, char *argv[])
           fprintf(out,LSF_CHECK,0,0,jobid++);
           fprintf(out," \"");
 #endif
-          fprintf(out,"LAcheck -vS ");
+          fprintf(out,"LAcheck -vS");
           if (usepath2)
-            fprintf(out,"%s/%s ",pwd2,root2);
+            fprintf(out," %s/%s",pwd2,root2);
           else
-            fprintf(out,"%s ",root2);
+            fprintf(out," %s",root2);
           if (usepath1)
-            fprintf(out,"%s/%s ",pwd1,root1);
+            fprintf(out," %s/%s",pwd1,root1);
           else
-            fprintf(out,"%s ",root1);
+            fprintf(out," %s",root1);
           while (i <= k)
-            { if (nblocks1 == 1)
+            { fprintf(out," ");
+              if (nblocks1 == 1)
                 { if (usepath2)
                     fprintf(out,"%s/",pwd2);
                   fprintf(out,"%s",root2);
                   if (useblock2)
                     fprintf(out,".%d",j);
-                  fprintf(out,".%s ",root1);
+                  fprintf(out,".%s",root1);
                 }
               else
                 { if (DON)
                     fprintf(out,"work%d/",j);
-                  fprintf(out,"L1.%d.%d ",j,i);
+                  fprintf(out,"L1.%d.%d",j,i);
                 }
               i += 1;
             }
@@ -1339,28 +1345,29 @@ void mapper_script(int argc, char *argv[])
                     fprintf(out,LSF_CHECK,0,0,jobid++);
                     fprintf(out," \"");
 #endif
-                    fprintf(out,"LAcheck -vS ");
+                    fprintf(out,"LAcheck -vS");
                     if (usepath2)
-                      fprintf(out,"%s/%s ",pwd2,root2);
+                      fprintf(out," %s/%s",pwd2,root2);
                     else
-                      fprintf(out,"%s ",root2);
+                      fprintf(out," %s",root2);
                     if (usepath1)
-                      fprintf(out,"%s/%s ",pwd1,root1);
+                      fprintf(out," %s/%s",pwd1,root1);
                     else
-                      fprintf(out,"%s ",root1);
+                      fprintf(out," %s",root1);
                     while (p <= k)
-                      { if (i == level)
+                      { fprintf(out," ");
+                        if (i == level)
                           { if (usepath2)
                               fprintf(out,"%s/",pwd2);
                             fprintf(out,"%s",root2);
                             if (useblock2)
                               fprintf(out,".%d",j);
-                            fprintf(out,".%s ",root1);
+                            fprintf(out,".%s",root1);
                           }
                         else
                           { if (DON)
                               fprintf(out,"work%d/",j);
-                            fprintf(out,"L%d.%d.%d ",i+1,j,p);
+                            fprintf(out,"L%d.%d.%d",i+1,j,p);
                           }
                         p += 1;
                       }
@@ -1443,6 +1450,8 @@ int main(int argc, char *argv[])
     exit (1);
   ONAME = NULL;
 
+  NTHREADS = 4;
+
   j = 1;
   for (i = 1; i < argc; i++)
     if (argv[i][0] == '-')
@@ -1504,6 +1513,9 @@ int main(int argc, char *argv[])
         case 'M':
           ARG_NON_NEGATIVE(MINT,"Memory allocation (in Gb)")
           break;
+        case 'T':
+          ARG_POSITIVE(NTHREADS,"Number of threads")
+          break;
       }
     else
       argv[j++] = argv[i];
@@ -1559,6 +1571,10 @@ int main(int argc, char *argv[])
       if (HINT <= 0)
         HINT = 35;
     }
+
+  for (j = 1; 2*j <= NTHREADS; j *= 2)
+    ;
+  NTHREADS = j;
 
   if (mapper)
     mapper_script(argc,argv);

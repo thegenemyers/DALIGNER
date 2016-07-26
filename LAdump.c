@@ -445,9 +445,18 @@ int main(int argc, char *argv[])
             
         printf("P %d %d",ovl->aread+1,ovl->bread+1);
         if (COMP(ovl->flags))
-          printf(" c\n");
+          printf(" c");
         else
-          printf(" n\n");
+          printf(" n");
+        if (CHAIN_NEXT(ovl->flags))
+          printf(" -");
+        else if (BEST_CHAIN(ovl->flags))
+          printf(" >");
+        else if (CHAIN_START(ovl->flags))
+          printf(" +");
+        else
+          printf(" .");
+        printf("\n");
 
         if (DOCOORDS)
           printf("C %d %d %d %d\n",ovl->path.abpos,ovl->path.aepos,ovl->path.bbpos,ovl->path.bepos);

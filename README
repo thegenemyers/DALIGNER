@@ -44,9 +44,10 @@ in the data set.  The alignment records are parsimonious in that they do not rec
 alignment but simply a set of trace points, typically every 100bp or so, that allow the
 efficient reconstruction of alignments on demand.
 
-1. daligner [-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
-                    [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>]
-                    [-m<track>]+ <subject:db|dam> <target:db|dam> ...
+1. daligner [-vbAI]
+       [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
+       [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
+       [-m<track>]+ <subject:db|dam> <target:db|dam> ...
 
 Compare sequences in the trimmed <subject> block against those in the list of <target>
 blocks searching for local alignments involving at least -l base pairs (default 1000)
@@ -55,7 +56,9 @@ alignments found will be output in a sparse encoding where a trace point on the
 alignment is recorded every -s base pairs of the a-read (default 100bp). Reads are
 compared in both orientations and local alignments meeting the criteria are output to
 one of several created files described below.  The -v option turns on a verbose
-reporting mode that gives statistics on each major step of the computation.  
+reporting mode that gives statistics on each major step of the computation.  The
+program runs with 4 threads by default, but this may be set to any power of 2 with
+the -T option.
 
 The options -k, -h, and -w control the initial filtration search for possible matches
 between reads.  Specifically, our search code looks for a pair of diagonal bands of
@@ -102,10 +105,10 @@ whose name is of the form X.Y.[C|N]#.las where C indicates that the b-reads are
 complemented and N indicates they are not (both comparisons are performed) and # is
 the thread that detected and wrote out the collection of alignments contained in the
 file.  That is the file X.Y.O#.las contains the alignments produced by thread # for
-which the a-read is from X and the b-read is from Y and in orientation O.  The command
-"daligner -A X Y" produces 2*NTHREAD thread files X.Y.?.las and "daligner X Y"
-produces 4*NTHREAD files X.Y.?.las and Y.X.?.las (unless X=Y in which case only
-NTHREAD files, X.X.?.las, are produced).
+which the a-read is from X and the b-read is from Y and in orientation O.  If T is 
+the number of threads, the command "daligner -A X Y" produces 2T thread files
+X.Y.?.las and "daligner X Y" produces 4T files X.Y.?.las and Y.X.?.las (unless X=Y
+in which case only T files, X.X.?.las, are produced).
 
 By default daligner compares all overlaps between reads in the database that are
 greater than the minimum cutoff set when the DB or DBs were split, typically 1 or
@@ -131,6 +134,11 @@ to a file named <align>.S.las (assuming that the input file was <align>.las). Wi
 -a option is set then it sorts LAs in lexicographical order of (a,ab) alone, which is
 desired when sorting a mapping of reads to a reference.
 
+If the .las file was produced by damapper the local alignments are organized into
+chains where the LA segments of a chain are consecutive and ordered in the file.
+LAsort can detects that it has been passed such a file and if so treats the chains as
+a unit and sorts them on the basis of the first LA in the chain.
+
 
 3. LAmerge [-va] <merge:las> <parts:las> ...
 
@@ -140,6 +148,10 @@ that  the input <parts> files are sorted. Due to operating system limits, the nu
 records read and written.  The -a option indicates the sort is as describe for LAsort
 above.
 
+If the .las file was produced by damapper the local alignments are organized into
+chains where the LA segments of a chain are consecutive and ordered in the file.  When
+merging such files, LAmerge treats the chains as a unit and orders them on the basis
+of the first LA in the chain.
 
 Used correctly, LAmerge and LAsort together allow one to perform an "external" sort
 that produces a collection of sorted files containing in aggregate all the local
@@ -216,6 +228,24 @@ indicate the lengths of the unaligned bits left and right of the two aligned int
 Finally, observe that in the cartoon the numbers are not coordinates but rather indicate
 the lengths of the unaligned bits left and right of the two aligned intervals.
 
+With the introduction of damapper, .las files can now contain chains.  If LAshow detects
+that it has been passed a file with chain information then it displays marks at the left
+that reveal the chain structure, e.g.:
+
+   >     117   37,630 c   [   253.. 7,980] x [   331,430..   324,027]  ~  10.5%
+   +     117   37,628 n   [   253.. 7,983] x [21,493,673..21,501,079]  ~  10.6%
+   +     117       57 c   [   253.. 1,086] x [ 2,008,164.. 2,007,369]  ~   9.8%
+    -    117       57 c   [ 1,300.. 7,982] x [ 2,007,351.. 2,000,945]  ~  10.7%
+   >     117       15 c   [ 7,992.. 8,716] x [   242,529..   241,822]  ~   7.8%
+    -    117       15 c   [ 8,752..14,299] x [   241,824..   236,425]  ~  10.7%
+    -    117       15 c   [14,133..14,832] x [   236,630..   235,953]  ~  12.1%
+   +     117   37,628 n   [ 7,992.. 8,716] x [19,202,357..19,203,064]  ~   7.7%
+    -    117   37,628 n   [ 8,752..14,832] x [19,203,062..19,208,974]  ~  10.9%
+
+A chain begins with either a > or + character, where > indicates this is the highest
+scoring chain and + indicates an alternate near optimal chain (controlled by the
+-n parameter to damapper).  Each additional LA of a chain is marked with a - character.
+
 
 5. LAdump [-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ]
                       <align:las> [ <reads:FILE> | <reads:range> ... ]
@@ -237,7 +267,9 @@ point intervals in the LA and is immediately followed by that many lines contain
 a pair of integers giving the # of differences and b-displacement in each successive
 trace point interval.
 
-    P #a #b #o        - (#a,#b^#o) have an LA between them where #o is 'n' or 'c'
+    P #a #b #o #c     - (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and
+                        #c is '>' (start of best chain), '+' (start of alternate chain),
+                        '-' (continuation of chain), or '.' (no chains in file)
     C #ab #ae #bb #be - #a[#ab,#ae] aligns with #b^#o[#bb,#be]
     D #               - there are # differences in the LA
     T #n              - there are #n trace point intervals for the LA
@@ -255,6 +287,7 @@ the maximum number of trace point intervals (X=T) in a given *pile* (collection 
 LAs all with the same a-read (applies only to sorted .las files).  Finally @ T #
 gives the maximum # of trace point intervals in any trace within the file.
 
+
 6. LAindex -v <source:las> ...
 
 LAindex takes a series of one or more sorted .las files and produces a "pile
@@ -267,6 +300,7 @@ with the first A-read in the file (which may not be read 0). The index is meant
 to allow programs that process piles to more efficiently read just the piles
 they need at any momment int time, as opposed to having to sequentially scan
 through the .las file.
+
 
 7. LAcat [-v] <source:las> > <target>.las
 
@@ -305,12 +339,16 @@ file is OK or reporting the first error.  If the -v option is not set then the p
 runs silently.  The exit status is 0 if every file is deemed good, and 1 if at least
 one of the files looks corrupted.
 
+With the introduction of damapper, LAcheck checks to see if a file has chain
+information, and if it does, then it checks the validity of chains and assumes that
+the chains were sorted with the -a option to LAsort and LAmerge.
+
 
 10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)]
-                         [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-m<track>]+
-                       ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-AI] [-H<int>]
-                         [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
-                         [-f<name>] <reads:db|dam> [<first:int>[-<last:int>]]
+                    [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]
+                  ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-AI] [-H<int>]
+                    [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
+                    [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]
 
 HPC.daligner writes a UNIX shell script to the standard output or to a series of files
 beginning with the prefix <name> if the -f option is set, that either performs an
@@ -334,8 +372,8 @@ these parameters are as for daligner. The -v and -a flags are passed to all call
 LAsort and LAmerge. All other options are described later. For a database divided into
 N sub-blocks, the calls to daligner will produce in total 2TN^2 .las files assuming
 daligner runs with T threads. These will then be sorted and merged into N^2 sorted .las
-files, one for each block pair. These are then merged in ceil(log_deg N) phases where
-the number of files decreases geometrically in -deg until there is 1 file per row of
+files, one for each block pair. These are then merged in ceil(log_D N) phases where
+the number of files decreases geometrically in -D until there is 1 file per row of
 the N x N block matrix. So at the end one has N sorted .las files that when
 concatenated would give a single large sorted overlap file.
 
@@ -343,8 +381,9 @@ The -B option (default 4) gives the desired number of block comparisons per call
 daligner. Some must contain B-1 comparisons, and the first B-2 block comparisons
 even less, but the HPCdaligner "planner" does the best it can to give an average load
 of dal block comparisons per command. The -D option (default 250) gives the maximum
-number of files that will be merged in a single LAmerge command. The planner makes the
-most even k-ary tree of merges, where the number of levels is ceil(log_deg N).
+number of files that will be merged in a single LAmerge command.  The planner performs
+D-way merges at all of the ceil(logD N) levels save the last, so as to minimize the
+number of intermediate files.
 
 If the integers <first> and <last> are missing then the script produced is for every
 block in the database.  If <first> is present then HPCdaligner produces an incremental
@@ -400,11 +439,11 @@ CHECK blocks.
 A new -d option requests scripts that organize files into a collection of
 sub-directories so as not to overwhelm the underlying OS for large genomes.  Recall
 that for a DB divided into N blocks, the daligner will produce 2N2T .las-files where
-T is the number of threads daligner was compiled with.  With the -d option set, N
-sub-directories (with respect to the directory HPC.daligner is called in) of the
-form "work<i>" for i from 1 to N are created in an initial command block, and then
-all work files are placed in those sub-directories, with a maximum of N(2T+1) files
-appearing in any sub-directory at any given point in the process.
+T is the number of threads specified optionally with the -T option (default 4).  With
+the -d option set, N sub-directories (with respect to the directory HPC.daligner is
+called in) of the form "work<i>" for i from 1 to N are created in an initial command
+block, and then all work files are placed in those sub-directories, with a maximum
+of N(2T+1) files appearing in any sub-directory at any given point in the process.
 
 Example:
 

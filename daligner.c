@@ -50,7 +50,7 @@
 
 static char *Usage[] =
   { "[-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]",
-    "        [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-H<int>]",
+    "        [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-H<int>] [-T<int(4)>]",
     "        [-m<track>]+ <subject:db|dam> <target:db|dam> ...",
   };
 
@@ -535,6 +535,7 @@ int main(int argc, char *argv[])
   int    HIT_MIN;
   double AVE_ERROR;
   int    SPACING;
+  int    NTHREADS;
 
   { int    i, j, k;
     int    flags[128];
@@ -550,6 +551,7 @@ int main(int argc, char *argv[])
     AVE_ERROR = .70;
     SPACING   = 100;
     MINOVER   = 1000;    //   Globally visible to filter.c
+    NTHREADS  = 4;
 
     MEM_PHYSICAL = getMemorySize();
     MEM_LIMIT    = MEM_PHYSICAL;
@@ -622,6 +624,9 @@ int main(int argc, char *argv[])
               }
             MASK[MTOP++] = argv[i]+2;
             break;
+          case 'T':
+            ARG_POSITIVE(NTHREADS,"Number of threads")
+            break;
         }
       else
         argv[j++] = argv[i];
@@ -644,7 +649,7 @@ int main(int argc, char *argv[])
   }
 
   MINOVER *= 2;
-  if (Set_Filter_Params(KMER_LEN,BIN_SHIFT,MAX_REPS,HIT_MIN))
+  if (Set_Filter_Params(KMER_LEN,BIN_SHIFT,MAX_REPS,HIT_MIN,NTHREADS))
     { fprintf(stderr,"Illegal combination of filter parameters\n");
       exit (1);
     }
