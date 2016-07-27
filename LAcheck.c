@@ -125,9 +125,10 @@ int main(int argc, char *argv[])
       { char     *pwd, *root;
         FILE     *input;
         char     *iptr, *itop;
-        Overlap   last;
+        Overlap   last, prev;
         int64     novl;
         int       tspace, tbytes;
+        int       has_chains;
 
         //  Establish IO and (novl,tspace) header
 
@@ -166,6 +167,7 @@ int main(int argc, char *argv[])
         last.flags =  0;
         last.path.bbpos = last.path.abpos = 0;
         last.path.bepos = last.path.aepos = 0;
+        prev = last;
         for (j = 0; j < novl; j++)
           { Overlap ovl;
             int     tsize;
@@ -238,34 +240,74 @@ int main(int argc, char *argv[])
             if (Check_Trace_Points(&ovl,tspace,VERBOSE,root))
               goto error;
 
+            if (j == 0)
+              has_chains = ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0);
+            if (has_chains)
+              { if ((ovl.flags & (START_FLAG | NEXT_FLAG)) == 0)
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: LA has both start & next flag set\n",root);
+                    goto error;
+                  }
+                if (BEST_CHAIN(ovl.flags) && CHAIN_NEXT(ovl.flags))
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: LA has both best & next flag set\n",root);
+                    goto error;
+                  }
+              }
+            else
+              { if ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0)
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: LAs should not have chain flags\n",root);
+                    goto error;
+                  }
+              }
+
             //  Duplicate check and sort check if -S set
 
             equal = 0;
             if (SORTED)
-              { if (ovl.aread > last.aread) goto inorder;
-                if (ovl.aread == last.aread)
-                  { if (ovl.bread > last.bread) goto inorder;
-                    if (ovl.bread == last.bread)
-                      { if (COMP(ovl.flags) > COMP(last.flags)) goto inorder;
-                        if (COMP(ovl.flags) == COMP(last.flags))
-                          { if (ovl.path.abpos > last.path.abpos) goto inorder;
-                            if (ovl.path.abpos == last.path.abpos)
-                              { equal = 1;
-                                goto inorder;
+              { if (CHAIN_NEXT(ovl.flags) || !has_chains)
+                  { if (ovl.aread > last.aread) goto inorder;
+                    if (ovl.aread == last.aread)
+                      { if (ovl.bread > last.bread) goto inorder;
+                        if (ovl.bread == last.bread)
+                          { if (COMP(ovl.flags) > COMP(last.flags)) goto inorder;
+                            if (COMP(ovl.flags) == COMP(last.flags))
+                              { if (ovl.path.abpos > last.path.abpos) goto inorder;
+                                if (ovl.path.abpos == last.path.abpos)
+                                  { equal = 1;
+                                    goto inorder;
+                                  }
                               }
                           }
                       }
+                    if (VERBOSE)
+                      { if (CHAIN_NEXT(ovl.flags))
+                          fprintf(stderr,"  %s: Chain is not valid (%d vs %d)\n",
+                                         root,ovl.aread+1,ovl.bread+1);
+                        else
+                          fprintf(stderr,"  %s: Reads are not sorted (%d vs %d)\n",
+                                         root,ovl.aread+1,ovl.bread+1);
+                      }
+                    goto error;
                   }
-                if (VERBOSE)
-                  fprintf(stderr,"  %s: Reads are not sorted (%d vs %d)\n",
-                                 root,ovl.aread+1,ovl.bread+1);
-                goto error;
+                else
+                  { if (ovl.aread > prev.aread) goto inorder;
+                    if (ovl.aread == prev.aread)
+                      { if (ovl.path.abpos > prev.path.abpos) goto inorder;
+                        if (ovl.path.abpos == prev.path.abpos)
+                          goto dupcheck;
+                      }
+                    if (VERBOSE)
+                      fprintf(stderr,"  %s: Chains are not sorted (%d vs %d)\n",
+                                     root,ovl.aread+1,ovl.bread+1);
+                    goto error;
+                  }
               }
-            else
-              { if (ovl.aread == last.aread && ovl.bread == last.bread &&
-                    COMP(ovl.flags) == COMP(last.flags) && ovl.path.abpos == last.path.abpos)
-                  equal = 1;
-              }
+          dupcheck:
+            if (ovl.aread == last.aread && ovl.bread == last.bread &&
+                COMP(ovl.flags) == COMP(last.flags) && ovl.path.abpos == last.path.abpos)
+              equal = 1;
           inorder:
             if (equal)
               { if (ovl.path.aepos == last.path.aepos &&
@@ -279,6 +321,8 @@ int main(int argc, char *argv[])
               }
 
             last = ovl;
+            if (CHAIN_START(ovl.flags))
+              prev = ovl;
           }
 
         //  File processing epilog: Check all data read and print OK if -v

@@ -28,10 +28,7 @@ extern int    IDENTITY;
 extern uint64 MEM_LIMIT;
 extern uint64 MEM_PHYSICAL;
 
-#define NTHREADS  4    //  Must be a power of 2
-#define NSHIFT    2    //  log_2 NTHREADS
-
-int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin); 
+int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nthreads); 
 
 void *Sort_Kmers(HITS_DB *block, int *len);
 

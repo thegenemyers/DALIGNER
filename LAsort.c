@@ -55,7 +55,15 @@ static int SORT_OVL(const void *x, const void *y)
 
   pl = ol->path.abpos;
   pr = or->path.abpos;
-  return (pl-pr);
+  if (pl != pr)
+    return (pl-pr);
+
+  if (ol < or)
+    return (-1);
+  else if (ol > or)
+    return (1);
+  else
+    return (0);
 }
 
 static int SORT_MAP(const void *x, const void *y)
@@ -76,11 +84,19 @@ static int SORT_MAP(const void *x, const void *y)
 
   pl = ol->path.abpos;
   pr = or->path.abpos;
-  return (pl-pr);
+  if (pl != pr)
+    return (pl-pr);
+
+  if (ol < or)
+    return (-1);
+  else if (ol > or)
+    return (1);
+  else
+    return (0);
 }
 
 int main(int argc, char *argv[])
-{ char     *iblock, *fblock;
+{ char     *iblock, *fblock, *iend;
   int64     isize,   osize;
   int64     ovlsize, ptrsize;
   int       tspace, tbytes;
@@ -125,7 +141,7 @@ int main(int argc, char *argv[])
   for (i = 1; i < argc; i++)
     { int64    *perm;
       FILE     *input, *foutput;
-      int64     novl;
+      int64     novl, sov;
 
       //  Read in the entire file and output header
 
@@ -188,6 +204,7 @@ int main(int argc, char *argv[])
               SYSTEM_ERROR
           }
         fclose(input);
+        iend = iblock + (size - ptrsize);
       }
 
       //  Set up unsorted permutation array
@@ -199,10 +216,22 @@ int main(int argc, char *argv[])
       { int64 off;
         int   j;
 
-        off = -ptrsize;
-        for (j = 0; j < novl; j++)
-          { perm[j] = off;
-            off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+        if (CHAIN_START(((Overlap *) (iblock-ptrsize))->flags))
+          { sov = 0;
+            off = -ptrsize;
+            for (j = 0; j < novl; j++)
+              { if (CHAIN_START(((Overlap *) (iblock+off))->flags))
+                  perm[sov++] = off;
+                off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+              }
+          }
+        else
+          { off = -ptrsize;
+            for (j = 0; j < novl; j++)
+              { perm[j] = off;
+                off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+              }
+            sov = novl;
           }
       }
 
@@ -210,31 +239,35 @@ int main(int argc, char *argv[])
 
       IBLOCK = iblock;
       if (MAP_ORDER)
-        qsort(perm,novl,sizeof(int64),SORT_MAP);
+        qsort(perm,sov,sizeof(int64),SORT_MAP);
       else
-        qsort(perm,novl,sizeof(int64),SORT_OVL);
+        qsort(perm,sov,sizeof(int64),SORT_OVL);
 
       //  Output the records in sorted order
 
       { int      j;
         Overlap *w;
         int64    tsize, span;
-        char    *fptr, *ftop;
+        char    *fptr, *ftop, *wo;
 
         fptr = fblock;
         ftop = fblock + osize;
-        for (j = 0; j < novl; j++)
-          { w = (Overlap *) (iblock+perm[j]);
-            tsize = w->path.tlen*tbytes;
-            span  = ovlsize + tsize;
-            if (fptr + span > ftop)
-              { fwrite(fblock,1,fptr-fblock,foutput);
-                fptr = fblock;
+        for (j = 0; j < sov; j++)
+          { w = (Overlap *) (wo = iblock+perm[j]);
+            do
+              { tsize = w->path.tlen*tbytes;
+                span  = ovlsize + tsize;
+                if (fptr + span > ftop)
+                  { fwrite(fblock,1,fptr-fblock,foutput);
+                    fptr = fblock;
+                  }
+                memcpy(fptr,((char *) w)+ptrsize,ovlsize);
+                fptr += ovlsize;
+                memcpy(fptr,(char *) (w+1),tsize);
+                fptr += tsize;
+                w = (Overlap *) (wo += span);
               }
-            memcpy(fptr,((char *) w)+ptrsize,ovlsize);
-            fptr += ovlsize;
-            memcpy(fptr,(char *) (w+1),tsize);
-            fptr += tsize;
+            while (wo < iend && CHAIN_NEXT(w->flags));
           }
         if (fptr > fblock)
           fwrite(fblock,1,fptr-fblock,foutput);
