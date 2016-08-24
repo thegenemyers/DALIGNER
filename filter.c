@@ -1270,7 +1270,7 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
     }
 
   if (jpath->aepos == kpath->aepos)
-    { i = abs(y2-b2);
+    { i = abs(jpath->bepos-kpath->bepos);
       if (i <= min)
         { min = i;
           if (i == 0)

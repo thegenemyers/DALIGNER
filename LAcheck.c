@@ -162,6 +162,7 @@ int main(int argc, char *argv[])
 
         //  For each record in file do
 
+        has_chains = 0;
         last.aread = -1;
         last.bread = -1;
         last.flags =  0;
