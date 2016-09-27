@@ -50,4 +50,4 @@ install:
 
 package:
 	make clean
-	tar -zcf daligner.tar.gz README Makefile *.h *.c
+	tar -zcf daligner.tar.gz README.md Makefile *.h *.c

@@ -517,6 +517,22 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
   return (cblock);
 }
 
+static char *CommandBuffer(char *aname, char *bname)
+{ static char *cat = NULL;
+  static int   max = -1;
+  int len;
+
+  len = 2*(strlen(aname) + strlen(bname)) + 200;
+  if (len > max)
+    { max = ((int) (1.2*len)) + 100;
+      if ((cat = (char *) realloc(cat,max+1)) == NULL)
+        { fprintf(stderr,"%s: Out of memory (Making path name)\n",Prog_Name);
+          exit (1);
+        }
+    }
+  return (cat);
+}
+
 int main(int argc, char *argv[])
 { HITS_DB    _ablock, _bblock;
   HITS_DB    *ablock = &_ablock, *bblock = &_bblock;
@@ -667,7 +683,8 @@ int main(int argc, char *argv[])
 
   /* Compare against reads in B in both orientations */
 
-  { int i, j;
+  { int   i, j;
+    char *command;
 
     aindex = NULL;
     broot  = NULL;
@@ -680,6 +697,8 @@ int main(int argc, char *argv[])
             else
               broot = Root(bfile,".db");
           }
+        else
+          broot = aroot;
 
         if (i == 2)
           { for (j = 0; j < MTOP; j++)
@@ -696,7 +715,7 @@ int main(int argc, char *argv[])
             aindex = Sort_Kmers(ablock,&alen);
           }
 
-        if (strcmp(afile,bfile) != 0)
+        if (aroot != broot)
           { if (VERBOSE)
               printf("\nBuilding index for %s\n",broot);
             bindex = Sort_Kmers(bblock,&blen);
@@ -707,8 +726,6 @@ int main(int argc, char *argv[])
               printf("\nBuilding index for c(%s)\n",broot);
             bindex = Sort_Kmers(bblock,&blen);
             Match_Filter(aroot,ablock,broot,bblock,aindex,alen,bindex,blen,1,asettings);
-
-            free(broot);
           }
         else
           { Match_Filter(aroot,ablock,aroot,ablock,aindex,alen,aindex,alen,0,asettings);
@@ -724,6 +741,38 @@ int main(int argc, char *argv[])
           }
 
         Close_DB(bblock);
+
+        command = CommandBuffer(aroot,broot);
+
+        sprintf(command,"LAsort /tmp/%s.%s.[CN]*.las",aroot,broot);
+        if (VERBOSE)
+          printf("\n%s\n",command);
+        system(command);
+        sprintf(command,"LAmerge %s.%s.las /tmp/%s.%s.[CN]*.S.las",aroot,broot,aroot,broot);
+        if (VERBOSE)
+          printf("%s\n",command);
+        system(command);
+        sprintf(command,"rm /tmp/%s.%s.[CN]*.las",aroot,broot);
+        if (VERBOSE)
+          printf("%s\n",command);
+        system(command);
+        if (aroot != broot && SYMMETRIC)
+          { sprintf(command,"LAsort /tmp/%s.%s.[CN]*.las",broot,aroot);
+            if (VERBOSE)
+              printf("%s\n",command);
+            system(command);
+            sprintf(command,"LAmerge %s.%s.las /tmp/%s.%s.[CN]*.S.las",broot,aroot,broot,aroot);
+            if (VERBOSE)
+              printf("%s\n",command);
+            system(command);
+            sprintf(command,"rm /tmp/%s.%s.[CN]*.las",broot,aroot);
+            if (VERBOSE)
+              printf("%s\n",command);
+            system(command);
+          }
+
+        if (aroot != broot)
+          free(broot);
       }
   }
 

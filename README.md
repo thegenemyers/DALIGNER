@@ -1,42 +1,16 @@
+# Daligner: The Dazzler \"Overlap\" Module
 
+## _Author:  Gene Myers_
+## _First:   April 10, 2016_
 
+For typeset documentation, examples of use, and design philosophy please go to
+my [blog](https://dazzlerblog.wordpress.com/command-guides/damasker-commands).
 
-*** PLEASE GO TO THE DAZZLER BLOG (https://dazzlerblog.wordpress.com) FOR TYPESET ***
-         DOCUMENTATION, EXAMPLES OF USE, AND DESIGN PHILOSOPHY.
-
-
-/************************************************************************************\
-
-UPGRADE & DEVELOPER NOTES ! ! !
-
-  If you have already performed a big comparison and don't want to recompute all your
-local alignments in .las files, but do want to use a more recent version of the
-software that entails a change to the data structures (currently the update on
-December 31, 2014), please note the routine LAupgrade.Dec.31.2014.  This take a .las file,
-say X.las, as an argument, and writes to standard output the .las file in the new
-format.
-
-  The program can be made with "make" but is not by default created when make is
-called without an argument.
-
-  For those interested in the details, on December 30, the "alen" and "blen" fields
-were dropped to save space as they can always be gotten from the underlying DB.
-
-\************************************************************************************/
-
-
-                      The Daligner Overlap Library
-
-                                      Author:  Gene Myers
-                                      First:   July 17, 2013
-                                      Current: April 10, 2016
-
-
-  The commands below permit one to find all significant local alignments between reads
+The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
 long read sequencer.  That is the reads are long and noisy, up to 15% on average.
 
-  Recall that a database has a current partition that divides it into blocks of a size
+Recall that a database has a current partition that divides it into blocks of a size
 that can conveniently be handled by calling the "dalign" overlapper on all the pairs of
 blocks producing a collection of .las local alignment files that can then be sorted and
 merged into an ordered sequence of sorted files containing all alignments between reads
@@ -44,12 +18,14 @@ in the data set.  The alignment records are parsimonious in that they do not rec
 alignment but simply a set of trace points, typically every 100bp or so, that allow the
 efficient reconstruction of alignments on demand.
 
+```
 1. daligner [-vbAI]
        [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
        [-m<track>]+ <subject:db|dam> <target:db|dam> ...
+```
 
-Compare sequences in the trimmed <subject> block against those in the list of <target>
+Compare sequences in the trimmed \<subject\> block against those in the list of \<target\>
 blocks searching for local alignments involving at least -l base pairs (default 1000)
 or more, that have an average correlation rate of -e (default 70%).  The local
 alignments found will be output in a sparse encoding where a trace point on the
@@ -62,13 +38,13 @@ the -T option.
 
 The options -k, -h, and -w control the initial filtration search for possible matches
 between reads.  Specifically, our search code looks for a pair of diagonal bands of
-width 2^w (default 2^6 = 64) that contain a collection of exact matching k-mers
+width 2<sup>w</sup> (default 2<sup>6</sup> = 64) that contain a collection of exact matching k-mers
 (default 14) between the two reads, such that the total number of bases covered by the
 k-mer hits is h (default 35). k cannot be larger than 32 in the current implementation.
 If the -b option is set, then the daligner assumes the data has a strong compositional
 bias (e.g. >65% AT rich), and at the cost of a bit more time, dynamically adjusts k-mer
 sizes depending on compositional bias, so that the mers used have an effective
-specificity of 4^k.
+specificity of 4<sup>k</sup>.
 
 If there are one or more interval tracks specified with the -m option, then the reads
 of the DB or DB's to which the mask applies are soft masked with the union of the
@@ -89,26 +65,19 @@ use less, say only 8Gb on a 24Gb HPC cluster node because you want to run 3 dali
 jobs on the node, then specify -M8.  Specifying -M0 basically indicates that you do not
 want daligner to self adjust k-mer suppression to fit within a given amount of memory.
 
-For each subject, target pair of blocks, say X and Y, the program reports alignments
-where the a-read is in X and the b-read is in Y, and vice versa.  However, if the -A
-option is set ("A" for "asymmetric") then just overlaps where the a-read is in X and
-the b-read is in Y are reported, and if X = Y, then it further reports only those
-overlaps where the a-read index is less than the b-read index.  In either case, if the
--I option is set ("I" for "identity") then when X = Y, overlaps between different
-portions of the same read will also be found and reported.
-
 Each found alignment is recorded as -- a[ab,ae] x bo[bb,be] -- where a and b are the
 indices (in the trimmed DB) of the reads that overlap, o indicates whether the b-read
 is from the same or opposite strand, and [ab,ae] and [bb,be] are the intervals of a
-and bo, respectively, that align.  The program places these alignment records in files
-whose name is of the form X.Y.[C|N]#.las where C indicates that the b-reads are
-complemented and N indicates they are not (both comparisons are performed) and # is
-the thread that detected and wrote out the collection of alignments contained in the
-file.  That is the file X.Y.O#.las contains the alignments produced by thread # for
-which the a-read is from X and the b-read is from Y and in orientation O.  If T is 
-the number of threads, the command "daligner -A X Y" produces 2T thread files
-X.Y.?.las and "daligner X Y" produces 4T files X.Y.?.las and Y.X.?.las (unless X=Y
-in which case only T files, X.X.?.las, are produced).
+and bo, respectively, that align.  For each subject, target pair of blocks, say X and Y,
+the program reports alignments where the a-read is in X and the b-read is in Y, or
+vice versa.  However, if the -A option is set ("A" for "asymmetric") then just overlaps
+where the a-read is in X and the b-read is in Y are reported, and if X = Y then it
+further reports only those overlaps where the a-read index is less than the b-read index.
+In either case, if the -I option is set ("I" for "identity") then when X = Y, overlaps
+between different portions of the same read will also be found and reported.  In summary,
+the command "daligner -A X Y" produces a single file X.Y..las and "daligner X Y" produces
+2 files X.Y..las and Y.X.las (unless X=Y in which case only a single file, X.X.las, is
+produced).  The overlap records in one of these files are sorted as described for LAsort.
 
 By default daligner compares all overlaps between reads in the database that are
 greater than the minimum cutoff set when the DB or DBs were split, typically 1 or
@@ -123,13 +92,14 @@ example, for mapping applications against .dams we run "daligner -k20 -h60 -e.85
 on corrected reads, we typically run "daligner -k25 -w5 -h60 -e.95 -s500" and at
 these settings it is very fast.
 
-
+```
 2. LAsort [-va] <align:las> ...
+```
 
 Sort each .las alignment file specified on the command line. For each file it reads in
 all the overlaps in the file and sorts them in lexicographical order of (a,b,o,ab)
-assuming each alignment is recorded as a[ab,ae] x b^o[bb,be]. It then writes them all
-to a file named <align>.S.las (assuming that the input file was <align>.las). With the
+assuming each alignment is recorded as a[ab,ae] x b<sup>o</sup>[bb,be]. It then writes them all
+to a file named \<align\>.S.las (assuming that the input file was \<align\>.las). With the
 -v option set then the program reports the number of records read and written. If the
 -a option is set then it sorts LAs in lexicographical order of (a,ab) alone, which is
 desired when sorting a mapping of reads to a reference.
@@ -139,12 +109,13 @@ chains where the LA segments of a chain are consecutive and ordered in the file.
 LAsort can detects that it has been passed such a file and if so treats the chains as
 a unit and sorts them on the basis of the first LA in the chain.
 
-
+```
 3. LAmerge [-va] <merge:las> <parts:las> ...
+```
 
-Merge the .las files <parts> into a singled sorted file <merge>, where it is assumed
-that  the input <parts> files are sorted. Due to operating system limits, the number of
-<parts> files must be <= 252.  With the -v option set the program reports the # of
+Merge the .las files \<parts\> into a singled sorted file \<merge\>, where it is assumed
+that  the input \<parts\> files are sorted. Due to operating system limits, the number of
+\<parts\> files must be <= 252.  With the -v option set the program reports the # of
 records read and written.  The -a option indicates the sort is as describe for LAsort
 above.
 
@@ -161,10 +132,11 @@ alignments for a given a-read will be found consecutively in one of the files.  
 computations that need to look at all the alignments for a given read can operate in
 simple sequential scans of these sorted files.
 
-
+```
 4. LAshow [-caroUF] [-i<int(4)>] [-w<int(100)>] [-b<int(10)>]
                     <src1:db|dam> [ <src2:db|dam> ]
                     <align:las> [ <reads:FILE> | <reads:range> ... ]
+```
 
 LAshow produces a printed listing of the local alignments contained in the specified
 .las file, where the a- and b-reads come from src1 or from src1 and scr2, respectively.
@@ -195,6 +167,7 @@ the e-b bases from the b'th to the e-1'st, inclusive.  We give an example with a
 and (part of an) alignment for which we will explain several additional
 important points:
 
+```
       1    1,865 c   [18,479..20,216] x [ 1,707..     0>  ( 19 trace pts)
 
       18479              4235
@@ -211,6 +184,7 @@ important points:
    1669 gccggtgcgtcgcagtgg-gagt-c-gtcag--cgctggggcttcgaaat  24.0%
 
         . . .
+```
 
 The display of an LA always begins with a line giving the A-read, then the B-read, then
 an indication of orientation (i.e. are A and B from the same strand (n) or the opposite
@@ -221,7 +195,7 @@ the highest base down to the lowest base in the descending direction on B, compl
 the characters as you go.  Further note that in the alignment display the coordinates at
 the start of each line follow this orientation convention and give the coordinate of the
 "tick mark" just left of the first character in each line.  It is useful to know if an
-interval reaches the end of read, and to signal this we use an angle-bracket <> instead
+interval reaches the end of read, and to signal this we use an angle-bracket \<\> instead
 of a square bracket [], e.g. in the example the B-segment starts at the beginning of the
 read.  Finally, observe that in the cartoon the numbers are not coordinates but rather
 indicate the lengths of the unaligned bits left and right of the two aligned intervals.
@@ -232,6 +206,7 @@ With the introduction of damapper, .las files can now contain chains.  If LAshow
 that it has been passed a file with chain information then it displays marks at the left
 that reveal the chain structure, e.g.:
 
+```
    >     117   37,630 c   [   253.. 7,980] x [   331,430..   324,027]  ~  10.5%
    +     117   37,628 n   [   253.. 7,983] x [21,493,673..21,501,079]  ~  10.6%
    +     117       57 c   [   253.. 1,086] x [ 2,008,164.. 2,007,369]  ~   9.8%
@@ -241,14 +216,16 @@ that reveal the chain structure, e.g.:
     -    117       15 c   [14,133..14,832] x [   236,630..   235,953]  ~  12.1%
    +     117   37,628 n   [ 7,992.. 8,716] x [19,202,357..19,203,064]  ~   7.7%
     -    117   37,628 n   [ 8,752..14,832] x [19,203,062..19,208,974]  ~  10.9%
+```
 
 A chain begins with either a > or + character, where > indicates this is the highest
 scoring chain and + indicates an alternate near optimal chain (controlled by the
 -n parameter to damapper).  Each additional LA of a chain is marked with a - character.
 
-
+```
 5. LAdump [-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ]
                       <align:las> [ <reads:FILE> | <reads:range> ... ]
+```
 
 Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
 piles in an .las file and select which information to show about them.  The difference
@@ -267,6 +244,7 @@ point intervals in the LA and is immediately followed by that many lines contain
 a pair of integers giving the # of differences and b-displacement in each successive
 trace point interval.
 
+```
     P #a #b #o #c     - (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and
                         #c is '>' (start of best chain), '+' (start of alternate chain),
                         '-' (continuation of chain), or '.' (no chains in file)
@@ -278,6 +256,7 @@ trace point interval.
     + X #             - Total amount of X (X = P or T)
     % X #             - Maximum amount of X in any pile (X = P or T)
     @ T #             - Maximum number of trace points in any trace
+```
 
 1-code lines that begin with +, %, or @ are always the first lines in the output.
 They give size information about what is contained in the output.  Specifically,
@@ -287,8 +266,9 @@ the maximum number of trace point intervals (X=T) in a given *pile* (collection 
 LAs all with the same a-read (applies only to sorted .las files).  Finally @ T #
 gives the maximum # of trace point intervals in any trace within the file.
 
-
+```
 6. LAindex -v <source:las> ...
+```
 
 LAindex takes a series of one or more sorted .las files and produces a "pile
 index" for each one.  If the input file has name "X.las", then the name of its
@@ -301,33 +281,36 @@ to allow programs that process piles to more efficiently read just the piles
 they need at any momment int time, as opposed to having to sequentially scan
 through the .las file.
 
-
+```
 7. LAcat [-v] <source:las> > <target>.las
+```
 
-Given template name <source> that contains a single #-sign somewhere within it,
+Given template name \<source\> that contains a single #-sign somewhere within it,
 find all files that match it when the # is replace by i for i in 1,2,3,...  and
 a .las extension is added if not present.  Then concatenate these files in order
 into a single .las file and pipe the result to the standard output.  The -v
 option reports the files concatenated and the number of la's within them to
 standard error (as the standard output receives the concatenated file).
 
-
+```
 8. LAsplit [-v] <target:las> (<parts:int> | <path:db|dam>) < <source>.las
+```
 
-If the second argument is an integer n, then divide the alignment file <source>, piped
+If the second argument is an integer n, then divide the alignment file \<source\>, piped
 in through the standard input, as evenly as possible into n alignment files with the
-names specified by template <target>, subject to the restriction that all alignment
+names specified by template \<target\>, subject to the restriction that all alignment
 records for a given a-read are in the same file.  The name of the n files is the
-string <target> where the single #-sign that occurs somewhere in it is replaced
+string \<target\> where the single #-sign that occurs somewhere in it is replaced
 by i for i in [1,n] and a .las extension is added if necessary.
 
-If the second argument refers to a database <path>.db that has been partitioned, then
+If the second argument refers to a database \<path\>.db that has been partitioned, then
 divide the input alignment file into block .las files where all records whose a-read is
-in <path>.i.db are in the i'th file generated from the template <target>.  The -v
+in \<path\>.i.db are in the i'th file generated from the template \<target\>.  The -v
 option reports the files produced and the number of la's within them to standard error.
 
-
+```
 9. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
+```
 
 LAcheck checks each .las file for structural integrity, where the a- and b-sequences
 come from src1 or from src1 and scr2, respectively.  That is, it makes sure each file
@@ -343,23 +326,24 @@ With the introduction of damapper, LAcheck checks to see if a file has chain
 information, and if it does, then it checks the validity of chains and assumes that
 the chains were sorted with the -a option to LAsort and LAmerge.
 
-
+```
 10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)]
                     [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]
-                  ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-AI] [-H<int>]
+                  ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-H<int>]
                     [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
                     [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]
+```
 
 HPC.daligner writes a UNIX shell script to the standard output or to a series of files
-beginning with the prefix <name> if the -f option is set, that either performs an
+beginning with the prefix \<name\> if the -f option is set, that either performs an
 "overlap" computation on all the blocks in a single database, or a "comparison"
 computation on all pairs of blocks between two databases, depending on whether it is
-given one or two DB's as arguments (<ref> and <reads>).  We describe the overlap
+given one or two DB's as arguments (\<ref\> and \<reads\>).  We describe the overlap
 script first and its effect first and then later the comparison script.
 
 An Overlap Script: consists of a sequence of commands that effectively run daligner on
 all pairs of blocks of a split database and then externally sorts and merges them using
-LAsort and LAmerge into a collection of alignment files with names <path>.#.las where #
+LAsort and LAmerge into a collection of alignment files with names \<path\>.#.las where #
 ranges from 1 to the number of blocks the data base is split into. These sorted files
 if concatenated by say LAcat would contain all the alignments in sorted order (of
 a-read, then b-read, ...).  Moreover, all overlaps for a given a-read are guaranteed
@@ -370,9 +354,9 @@ The data base must have been previously split by DBsplit and all the parameters,
 -a, -d, -f, -B, and -D, are passed through to the calls to daligner. The defaults for
 these parameters are as for daligner. The -v and -a flags are passed to all calls to
 LAsort and LAmerge. All other options are described later. For a database divided into
-N sub-blocks, the calls to daligner will produce in total 2TN^2 .las files assuming
-daligner runs with T threads. These will then be sorted and merged into N^2 sorted .las
-files, one for each block pair. These are then merged in ceil(log_D N) phases where
+N sub-blocks, the calls to daligner will produce in total N<sup>2</sup> .las files,
+on per block pair.
+These are then merged in ceil(log_D N) phases where
 the number of files decreases geometrically in -D until there is 1 file per row of
 the N x N block matrix. So at the end one has N sorted .las files that when
 concatenated would give a single large sorted overlap file.
@@ -385,26 +369,26 @@ number of files that will be merged in a single LAmerge command.  The planner pe
 D-way merges at all of the ceil(logD N) levels save the last, so as to minimize the
 number of intermediate files.
 
-If the integers <first> and <last> are missing then the script produced is for every
-block in the database.  If <first> is present then HPCdaligner produces an incremental
-script that compares blocks <first> through <last> (<last> = <first> if not present)
-against each other and all previous blocks 1 through <first>-1, and then incrementally
-updates the .las files for blocks 1 through <first>-1, and creates the .las files for
-blocks <first> through <last>.
+If the integers \<first\> and \<last\> are missing then the script produced is for every
+block in the database.  If \<first\> is present then HPCdaligner produces an incremental
+script that compares blocks \<first\> through \<last\> (\<last\> = \<first\> if not present)
+against each other and all previous blocks 1 through \<first\>-1, and then incrementally
+updates the .las files for blocks 1 through \<first\>-1, and creates the .las files for
+blocks \<first\> through \<last\>.
 
 A Comparison Script: consists of a sequence of commands that effectively maps every
-read in the DB <reads> against a reference set of sequences in the DB <ref>, recording
-all the found local alignments in the sequence of files <reads>.1.<ref>.las,
-<reads>.2.<ref>.las, ... where <reads>.<ref>.k.las contains the alignments between all
-of <ref> and the k'th block of <reads>. The parameters are exactly the same as for the
+read in the DB \<reads\> against a reference set of sequences in the DB \<ref\>, recording
+all the found local alignments in the sequence of files \<reads\>.1.\<ref\>.las,
+\<reads\>.2.\<ref\>.las, ... where \<reads\>.\<ref\>.k.las contains the alignments between all
+of \<ref\> and the k'th block of \<reads\>. The parameters are exactly the same as for the
 overlap script save that the -k, -h, and -e defaults are set more stringently for
-mapping, and the -A, -I , and -H options make no sense as <ref> and <reads> are
-expected to be distinct data sets.  If the integers <first> and <last> are missing then
-the script produced is for every block in the database <reads>. If <first> is present
-then HPC.daligner produces a script that compares blocks <first> through <last> (<last>
-= <first> if not present) of <reads>against DAM <ref>.
+mapping, and the -A, -I , and -H options make no sense as \<ref\> and \<reads\> are
+expected to be distinct data sets.  If the integers \<first\> and \<last\> are missing then
+the script produced is for every block in the database \<reads\>. If \<first\> is present
+then HPC.daligner produces a script that compares blocks \<first\> through \<last\> (\<last\>
+= \<first\> if not present) of \<reads\> against DAM \<ref\>.
 
-The command scripts output by HPC.daligner and other HPC.<x> programs consists of
+The command scripts output by HPC.daligner and other HPC.\<x\> programs consists of
 command blocks each of which begins with a comment line (begins with #) followed by a
 potentially long list of lines each containing a shell command.  Command blocks whose
 comment mentions "jobs" and gives the number of said in parenthesis, we call parallel
@@ -417,19 +401,19 @@ block should be performed in the order given and should complete before the next
 is performed.
 
 If the -f option is set, then each command block is written to a file with a name of
-the form <name>.#.<description> where <name> is specified by the user in the -f option
+the form \<name\>.#.\<description\> where \<name\> is specified by the user in the -f option
 argument, # gives the order in which the command block in the given file is to be
-performed in relation to other command block files, and <description> is a (very)
+performed in relation to other command block files, and \<description\> is a (very)
 short symbolic reminder of what the block is doing.  For example, "HPC.daligner -fJOBS
 DB" would produce the files:
 
+```
      JOBS.01.OVL
-     JOBS.02.SORT
-     JOBS.03.CHECK.OPT
-     JOBS.04.RM
-     JOBS.MERGE
-     JOBS.06.CHECK.OPT
-     JOBS.07.RM.OPT
+     JOBS.02.CHECK.OPT
+     JOBS.03.MERGE
+     JOBS.04.CHECK.OPT
+     JOBS.05.RM.OPT
+```
 
 The number of command blocks varies as it depends on the number of merging rounds
 required in the external sort of the .las files.  The files with the suffix .OPT are
@@ -438,15 +422,15 @@ CHECK blocks.
 
 A new -d option requests scripts that organize files into a collection of
 sub-directories so as not to overwhelm the underlying OS for large genomes.  Recall
-that for a DB divided into N blocks, the daligner will produce 2N2T .las-files where
-T is the number of threads specified optionally with the -T option (default 4).  With
-the -d option set, N sub-directories (with respect to the directory HPC.daligner is
-called in) of the form "work<i>" for i from 1 to N are created in an initial command
+that for a DB divided into N blocks, the daligner will produce N<sup>2</sup> .las-files.
+With the -d option set, N sub-directories (with respect to the directory HPC.daligner is
+called in) of the form "work\<i\>" for i from 1 to N are created in an initial command
 block, and then all work files are placed in those sub-directories, with a maximum
-of N(2T+1) files appearing in any sub-directory at any given point in the process.
+of 2N files appearing in any sub-directory at any given point in the process.
 
 Example:
 
+```
 //  Recall G.db from the example in DAZZ_DB/README
 
 > cat G.db
@@ -519,3 +503,4 @@ G: 62,654 records
    1  464 n   [     0.. 1,942] x [12,416..14,281] :   <    411 diffs  ( 19 trace pts)
 
 ...
+```
