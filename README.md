@@ -115,7 +115,7 @@ a unit and sorts them on the basis of the first LA in the chain.
 
 Merge the .las files \<parts\> into a singled sorted file \<merge\>, where it is assumed
 that  the input \<parts\> files are sorted. Due to operating system limits, the number of
-\<parts\> files must be &\le; 252.  With the -v option set the program reports the # of
+\<parts\> files must be &le; 252.  With the -v option set the program reports the # of
 records read and written.  The -a option indicates the sort is as describe for LAsort
 above.
 
