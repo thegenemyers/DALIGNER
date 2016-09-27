@@ -1,4 +1,4 @@
-# Daligner: The Dazzler \"Overlap\" Module
+# Daligner: The Dazzler "Overlap" Module
 
 ## _Author:  Gene Myers_
 ## _First:   April 10, 2016_
@@ -65,7 +65,7 @@ use less, say only 8Gb on a 24Gb HPC cluster node because you want to run 3 dali
 jobs on the node, then specify -M8.  Specifying -M0 basically indicates that you do not
 want daligner to self adjust k-mer suppression to fit within a given amount of memory.
 
-Each found alignment is recorded as -- a[ab,ae] x bo[bb,be] -- where a and b are the
+Each found alignment is recorded as -- a[ab,ae] x b<sup>o</sup>[bb,be] -- where a and b are the
 indices (in the trimmed DB) of the reads that overlap, o indicates whether the b-read
 is from the same or opposite strand, and [ab,ae] and [bb,be] are the intervals of a
 and bo, respectively, that align.  For each subject, target pair of blocks, say X and Y,
@@ -115,7 +115,7 @@ a unit and sorts them on the basis of the first LA in the chain.
 
 Merge the .las files \<parts\> into a singled sorted file \<merge\>, where it is assumed
 that  the input \<parts\> files are sorted. Due to operating system limits, the number of
-\<parts\> files must be <= 252.  With the -v option set the program reports the # of
+\<parts\> files must be &\le; 252.  With the -v option set the program reports the # of
 records read and written.  The -a option indicates the sort is as describe for LAsort
 above.
 
@@ -356,7 +356,7 @@ these parameters are as for daligner. The -v and -a flags are passed to all call
 LAsort and LAmerge. All other options are described later. For a database divided into
 N sub-blocks, the calls to daligner will produce in total N<sup>2</sup> .las files,
 on per block pair.
-These are then merged in ceil(log_D N) phases where
+These are then merged in ceil(log<sub>D</sub> N) phases where
 the number of files decreases geometrically in -D until there is 1 file per row of
 the N x N block matrix. So at the end one has N sorted .las files that when
 concatenated would give a single large sorted overlap file.
@@ -366,7 +366,7 @@ daligner. Some must contain B-1 comparisons, and the first B-2 block comparisons
 even less, but the HPCdaligner "planner" does the best it can to give an average load
 of dal block comparisons per command. The -D option (default 250) gives the maximum
 number of files that will be merged in a single LAmerge command.  The planner performs
-D-way merges at all of the ceil(logD N) levels save the last, so as to minimize the
+D-way merges at all of the ceil(log<sub>D</sub> N) levels save the last, so as to minimize the
 number of intermediate files.
 
 If the integers \<first\> and \<last\> are missing then the script produced is for every
