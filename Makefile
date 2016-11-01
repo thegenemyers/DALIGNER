@@ -57,7 +57,7 @@ install:
 
 package:
 	make clean
-	tar -zcf daligner.tar.gz README *.h *.c Makefile
+	tar -zcf daligner.tar.gz README.md Makefile *.h *.c
 
 libalign.a: ${LIBRARY_HEADERS} ${LIBRARY_SOURCES}
 	gcc $(CFLAGS) -c -o align.o align.c

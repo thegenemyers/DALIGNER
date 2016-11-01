@@ -1885,6 +1885,22 @@ static void *report_thread(void *arg)
  *
  ********************************************************************************************/
 
+static char *NameBuffer(char *aname, char *bname)
+{ static char *cat = NULL;
+  static int   max = -1;
+  int len;
+
+  len = strlen(aname) + strlen(bname) + 100;
+  if (len > max)
+    { max = ((int) (1.2*len)) + 100;
+      if ((cat = (char *) realloc(cat,max+1)) == NULL)
+        { fprintf(stderr,"%s: Out of memory (Making path name)\n",Prog_Name);
+          exit (1);
+        }
+    }
+  return (cat);
+}
+
 void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
                   void *vasort, int alen, void *vbsort, int blen,
                   int comp, Align_Spec *aspec)
@@ -1893,6 +1909,7 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
   Lex_Arg    parmx[NTHREADS];
   Report_Arg parmr[NTHREADS];
   int        pairsort[16];
+  char      *fname;
 
   SeedPair *khit, *hhit;
   SeedPair *work1, *work2;
@@ -2166,6 +2183,8 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
     if (counters == NULL)
       exit (1);
 
+    fname = NameBuffer(aname,bname);
+
     for (i = 0; i < 3*w*NTHREADS; i++)
       counters[i] = 0;
     for (i = 0; i < NTHREADS; i++)
@@ -2177,15 +2196,15 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
         parmr[i].lasta = parmr[i].lastp + w;
         parmr[i].work  = New_Work_Data();
 
-        parmr[i].ofile1 =
-             Fopen(Catenate(aname,".",bname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+        sprintf(fname,"/tmp/%s.%s.%c%d.las",aname,bname,(comp?'C':'N'),i+1);
+        parmr[i].ofile1 = Fopen(fname,"w");
         if (parmr[i].ofile1 == NULL)
           exit (1);
         if (MG_self)
           parmr[i].ofile2 = parmr[i].ofile1;
         else if (SYMMETRIC)
-          { parmr[i].ofile2 = 
-                Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+          { sprintf(fname,"/tmp/%s.%s.%c%d.las",bname,aname,(comp?'C':'N'),i+1);
+            parmr[i].ofile2 = Fopen(fname,"w");
             if (parmr[i].ofile2 == NULL)
               exit (1);
           }
@@ -2225,14 +2244,18 @@ zerowork:
   { FILE *ofile;
     int   i;
 
+    fname = NameBuffer(aname,bname);
+
     nhits  = 0;
     for (i = 0; i < NTHREADS; i++)
-      { ofile = Fopen(Catenate(aname,".",bname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+      { sprintf(fname,"/tmp/%s.%s.%c%d.las",aname,bname,(comp?'C':'N'),i+1);
+        ofile = Fopen(fname,"w");
         fwrite(&nhits,sizeof(int64),1,ofile);
         fwrite(&MR_tspace,sizeof(int),1,ofile);
         fclose(ofile);
         if (! MG_self && SYMMETRIC)
-          { ofile = Fopen(Catenate(bname,".",aname,Numbered_Suffix((comp?".C":".N"),i,".las")),"w");
+          { sprintf(fname,"/tmp/%s.%s.%c%d.las",bname,aname,(comp?'C':'N'),i+1);
+            ofile = Fopen(fname,"w");
             fwrite(&nhits,sizeof(int64),1,ofile);
             fwrite(&MR_tspace,sizeof(int),1,ofile);
             fclose(ofile);
