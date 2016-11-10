@@ -164,6 +164,9 @@ void Lower_Read(char *s);     //  Convert read from numbers to lowercase letters
 void Upper_Read(char *s);     //  Convert read from numbers to uppercase letters (0-3 to ACGT)
 void Number_Read(char *s);    //  Convert read from letters to numbers
 
+void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
+void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
+
 
 /*******************************************************************************************
  *
@@ -175,6 +178,9 @@ void Number_Read(char *s);    //  Convert read from letters to numbers
 #define DB_CSS  0x0400   //  This is the second or later of a group of reads from a given insert
 #define DB_BEST 0x0800   //  This is the longest read of a given insert (may be the only 1)
 
+#define DB_ARROW 0x2     //  DB is an arrow DB
+#define DB_ALL   0x1     //  all wells are in the trimmed DB
+
 //  Fields have different interpretations if a .db versus a .dam
 
 typedef struct
@@ -185,6 +191,7 @@ typedef struct
                     //    uncompressed bases in memory block
     int64   coff;   //  Offset (in bytes) of compressed quiva streams in '.qvs' file (DB),
                     //  Offset (in bytes) of scaffold header string in '.hdr' file (DAM)
+                    //  4 compressed shorts containing snr info if an arrow DB.
     int     flags;  //  QV of read + flags above (DB only)
   } HITS_READ;
 
@@ -226,7 +233,7 @@ typedef struct
   { int         ureads;     //  Total number of reads in untrimmed DB
     int         treads;     //  Total number of reads in trimmed DB
     int         cutoff;     //  Minimum read length in block (-1 if not yet set)
-    int         all;        //  Consider multiple reads from a given well
+    int         allarr;     //  DB_ALL | DB_ARROW
     float       freq[4];    //  frequency of A, C, G, T, respectively
 
     //  Set with respect to "active" part of DB (all vs block, untrimmed vs trimmed)
@@ -367,6 +374,11 @@ char *New_Read_Buffer(HITS_DB *db);
   //   and INTERACTIVE is defined.
 
 int  Load_Read(HITS_DB *db, int i, char *read, int ascii);
+
+  // Exactly the same as Load_Read, save the arrow information is loaded, not the DNA sequence,
+  //   and there is only a choice between numeric (0) or ascii (1);
+
+int  Load_Arrow(HITS_DB *db, int i, char *read, int ascii);
 
   // Load into 'read' the subread [beg,end] of the i'th read in 'db' and return a pointer to the
   //   the start of the subinterval (not necessarily = to read !!! ).  As a lower case ascii

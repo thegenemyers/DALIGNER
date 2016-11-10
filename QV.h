@@ -58,6 +58,7 @@ int       Get_QV_Line();
   //   If there is an error then -1 is returned, otherwise the number of entries read.
 
 int       QVcoding_Scan(FILE *input, int num, FILE *temp);
+void      QVcoding_Scan1(int rlen, char *del, char *tag, char *ins, char *mrg, char *sub);
 
   // Given QVcoding_Scan has been called at least once, create an encoding scheme based on
   //   the accumulated statistics and return a pointer to it.  The returned encoding object
@@ -83,6 +84,8 @@ void      Free_QVcoding(QVcoding *coding);
   //    occurred, and the sequence length otherwise.
 
 int      Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy);
+void     Compress_Next_QVentry1(int rlen, char *del, char *tag, char *ins, char *mrg, char *sub,
+                                FILE *output, QVcoding *coding, int lossy);
 
   //  Assuming the input is position just beyond the compressed encoding of an entry header,
   //    read the set of compressed encodings for the ensuing 5 QV vectors, decompress them,

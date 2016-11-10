@@ -314,6 +314,14 @@ void Upper_Read(char *s)
   *s = '\0';
 }
 
+void Letter_Arrow(char *s)
+{ static char letter[4] = { '1', '2', '3', '4' };
+
+  for ( ; *s != 4; s++)
+    *s = letter[(int) *s];
+  *s = '\0';
+}
+
 //  Convert read in ascii representation to [0-3] representation (end with 4)
 
 void Number_Read(char *s)
@@ -338,6 +346,31 @@ void Number_Read(char *s)
 
   for ( ; *s != '\0'; s++)
     *s = number[(int) *s];
+  *s = 4;
+}
+
+void Number_Arrow(char *s)
+{ static char arrow[128] =
+    { 3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 0, 1, 2, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 2,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 3, 3, 3, 3, 3,
+    };
+
+  for ( ; *s != '\0'; s++)
+    *s = arrow[(int) *s];
   *s = 4;
 }
 
@@ -426,7 +459,7 @@ int Open_DB(char* path, HITS_DB *db)
     if (fscanf(dbvis,DB_NBLOCK,&nblocks) != 1)
       if (part == 0)
         { cutoff = 0;
-          all    = 1;
+          all    = DB_ALL;
         }
       else
         { EPRINTF(EPLACE,"%s: DB %s has not yet been partitioned, cannot request a block !\n",
@@ -466,7 +499,7 @@ int Open_DB(char* path, HITS_DB *db)
   db->tracks  = NULL;
   db->part    = part;
   db->cutoff  = cutoff;
-  db->all     = all;
+  db->allarr |= all;
   db->ufirst  = ufirst;
   db->tfirst  = tfirst;
 
@@ -478,7 +511,7 @@ int Open_DB(char* path, HITS_DB *db)
       db->reads += 1;
       if (fread(db->reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
         { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-          free(db->reads);
+          free(db->reads-1);
           goto error2;
         }
     }
@@ -495,7 +528,7 @@ int Open_DB(char* path, HITS_DB *db)
       fseeko(index,sizeof(HITS_READ)*ufirst,SEEK_CUR);
       if (fread(reads,sizeof(HITS_READ),nreads,index) != (size_t) nreads)
         { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-          free(reads);
+          free(reads-1);
           goto error2;
         }
 
@@ -557,10 +590,10 @@ void Trim_DB(HITS_DB *db)
 
   if (db->trimmed) return;
 
-  if (db->cutoff <= 0 && db->all) return;
+  if (db->cutoff <= 0 && (db->allarr & DB_ALL) != 0) return;
 
   cutoff = db->cutoff;
-  if (db->all)
+  if ((db->allarr & DB_ALL) != 0)
     allflag = 0;
   else
     allflag = DB_BEST;
@@ -660,10 +693,10 @@ static int Late_Track_Trim(HITS_DB *db, HITS_TRACK *track, int ispart)
 
   if (!db->trimmed) return (0);
 
-  if (db->cutoff <= 0 && db->all) return (0);
+  if (db->cutoff <= 0 && (db->allarr & DB_ALL) != 0) return (0);
 
   cutoff = db->cutoff;
-  if (db->all)
+  if ((db->allarr & DB_ALL) != 0)
     allflag = 0;
   else
     allflag = DB_BEST;
@@ -1428,6 +1461,56 @@ int Load_Read(HITS_DB *db, int i, char *read, int ascii)
     }
   else if (ascii == 2)
     { Upper_Read(read);
+      read[-1] = '\0';
+    }
+  else
+    read[-1] = 4;
+  return (0);
+}
+
+// Load into 'read' the i'th arrow in 'db'.  As an ASCII string if ascii is 1, 
+//   and as a numeric string otherwise.
+//
+
+HITS_DB *Arrow_DB = NULL;         //  Last db/arw used by "Load_Arrow"
+FILE    *Arrow_File = NULL;       //    Becomes invalid after closing
+
+int Load_Arrow(HITS_DB *db, int i, char *read, int ascii)
+{ FILE      *arrow;
+  int64      off;
+  int        len, clen;
+  HITS_READ *r = db->reads;
+
+  if (i >= db->nreads)
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Arrow)\n",Prog_Name);
+      EXIT(1);
+    }
+  if (Arrow_DB != db)
+    { fclose(Arrow_File);
+      arrow = Fopen(Catenate(db->path,"","",".arw"),"r");
+      if (arrow == NULL)
+        EXIT(1);
+      Arrow_File = arrow;
+      Arrow_DB   = db;
+    }
+  else
+    arrow = Arrow_File;
+
+  off = r[i].boff;
+  len = r[i].rlen;
+
+  if (ftello(arrow) != off)
+    fseeko(arrow,off,SEEK_SET);
+  clen = COMPRESSED_LEN(len);
+  if (clen > 0)
+    { if (fread(read,clen,1,arrow) != 1)
+        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Arrow)\n",Prog_Name);
+          EXIT(1);
+        }
+    }
+  Uncompress_Read(len,read);
+  if (ascii == 1)
+    { Letter_Arrow(read);
       read[-1] = '\0';
     }
   else

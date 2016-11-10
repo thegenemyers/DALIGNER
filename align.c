@@ -2983,8 +2983,8 @@ int Find_Extension(Alignment *align, Work_Data *ework, Align_Spec *espec,
   if (prefix)
     { if (reverse_extend(work,spec,align,diag,anti,minp,maxp))
         EXIT(1);
-      apath->aepos = (anti-diag)/2;
-      apath->bepos = (anti+diag)/2;
+      apath->aepos = (anti+diag)/2;
+      apath->bepos = (anti-diag)/2;
 #ifdef DEBUG_PASSES
       printf("E1 (%d,%d) => (%d,%d) %d\n",
              (anti+diag)/2,(anti-diag)/2,apath->abpos,apath->bbpos,apath->diffs);
@@ -2993,8 +2993,8 @@ int Find_Extension(Alignment *align, Work_Data *ework, Align_Spec *espec,
   else
     { if (forward_extend(work,spec,align,diag,anti,minp,maxp))
         EXIT(1);
-      apath->abpos = (anti-diag)/2;
-      apath->bbpos = (anti+diag)/2;
+      apath->abpos = (anti+diag)/2;
+      apath->bbpos = (anti-diag)/2;
 #ifdef DEBUG_PASSES
       printf("F1 (%d,%d) => (%d,%d) %d\n",
              (anti+diag)/2,(anti-diag)/2,apath->aepos,apath->bepos,apath->diffs);
