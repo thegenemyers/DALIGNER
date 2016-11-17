@@ -168,7 +168,7 @@ static void ovl_reload(IO_block *in, int64 bsize)
 
   remains = in->top - in->ptr;
   if (remains > 0)
-    memcpy(in->block, in->ptr, remains);
+    memmove(in->block, in->ptr, remains);
   in->ptr  = in->block;
   in->top  = in->block + remains;
   in->top += fread(in->top,1,bsize-remains,in->stream);
