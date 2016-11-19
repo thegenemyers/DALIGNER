@@ -3044,10 +3044,13 @@ int Read_Trace(FILE *input, Overlap *ovl, int tbytes)
   return (0);
 }
 
-void Write_Overlap(FILE *output, Overlap *ovl, int tbytes)
-{ fwrite( ((char *) ovl) + PtrSize, OvlIOSize, 1, output);
+int Write_Overlap(FILE *output, Overlap *ovl, int tbytes)
+{ if (fwrite( ((char *) ovl) + PtrSize, OvlIOSize, 1, output) != 1)
+    return (1);
   if (ovl->path.trace != NULL)
-    fwrite(ovl->path.trace,tbytes,ovl->path.tlen,output);
+    if (fwrite(ovl->path.trace,tbytes,ovl->path.tlen,output) != (size_t) ovl->path.tlen)
+      return (1);
+  return (0);
 }
 
 void Compress_TraceTo8(Overlap *ovl)

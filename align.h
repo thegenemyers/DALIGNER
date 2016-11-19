@@ -325,7 +325,7 @@ typedef struct {
      accommodate the trace where each value take 'tbytes' bytes (1 if uint8 or 2 if uint16).
 
      Write_Overlap write 'ovl' to stream 'output' followed by its trace vector (if any) that
-     occupies 'tbytes' bytes per value.  
+     occupies 'tbytes' bytes per value.  It returns non-zero if there was an error writing.
 
      Print_Overlap prints an ASCII version of the contents of 'ovl' to stream 'output'
      where the trace occupes 'tbytes' per value and the print out is indented from the left
@@ -343,7 +343,7 @@ typedef struct {
   int Read_Overlap(FILE *input, Overlap *ovl);
   int Read_Trace(FILE *innput, Overlap *ovl, int tbytes);
 
-  void Write_Overlap(FILE *output, Overlap *ovl, int tbytes);
+  int  Write_Overlap(FILE *output, Overlap *ovl, int tbytes);
   void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent);
 
   void Compress_TraceTo8(Overlap *ovl);

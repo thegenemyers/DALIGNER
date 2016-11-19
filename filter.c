@@ -1842,14 +1842,20 @@ static void *report_thread(void *arg)
                ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
                if (small)
                  Compress_TraceTo8(ovla);
-               Write_Overlap(ofile1,ovla,tbytes);
+               if (Write_Overlap(ofile1,ovla,tbytes))
+                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                   exit (1);
+                 }
              }
            for (i = 0; i < novlb; i++)
              { ovlb->path = bmatch[i];
                ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
                if (small)
                  Compress_TraceTo8(ovlb);
-               Write_Overlap(ofile2,ovlb,tbytes);
+               if (Write_Overlap(ofile2,ovlb,tbytes))
+                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                   exit (1);
+                 }
              }
            ahits += novla;
            bhits += novlb;

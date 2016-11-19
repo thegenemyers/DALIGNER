@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
   FILE   *input;
   int64   novl;
   int     tspace, tbytes, small;
+  int     tmax;
   int     reps, *pts;
   int     input_pts;
 
@@ -279,7 +280,7 @@ int main(int argc, char *argv[])
 
   { int   j, al, tlen;
     int   in, npt, idx, ar;
-    int64 novls, odeg, omax, sdeg, smax, ttot, tmax;
+    int64 novls, odeg, omax, sdeg, smax, ttot;
 
     in  = 0;
     npt = pts[0];
@@ -359,28 +360,24 @@ int main(int argc, char *argv[])
 
     printf("+ P %lld\n",novls);
     printf("%% P %lld\n",omax);
-    printf("+ T %lld\n",ttot);
-    printf("%% T %lld\n",smax);
-    printf("@ T %lld\n",tmax);
+    if (DOTRACE)
+      { printf("+ T %lld\n",ttot);
+        printf("%% T %lld\n",smax);
+        printf("@ T %lld\n",tmax);
+      }
   }
 
   //  Read the file and display selected records
   
   { int        j;
     uint16    *trace;
-    int        tmax;
     int        in, npt, idx, ar;
     int64      verse;
 
     rewind(input);
-    fread(&verse,sizeof(int64),1,input);
+    fread(&novl,sizeof(int64),1,input);
     fread(&tspace,sizeof(int),1,input);
-    if (verse < 0)
-      { for (j = 0; j < 5; j++)
-          fread(&verse,sizeof(int64),1,input);
-      }
 
-    tmax  = 1000;
     trace = (uint16 *) Malloc(sizeof(uint16)*tmax,"Allocating trace vector");
     if (trace == NULL)
       exit (1);
@@ -396,12 +393,6 @@ int main(int argc, char *argv[])
        //  Read it in
 
       { Read_Overlap(input,ovl);
-        if (ovl->path.tlen > tmax)
-          { tmax = ((int) 1.2*ovl->path.tlen) + 100;
-            trace = (uint16 *) Realloc(trace,sizeof(uint16)*tmax,"Allocating trace vector");
-            if (trace == NULL)
-              exit (1);
-          }
         ovl->path.trace = (void *) trace;
         Read_Trace(input,ovl,tbytes);
 
