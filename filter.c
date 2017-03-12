@@ -1613,7 +1613,7 @@ static void *report_thread(void *arg)
   hitc   = hitd + (minhit-1);
   eidx   = data->end - minhit;
   nidx   = data->beg;
-  for (cpair = hitd[nidx].p2; nidx < eidx; cpair = npair)
+  for (cpair = hitd[nidx].p2; nidx <= eidx; cpair = npair)
     if (hitc[nidx].p2 != cpair)
       { nidx += 1;
         while ((npair = hitd[nidx].p2) == cpair)
