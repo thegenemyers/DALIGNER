@@ -514,15 +514,27 @@ int main(int argc, char *argv[])
         else
           printf("]");
 
+        if (!CARTOON)
+          printf("  ~  %4.1f%% ",(200.*ovl->path.diffs) /
+                 ((ovl->path.aepos - ovl->path.abpos) + (ovl->path.bepos - ovl->path.bbpos)) );
+        printf("  (");
+        if (FLIP)
+          { Print_Number(aln->alen,ai_wide,stdout);
+            printf(" x ");
+            Print_Number(aln->blen,bi_wide,stdout);
+          }
+        else
+          { Print_Number(aln->blen,bi_wide,stdout);
+            printf(" x ");
+            Print_Number(aln->alen,ai_wide,stdout);
+          }
+        printf(" bps,");
         if (CARTOON)
-          { printf("  (");
-            Print_Number(tps,tp_wide,stdout);
+          { Print_Number(tps,tp_wide,stdout);
             printf(" trace pts)\n\n");
           }
         else
-          { printf("  ~  %4.1f%%   (",(200.*ovl->path.diffs) /
-                    ((ovl->path.aepos - ovl->path.abpos) + (ovl->path.bepos - ovl->path.bbpos)) );
-            Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
+          { Print_Number((int64) ovl->path.diffs,mn_wide,stdout);
             printf(" diffs, ");
             Print_Number(tps,tp_wide,stdout);
             printf(" trace pts)\n");

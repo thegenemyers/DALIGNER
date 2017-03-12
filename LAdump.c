@@ -22,7 +22,7 @@
 #include "align.h"
 
 static char *Usage =
-    "[-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]";
+    "[-cdtlo] <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]";
 
 #define LAST_READ_SYMBOL  '$'
 
@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
   int     input_pts;
 
   int     OVERLAP;
-  int     DOCOORDS, DODIFFS, DOTRACE;
+  int     DOCOORDS, DODIFFS, DOTRACE, DOLENS;
   int     ISTWO;
 
   //  Process options
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("ocdtUF")
+            ARG_FLAGS("ocdtl")
             break;
         }
       else
@@ -71,6 +71,7 @@ int main(int argc, char *argv[])
     DOCOORDS  = flags['c'];
     DODIFFS   = flags['d'];
     DOTRACE   = flags['t'];
+    DOLENS    = flags['l'];
 
     if (DOTRACE)
       DOCOORDS = 1;
@@ -363,7 +364,7 @@ int main(int argc, char *argv[])
     if (DOTRACE)
       { printf("+ T %lld\n",ttot);
         printf("%% T %lld\n",smax);
-        printf("@ T %lld\n",tmax);
+        printf("@ T %d\n",tmax);
       }
   }
 
@@ -372,7 +373,7 @@ int main(int argc, char *argv[])
   { int        j;
     uint16    *trace;
     int        in, npt, idx, ar;
-    int64      verse;
+    HITS_READ *read1, *read2;
 
     rewind(input);
     fread(&novl,sizeof(int64),1,input);
@@ -381,6 +382,9 @@ int main(int argc, char *argv[])
     trace = (uint16 *) Malloc(sizeof(uint16)*tmax,"Allocating trace vector");
     if (trace == NULL)
       exit (1);
+
+    read1 = db1->reads;
+    read2 = db2->reads;
 
     in  = 0;
     npt = pts[0];
@@ -448,6 +452,9 @@ int main(int argc, char *argv[])
         else
           printf(" .");
         printf("\n");
+
+        if (DOLENS)
+          printf("L %d %d\n",read1[ovl->aread].rlen,read2[ovl->bread].rlen);
 
         if (DOCOORDS)
           printf("C %d %d %d %d\n",ovl->path.abpos,ovl->path.aepos,ovl->path.bbpos,ovl->path.bepos);

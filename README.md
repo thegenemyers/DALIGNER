@@ -168,7 +168,7 @@ and (part of an) alignment for which we will explain several additional
 important points:
 
 ```
-      1    1,865 c   [18,479..20,216] x [ 1,707..     0>  ( 19 trace pts)
+ 1  1,865 c   [18,479..20,216] x [ 1,707..0>  (24,451 x 7,283 bps, 19 trace pts)
 
       18479              4235
   A ========+----------+======>  dif/(len1+len2) = 478/(1737+1707) = 27.76%
@@ -187,8 +187,10 @@ important points:
 ```
 
 The display of an LA always begins with a line giving the A-read, then the B-read, then
-an indication of orientation (i.e. are A and B from the same strand (n) or the opposite
-strand (c)?) followed by the A-interval and B-interval that are aligned.  In particular,
+an indication of orientation (i.e. 'n' for same strand, and 'c' for the opposite strand)
+followed by the A-interval and B-interval that are aligned and in parentheses
+the lengths of the two reads and the number of tracepoints in the alignment between them.
+In particular,
 note carefully that when the B-read is in the complement orientation (c), then the
 B-interval gives the higher coordinate first, the idea being that one will align from
 the highest base down to the lowest base in the descending direction on B, complement
@@ -223,8 +225,8 @@ scoring chain and + indicates an alternate near optimal chain (controlled by the
 -n parameter to damapper).  Each additional LA of a chain is marked with a - character.
 
 ```
-5. LAdump [-cdt] [-o] <src1:db|dam> [ <src2:db|dam> ]
-                      <align:las> [ <reads:FILE> | <reads:range> ... ]
+5. LAdump [-cdtlo] <src1:db|dam> [ <src2:db|dam> ]
+                   <align:las> [ <reads:FILE> | <reads:range> ... ]
 ```
 
 Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
@@ -233,8 +235,9 @@ is that the information is written in a very simple "1-code" ASCII format that m
 easy for one to read and parse the information for further use.  For each LA the pair of
 reads is output on a line.  -c requests that one further output the coordinates of the
 LA segments be output.  The -d option requests that the number of difference in the LA
-be output, and -t requests that the tracepoint information be output.  Finally, -o
-requests that only LAs that are proper overlaps be output. 
+be output, -t requests that the tracepoint information be output, and -l requests the
+length of the two reads be output.  Finally, -o requests that only LAs that are proper
+overlaps be output. 
 
 The format is very simple.  Each requested piece of information occurs on a line.  The
 first character of every line is a "1-code" character that tells you what information
@@ -246,8 +249,9 @@ trace point interval.
 
 ```
     P #a #b #o #c     - (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and
-                        #c is '>' (start of best chain), '+' (start of alternate chain),
-                        '-' (continuation of chain), or '.' (no chains in file)
+                           #c is '>' (start of best chain), '+' (start of alternate chain),
+                           '-' (continuation of chain), or '.' (no chains in file).
+    L #la #lb         - #la is the length of the a-read and #lb that of the b-read
     C #ab #ae #bb #be - #a[#ab,#ae] aligns with #b^#o[#bb,#be]
     D #               - there are # differences in the LA
     T #n              - there are #n trace point intervals for the LA
