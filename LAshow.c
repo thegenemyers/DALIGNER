@@ -310,7 +310,7 @@ int main(int argc, char *argv[])
   }
 
   //  Read the file and display selected records
-  
+  if (tspace > 0)
   { int        j;
     uint16    *trace;
     Work_Data *work;
