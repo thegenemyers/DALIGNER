@@ -1486,7 +1486,8 @@ int Load_Arrow(HITS_DB *db, int i, char *read, int ascii)
       EXIT(1);
     }
   if (Arrow_DB != db)
-    { fclose(Arrow_File);
+    { if (Arrow_File != NULL)
+        fclose(Arrow_File);
       arrow = Fopen(Catenate(db->path,"","",".arw"),"r");
       if (arrow == NULL)
         EXIT(1);
