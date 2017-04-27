@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
             goto error;
           }
 
-        if (tspace <= TRACE_XOVR)
+        if (tspace <= TRACE_XOVR && tspace != 0)
           tbytes = sizeof(uint8);
         else
           tbytes = sizeof(uint16);

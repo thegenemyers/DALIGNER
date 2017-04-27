@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
           SYSTEM_ERROR
         if (i == 0)
           { tspace = mspace;
-            if (tspace <= TRACE_XOVR)
+            if (tspace <= TRACE_XOVR && tspace != 0)
               tbytes = sizeof(uint8);
             else
               tbytes = sizeof(uint16);

@@ -287,12 +287,12 @@ int main(int argc, char *argv[])
       SYSTEM_ERROR
     if (fread(&tspace,sizeof(int),1,input) != 1)
       SYSTEM_ERROR
-    if (tspace <= 0)
-      { fprintf(stderr,"%s: Garbage .las file, trace spacing <= 0 !\n",Prog_Name);
+    if (tspace < 0)
+      { fprintf(stderr,"%s: Garbage .las file, trace spacing < 0 !\n",Prog_Name);
         exit (1);
       }
 
-    if (tspace <= TRACE_XOVR)
+    if (tspace <= TRACE_XOVR && tspace != 0)
       { small  = 1;
         tbytes = sizeof(uint8);
       }
@@ -353,12 +353,18 @@ int main(int argc, char *argv[])
     if (db1->maxlen < db2->maxlen)
       { mn_wide = ai_wide;
         mx_wide = bi_wide;
-        tp_wide = Number_Digits((int64) db1->maxlen/tspace+2);
+        if (tspace > 0)
+          tp_wide = Number_Digits((int64) db1->maxlen/tspace+2);
+        else
+          tp_wide = 0;
       }
     else
       { mn_wide = bi_wide;
         mx_wide = ai_wide;
-        tp_wide = Number_Digits((int64) db2->maxlen/tspace+2);
+        if (tspace > 0)
+          tp_wide = Number_Digits((int64) db2->maxlen/tspace+2);
+        else
+          tp_wide = 0;
       }
     ar_wide += (ar_wide-1)/3;
     br_wide += (br_wide-1)/3;
@@ -593,7 +599,10 @@ int main(int argc, char *argv[])
                 else
                   aln->bseq = bseq - bmin;
 
-                Compute_Trace_PTS(aln,work,tspace,GREEDIEST);
+                if (tspace == 0)
+                  Compute_Trace_IRR(aln,work,GREEDIEST);
+                else
+                  Compute_Trace_PTS(aln,work,tspace,GREEDIEST);
 
                 if (FLIP)
                   { if (COMP(aln->flags))

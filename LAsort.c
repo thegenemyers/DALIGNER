@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
         if (fread(&tspace,sizeof(int),1,input) != 1)
           SYSTEM_ERROR
 
-        if (tspace <= TRACE_XOVR)
+        if (tspace <= TRACE_XOVR && tspace != 0)
           tbytes = sizeof(uint8);
         else
           tbytes = sizeof(uint16);

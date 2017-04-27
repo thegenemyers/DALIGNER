@@ -3113,29 +3113,46 @@ void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent)
 }
 
 int Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname)
-{ int     i, p; 
+{ int i, p, q; 
 
-  if (((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace)*2 != ovl->path.tlen-2)
-    { if (verbose) 
-        EPRINTF(EPLACE,"  %s: Wrong number of trace points\n",fname);
-      return (1);
-    }         
-  p = ovl->path.bbpos;
-  if (tspace <= TRACE_XOVR)
-    { uint8 *trace8 = (uint8 *) ovl->path.trace;
-      for (i = 1; i < ovl->path.tlen; i += 2)
-        p += trace8[i];
+  if (tspace != 0)
+    { if (((ovl->path.aepos-1)/tspace - ovl->path.abpos/tspace)*2 != ovl->path.tlen-2)
+        { if (verbose) 
+            EPRINTF(EPLACE,"  %s: Wrong number of trace points\n",fname);
+          return (1);
+        }         
+      p = ovl->path.bbpos;
+      if (tspace <= TRACE_XOVR)
+        { uint8 *trace8 = (uint8 *) ovl->path.trace;
+          for (i = 1; i < ovl->path.tlen; i += 2)
+            p += trace8[i];
+        }
+      else      
+        { uint16 *trace16 = (uint16 *) ovl->path.trace;
+          for (i = 1; i < ovl->path.tlen; i += 2)
+            p += trace16[i];
+        }
+      if (p != ovl->path.bepos)
+        { if (verbose)
+            EPRINTF(EPLACE,"  %s: Trace point sum != aligned interval\n",fname);
+          return (1); 
+        }         
     }
-  else      
+  else
     { uint16 *trace16 = (uint16 *) ovl->path.trace;
+
+      p = ovl->path.bbpos;
+      q = ovl->path.abpos;
       for (i = 1; i < ovl->path.tlen; i += 2)
-        p += trace16[i];
+        { p += trace16[i];
+          q += trace16[i-1];
+        }
+      if (p != ovl->path.bepos || q != ovl->path.aepos)
+        { if (verbose)
+            EPRINTF(EPLACE,"  %s: Trace point sum != aligned interval\n",fname);
+          return (1); 
+        }         
     }
-  if (p != ovl->path.bepos)
-    { if (verbose)
-        EPRINTF(EPLACE,"  %s: Trace point sum != aligned interval\n",fname);
-      return (1); 
-    }         
   return (0);
 }
 
