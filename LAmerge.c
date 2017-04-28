@@ -354,9 +354,9 @@ int main(int argc, char *argv[])
               optr = oblock;
             }
 
-          memcpy(optr,((char *) ov) + psize,osize);
+          memmove(optr,((char *) ov) + psize,osize);
           optr += osize;
-          memcpy(optr,src->ptr,tsize);
+          memmove(optr,src->ptr,tsize);
           optr += tsize;
 
           src->ptr += tsize;

@@ -1770,7 +1770,7 @@ static void *report_thread(void *arg)
                               }
                             amatch[novla] = *apath;
                             amatch[novla].trace = (void *) (tbuf->top);
-                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                            memmove(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
                             novla += 1;
                             tbuf->top += apath->tlen;
                           }
@@ -1791,7 +1791,7 @@ static void *report_thread(void *arg)
                               }
                             bmatch[novlb] = *bpath;
                             bmatch[novlb].trace = (void *) (tbuf->top);
-                            memcpy(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
+                            memmove(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
                             novlb += 1;
                             tbuf->top += bpath->tlen;
                           }

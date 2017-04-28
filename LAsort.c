@@ -261,9 +261,9 @@ int main(int argc, char *argv[])
                   { fwrite(fblock,1,fptr-fblock,foutput);
                     fptr = fblock;
                   }
-                memcpy(fptr,((char *) w)+ptrsize,ovlsize);
+                memmove(fptr,((char *) w)+ptrsize,ovlsize);
                 fptr += ovlsize;
-                memcpy(fptr,(char *) (w+1),tsize);
+                memmove(fptr,(char *) (w+1),tsize);
                 fptr += tsize;
                 w = (Overlap *) (wo += span);
               }

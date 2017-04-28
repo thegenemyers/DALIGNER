@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
           { if (iptr + ovlsize > itop)
               { int64 remains = itop-iptr;
                 if (remains > 0)
-                  memcpy(iblock,iptr,remains);
+                  memmove(iblock,iptr,remains);
                 iptr  = iblock;
                 itop  = iblock + remains;
                 itop += fread(itop,1,bsize-remains,input);
@@ -155,20 +155,20 @@ int main(int argc, char *argv[])
                 optr = oblock;
               }
 
-            memcpy(optr,iptr,ovlsize);
+            memmove(optr,iptr,ovlsize);
             optr += ovlsize;
             iptr += ovlsize;
 
             if (iptr + tsize > itop)
               { int64 remains = itop-iptr;
                 if (remains > 0)
-                  memcpy(iblock,iptr,remains);
+                  memmove(iblock,iptr,remains);
                 iptr  = iblock;
                 itop  = iblock + remains;
                 itop += fread(itop,1,bsize-remains,input);
               }
             
-            memcpy(optr,iptr,tsize);
+            memmove(optr,iptr,tsize);
             optr += tsize;
             iptr += tsize;
           }
