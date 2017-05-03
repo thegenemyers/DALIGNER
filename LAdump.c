@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
 
   //  Read the file and display selected records
   
-  { int        j;
+  { int        j, k;
     uint16    *trace;
     int        in, npt, idx, ar;
     HITS_READ *read1, *read2;
@@ -469,8 +469,8 @@ int main(int argc, char *argv[])
             if (small)
               Decompress_TraceTo16(ovl);
             printf("T %d\n",tlen>>1);
-            for (j = 0; j < tlen; j += 2)
-              printf(" %3d %3d\n",trace[j],trace[j+1]);
+            for (k = 0; k < tlen; k += 2)
+              printf(" %3d %3d\n",trace[k],trace[k+1]);
           }
       }
 
