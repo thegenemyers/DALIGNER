@@ -863,6 +863,62 @@ static int      delChar, subChar;
 
   // Referred by:  QVcoding_Scan, Create_QVcoding
 
+void QVcoding_Scan1(int rlen, char *delQV, char *delTag, char *insQV, char *mergeQV, char *subQV)
+{
+  if (rlen == 0)   //  Initialization call
+    { int   i;
+
+      //  Zero histograms
+
+      bzero(delHist,sizeof(uint64)*256);
+      bzero(mrgHist,sizeof(uint64)*256);
+      bzero(insHist,sizeof(uint64)*256);
+      bzero(subHist,sizeof(uint64)*256);
+
+      for (i = 0; i < 256; i++)
+        delRun[i] = subRun[i] = 1;
+
+      totChar    = 0;
+      delChar    = -1;
+      subChar    = -1;
+      return;
+    }
+
+  //  Add streams to accumulating histograms and figure out the run chars
+  //    for the deletion and substition streams
+
+  Histogram_Seqs(delHist,(uint8 *) delQV,rlen);
+  Histogram_Seqs(insHist,(uint8 *) insQV,rlen);
+  Histogram_Seqs(mrgHist,(uint8 *) mergeQV,rlen);
+  Histogram_Seqs(subHist,(uint8 *) subQV,rlen);
+
+  if (delChar < 0)
+    { int   k;
+
+      for (k = 0; k < rlen; k++)
+        if (delTag[k] == 'n' || delTag[k] == 'N')
+          { delChar = delQV[k];
+            break;
+          }
+    }
+  if (delChar >= 0)
+    Histogram_Runs( delRun,(uint8 *) delQV,rlen,delChar);
+  totChar += rlen;
+  if (subChar < 0)
+    { if (totChar >= 100000)
+        { int k;
+
+          subChar = 0;
+          for (k = 1; k < 256; k++)
+            if (subHist[k] > subHist[subChar])
+              subChar = k;
+        }
+    }
+  if (subChar >= 0)
+    Histogram_Runs( subRun,(uint8 *) subQV,rlen,subChar);
+  return;
+}
+
 int QVcoding_Scan(FILE *input, int num, FILE *temp)
 { char *slash;
   int   rlen;
@@ -1283,6 +1339,44 @@ void Free_QVcoding(QVcoding *coding)
  *  Encode/Decode (w.r.t. coding) next entry from input and write to output
  *
  ********************************************************************************************/
+
+void Compress_Next_QVentry1(int rlen, char *del, char *tag, char *ins, char *mrg, char *sub,
+                            FILE *output, QVcoding *coding, int lossy)
+{ int clen;
+
+  if (coding->delChar < 0)
+    { Encode(coding->delScheme, output, (uint8 *) del, rlen);
+      clen = rlen;
+    }
+  else
+    { Encode_Run(coding->delScheme, coding->dRunScheme, output,
+                 (uint8 *) del, rlen, coding->delChar);
+      clen = Pack_Tag(tag,del,rlen,coding->delChar);
+    }
+  Number_Read(tag);
+  Compress_Read(clen,tag);
+  fwrite(tag,1,COMPRESSED_LEN(clen),output);
+
+  if (lossy)
+    { uint8 *insert = (uint8 *) ins;
+      uint8 *merge  = (uint8 *) mrg;
+      int    k;
+
+      for (k = 0; k < rlen; k++)
+        { insert[k] = (uint8) ((insert[k] >> 1) << 1);
+          merge[k]  = (uint8) (( merge[k] >> 2) << 2);
+        }
+    }
+
+  Encode(coding->insScheme, output, (uint8 *) ins, rlen);
+  Encode(coding->mrgScheme, output, (uint8 *) mrg, rlen);
+  if (coding->subChar < 0)
+    Encode(coding->subScheme, output, (uint8 *) sub, rlen);
+  else
+    Encode_Run(coding->subScheme, coding->sRunScheme, output,
+               (uint8 *) sub, rlen, coding->subChar);
+  return;
+}
 
 int Compress_Next_QVentry(FILE *input, FILE *output, QVcoding *coding, int lossy)
 { int rlen, clen;

@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
         if (fread(&tspace,sizeof(int),1,input) != 1)
           SYSTEM_ERROR
 
-        if (tspace <= TRACE_XOVR)
+        if (tspace <= TRACE_XOVR && tspace != 0)
           tbytes = sizeof(uint8);
         else
           tbytes = sizeof(uint16);
@@ -261,9 +261,9 @@ int main(int argc, char *argv[])
                   { fwrite(fblock,1,fptr-fblock,foutput);
                     fptr = fblock;
                   }
-                memcpy(fptr,((char *) w)+ptrsize,ovlsize);
+                memmove(fptr,((char *) w)+ptrsize,ovlsize);
                 fptr += ovlsize;
-                memcpy(fptr,(char *) (w+1),tsize);
+                memmove(fptr,(char *) (w+1),tsize);
                 fptr += tsize;
                 w = (Overlap *) (wo += span);
               }

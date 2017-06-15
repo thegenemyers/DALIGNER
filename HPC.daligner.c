@@ -621,10 +621,10 @@ void daligner_script(int argc, char *argv[])
                   last = (dnt == 1 || i == level);
                   for (j = 1; j < fblock; j++)
                     { low = 1;
-                      if (DON)
-                        fprintf(out,"cd work%d\n",j);
                       for (p = 1; p <= dits; p++)
                         { hgh = (dnt*p)/dits;
+                          if (DON)
+                            fprintf(out,"cd work%d; ",j);
                           fprintf(out,"rm");
                           if (last)
                             fprintf(out," L%d.%d.0.las",i,j);
@@ -633,31 +633,31 @@ void daligner_script(int argc, char *argv[])
                               fprintf(out," %s.%d.%s.%d.las",root,j,root,k+(fblock-1));
                             else
                               fprintf(out," L%d.%d.%d.las",i,j,k);
+                          if (DON)
+                            fprintf(out,"; cd ..");
                           fprintf(out,"\n");
                           low = hgh+1;
                         }
-                      if (DON)
-                        fprintf(out,"cd ..\n");
                     }
                 }
 
               for (j = fblock; j <= lblock; j++) 
                 { low = 1;
-                  if (DON)
-                    fprintf(out,"cd work%d\n",j);
                   for (p = 1; p <= bits; p++)
                     { hgh = (cnt*p)/bits;
+                      if (DON)
+                        fprintf(out,"cd work%d; ",j);
                       fprintf(out,"rm");
                       for (k = low; k <= hgh; k++)
                         if (i == 1)
                           fprintf(out," %s.%d.%s.%d.las",root,j,root,k);
                         else
                           fprintf(out," L%d.%d.%d.las",i,j,k);
+                      if (DON)
+                        fprintf(out,"; cd ..");
                       fprintf(out,"\n");
                       low = hgh+1;
                     }
-                  if (DON)
-                    fprintf(out,"cd ..\n");
                 }
 
               if (ONAME != NULL)
@@ -1201,11 +1201,11 @@ void mapper_script(int argc, char *argv[])
               fprintf(out,"# Remove level %d .las files\n",i);
 
               for (j = fblock; j <= lblock; j++) 
-                { if (DON)
-                    fprintf(out,"cd work%d\n",j);
-                  low = 1;
+                { low = 1;
                   for (p = 1; p <= bits; p++)
                     { hgh = (cnt*p)/bits;
+                      if (DON)
+                        fprintf(out,"cd work%d; ",j);
                       fprintf(out,"rm");
                       for (k = low; k <= hgh; k++)
                         if (i == 1)
@@ -1216,11 +1216,11 @@ void mapper_script(int argc, char *argv[])
                           }
                         else
                           fprintf(out," L%d.%d.%d.las",i,j,k);
+                      if (DON)
+                        fprintf(out,"; cd ..");
                       fprintf(out,"\n");
                       low = hgh+1;
                     }
-                  if (DON)
-                    fprintf(out,"cd ..\n");
                 }
 
               if (ONAME != NULL)

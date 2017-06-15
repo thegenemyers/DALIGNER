@@ -168,7 +168,7 @@ static void ovl_reload(IO_block *in, int64 bsize)
 
   remains = in->top - in->ptr;
   if (remains > 0)
-    memcpy(in->block, in->ptr, remains);
+    memmove(in->block, in->ptr, remains);
   in->ptr  = in->block;
   in->top  = in->block + remains;
   in->top += fread(in->top,1,bsize-remains,in->stream);
@@ -258,7 +258,7 @@ int main(int argc, char *argv[])
         SYSTEM_ERROR
       if (i == 0)
         { tspace = mspace;
-          if (tspace <= TRACE_XOVR)
+          if (tspace <= TRACE_XOVR && tspace != 0)
             tbytes = sizeof(uint8);
           else
             tbytes = sizeof(uint16);
@@ -354,9 +354,9 @@ int main(int argc, char *argv[])
               optr = oblock;
             }
 
-          memcpy(optr,((char *) ov) + psize,osize);
+          memmove(optr,((char *) ov) + psize,osize);
           optr += osize;
-          memcpy(optr,src->ptr,tsize);
+          memmove(optr,src->ptr,tsize);
           optr += tsize;
 
           src->ptr += tsize;

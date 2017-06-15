@@ -440,7 +440,7 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
       if (seq == NULL)
         exit (1);
       *seq++ = 4;
-      memcpy(seq,block->bases,block->reads[nreads].boff);
+      memmove(seq,block->bases,block->reads[nreads].boff);
       *cblock = *block;
       cblock->bases  = (void *) seq;
       cblock->tracks = NULL;

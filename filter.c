@@ -448,8 +448,8 @@ static void *tuple_thread(void *arg)
       kptr[BMASK] += (data->fill = m-n);
       while (n < m)
         { list[n].code = 0xffffffffffffffffllu;
-          list[n].read = 0xffffffff;
-          list[n].rpos = 0xffffffff;
+          list[n].read = -1;
+          list[n].rpos = -1;
           n += 1;
         }
     }
@@ -590,8 +590,8 @@ static void *biased_tuple_thread(void *arg)
   kptr[BMASK] += (data->fill = m-n);
   while (n < m)
     { list[n].code = 0xffffffffffffffffllu;
-      list[n].read = 0xffffffff;
-      list[n].rpos = 0xffffffff;
+      list[n].read = -1;
+      list[n].rpos = -1;
       n += 1;
     }
 
@@ -745,8 +745,34 @@ void *Sort_Kmers(HITS_DB *block, int *len)
 
   rez = (KmerPos *) lex_sort(mersort,(Double *) src,(Double *) trg,parmx);
   if (BIASED || TA_track != NULL)
-    for (i = 0; i < NTHREADS; i++)
-      kmers -= parmt[i].fill;
+    { if (Kmer%4 == 0)
+        { int wedge[NTHREADS];
+
+          for (j = 0; j < NTHREADS; j++)
+            if (parmt[j].fill > 0)
+              break;
+          j += 1;
+          if (j < NTHREADS)
+            { x = kmers-1;
+              for (i = NTHREADS-1; i >= j; i--)
+                { x = x - parmt[i].fill;
+                  z = x;
+                  while (rez[x].read >= 0)
+                    x -= 1;
+                  wedge[i] = z-x;
+                }
+              x += 1;
+              z = x-parmt[j-1].fill;
+              for (i = j; i < NTHREADS; i++)
+                { memmove(rez+z,rez+x,wedge[i]*sizeof(KmerPos));
+                  x += wedge[i] + parmt[i].fill;
+                  z += wedge[i];
+                }
+            }
+        }
+      for (i = 0; i < NTHREADS; i++)
+        kmers -= parmt[i].fill;
+    }
 
   if (TooFrequent < INT32_MAX && kmers > 0)
     { parmf[0].beg = 0;
@@ -808,7 +834,7 @@ void *Sort_Kmers(HITS_DB *block, int *len)
     printf("\nKMER SORT:\n");
     for (i = 0; i < HOW_MANY && i < kmers; i++)
       { KmerPos *c = rez+i;
-        printf(" %5d / %5d / %10lld\n",c->read,c->rpos,c->code);
+        printf(" %9d:  %6d / %6d / %16llx\n",i,c->read,c->rpos,c->code);
       }
     fflush(stdout);
   }
@@ -1613,7 +1639,7 @@ static void *report_thread(void *arg)
   hitc   = hitd + (minhit-1);
   eidx   = data->end - minhit;
   nidx   = data->beg;
-  for (cpair = hitd[nidx].p2; nidx < eidx; cpair = npair)
+  for (cpair = hitd[nidx].p2; nidx <= eidx; cpair = npair)
     if (hitc[nidx].p2 != cpair)
       { nidx += 1;
         while ((npair = hitd[nidx].p2) == cpair)
@@ -1744,7 +1770,7 @@ static void *report_thread(void *arg)
                               }
                             amatch[novla] = *apath;
                             amatch[novla].trace = (void *) (tbuf->top);
-                            memcpy(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                            memmove(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
                             novla += 1;
                             tbuf->top += apath->tlen;
                           }
@@ -1765,7 +1791,7 @@ static void *report_thread(void *arg)
                               }
                             bmatch[novlb] = *bpath;
                             bmatch[novlb].trace = (void *) (tbuf->top);
-                            memcpy(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
+                            memmove(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
                             novlb += 1;
                             tbuf->top += bpath->tlen;
                           }
@@ -1842,14 +1868,20 @@ static void *report_thread(void *arg)
                ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
                if (small)
                  Compress_TraceTo8(ovla);
-               Write_Overlap(ofile1,ovla,tbytes);
+               if (Write_Overlap(ofile1,ovla,tbytes))
+                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                   exit (1);
+                 }
              }
            for (i = 0; i < novlb; i++)
              { ovlb->path = bmatch[i];
                ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
                if (small)
                  Compress_TraceTo8(ovlb);
-               Write_Overlap(ofile2,ovlb,tbytes);
+               if (Write_Overlap(ofile2,ovlb,tbytes))
+                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                   exit (1);
+                 }
              }
            ahits += novla;
            bhits += novlb;
