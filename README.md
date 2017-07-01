@@ -20,7 +20,7 @@ efficient reconstruction of alignments on demand.
 
 ```
 1. daligner [-vbAI]
-       [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]
+       [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
        [-m<track>]+ <subject:db|dam> <target:db|dam> ...
 ```
@@ -78,6 +78,10 @@ between different portions of the same read will also be found and reported.  In
 the command "daligner -A X Y" produces a single file X.Y..las and "daligner X Y" produces
 2 files X.Y..las and Y.X.las (unless X=Y in which case only a single file, X.X.las, is
 produced).  The overlap records in one of these files are sorted as described for LAsort.
+In order to produce the aforementioned .las file, several temporary .las files, two for
+each thread, are produce in the sub-directory /tmp by default.  You can overide this
+location by specifying the directory you would like this activity to take place in with
+the -P option.
 
 By default daligner compares all overlaps between reads in the database that are
 greater than the minimum cutoff set when the DB or DBs were split, typically 1 or
@@ -331,7 +335,7 @@ information, and if it does, then it checks the validity of chains and assumes t
 the chains were sorted with the -a option to LAsort and LAmerge.
 
 ```
-10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)]
+10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)] [-P<dir(/tmp)>]
                     [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]
                   ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-H<int>]
                     [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
