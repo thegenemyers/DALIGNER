@@ -1869,7 +1869,7 @@ static void *report_thread(void *arg)
                if (small)
                  Compress_TraceTo8(ovla);
                if (Write_Overlap(ofile1,ovla,tbytes))
-                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                 { fprintf(stderr,"%s: Cannot write to %s too small?\n",SORT_PATH,Prog_Name);
                    exit (1);
                  }
              }
@@ -1879,7 +1879,7 @@ static void *report_thread(void *arg)
                if (small)
                  Compress_TraceTo8(ovlb);
                if (Write_Overlap(ofile2,ovlb,tbytes))
-                 { fprintf(stderr,"%s: Cannot write to /tmp, too small?\n",Prog_Name);
+                 { fprintf(stderr,"%s: Cannot write to %s, too small?\n",SORT_PATH,Prog_Name);
                    exit (1);
                  }
              }
@@ -2228,14 +2228,14 @@ void Match_Filter(char *aname, HITS_DB *ablock, char *bname, HITS_DB *bblock,
         parmr[i].lasta = parmr[i].lastp + w;
         parmr[i].work  = New_Work_Data();
 
-        sprintf(fname,"/tmp/%s.%s.%c%d.las",aname,bname,(comp?'C':'N'),i+1);
+        sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,aname,bname,(comp?'C':'N'),i+1);
         parmr[i].ofile1 = Fopen(fname,"w");
         if (parmr[i].ofile1 == NULL)
           exit (1);
         if (MG_self)
           parmr[i].ofile2 = parmr[i].ofile1;
         else if (SYMMETRIC)
-          { sprintf(fname,"/tmp/%s.%s.%c%d.las",bname,aname,(comp?'C':'N'),i+1);
+          { sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,bname,aname,(comp?'C':'N'),i+1);
             parmr[i].ofile2 = Fopen(fname,"w");
             if (parmr[i].ofile2 == NULL)
               exit (1);
@@ -2280,13 +2280,13 @@ zerowork:
 
     nhits  = 0;
     for (i = 0; i < NTHREADS; i++)
-      { sprintf(fname,"/tmp/%s.%s.%c%d.las",aname,bname,(comp?'C':'N'),i+1);
+      { sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,aname,bname,(comp?'C':'N'),i+1);
         ofile = Fopen(fname,"w");
         fwrite(&nhits,sizeof(int64),1,ofile);
         fwrite(&MR_tspace,sizeof(int),1,ofile);
         fclose(ofile);
         if (! MG_self && SYMMETRIC)
-          { sprintf(fname,"/tmp/%s.%s.%c%d.las",bname,aname,(comp?'C':'N'),i+1);
+          { sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,bname,aname,(comp?'C':'N'),i+1);
             ofile = Fopen(fname,"w");
             fwrite(&nhits,sizeof(int64),1,ofile);
             fwrite(&MR_tspace,sizeof(int),1,ofile);

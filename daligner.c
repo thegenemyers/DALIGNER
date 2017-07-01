@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include <sys/param.h>
 #if defined(BSD)
@@ -49,12 +50,13 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>]",
+  { "[-vbAI] [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]",
     "        [-e<double(.70)] [-l<int(1000)>] [-s<int(100)>] [-H<int>] [-T<int(4)>]",
     "        [-m<track>]+ <subject:db|dam> <target:db|dam> ...",
   };
 
 int     VERBOSE;   //   Globally visible to filter.c
+char   *SORT_PATH;
 int     BIASED;
 int     MINOVER;
 int     HGAP_MIN;
@@ -556,6 +558,7 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
     char  *eptr;
+    DIR   *dirp;
 
     ARG_INIT("daligner")
 
@@ -568,6 +571,7 @@ int main(int argc, char *argv[])
     SPACING   = 100;
     MINOVER   = 1000;    //   Globally visible to filter.c
     NTHREADS  = 4;
+    SORT_PATH = "/tmp";
 
     MEM_PHYSICAL = getMemorySize();
     MEM_LIMIT    = MEM_PHYSICAL;
@@ -639,6 +643,14 @@ int main(int argc, char *argv[])
                   exit (1);
               }
             MASK[MTOP++] = argv[i]+2;
+            break;
+          case 'P':
+            SORT_PATH = argv[i]+2;
+            if ((dirp = opendir(SORT_PATH)) == NULL)
+              { fprintf(stderr,"%s: -P option: cannot open directory %s\n",Prog_Name,SORT_PATH);
+                exit (1);
+              }
+            closedir(dirp);
             break;
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
@@ -744,28 +756,29 @@ int main(int argc, char *argv[])
 
         command = CommandBuffer(aroot,broot);
 
-        sprintf(command,"LAsort /tmp/%s.%s.[CN]*.las",aroot,broot);
+        sprintf(command,"LAsort %s/%s.%s.[CN]*.las",SORT_PATH,aroot,broot);
         if (VERBOSE)
           printf("\n%s\n",command);
         system(command);
-        sprintf(command,"LAmerge %s.%s.las /tmp/%s.%s.[CN]*.S.las",aroot,broot,aroot,broot);
+        sprintf(command,"LAmerge %s.%s.las %s/%s.%s.[CN]*.S.las",aroot,broot,SORT_PATH,aroot,broot);
         if (VERBOSE)
           printf("%s\n",command);
         system(command);
-        sprintf(command,"rm /tmp/%s.%s.[CN]*.las",aroot,broot);
+        sprintf(command,"rm %s/%s.%s.[CN]*.las",SORT_PATH,aroot,broot);
         if (VERBOSE)
           printf("%s\n",command);
         system(command);
         if (aroot != broot && SYMMETRIC)
-          { sprintf(command,"LAsort /tmp/%s.%s.[CN]*.las",broot,aroot);
+          { sprintf(command,"LAsort %s/%s.%s.[CN]*.las",SORT_PATH,broot,aroot);
             if (VERBOSE)
               printf("%s\n",command);
             system(command);
-            sprintf(command,"LAmerge %s.%s.las /tmp/%s.%s.[CN]*.S.las",broot,aroot,broot,aroot);
+            sprintf(command,"LAmerge %s.%s.las %s/%s.%s.[CN]*.S.las",broot,aroot,
+                                                                     SORT_PATH,broot,aroot);
             if (VERBOSE)
               printf("%s\n",command);
             system(command);
-            sprintf(command,"rm /tmp/%s.%s.[CN]*.las",broot,aroot);
+            sprintf(command,"rm %s/%s.%s.[CN]*.las",SORT_PATH,broot,aroot);
             if (VERBOSE)
               printf("%s\n",command);
             system(command);

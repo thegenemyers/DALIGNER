@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include "DB.h"
 #include "filter.h"
@@ -23,7 +24,7 @@
 #undef  LSF  //  define if want a directly executable LSF script
 
 static char *Usage[] =
-  { "[-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)>] [-s<int(100)]",
+  { "[-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)>] [-s<int(100)] [-P<dir(/tmp)>]",
     "        [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]",
     "      ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)>] [-H<int>]",
     "        [-k<int(20)>] [-h<int(50)>] [-e<double(.85)>] <ref:db|dam> )",
@@ -40,6 +41,7 @@ static double EREL;
 static int    MMAX, MTOP;
 static char **MASK;
 static char  *ONAME;
+static char  *PDIR;
 
 #define LSF_ALIGN "bsub -q medium -n 4 -o DALIGNER.out -e DALIGNER.err -R span[hosts=1] -J align#%d"
 #define LSF_MERGE \
@@ -236,6 +238,8 @@ void daligner_script(int argc, char *argv[])
               fprintf(out," -s%d",SINT);
             if (MINT >= 0)
               fprintf(out," -M%d",MINT);
+            if (PDIR != NULL)
+              fprintf(out," -P%s",PDIR);
             if (NTHREADS != 4)
               fprintf(out," -T%d",NTHREADS);
             for (k = 0; k < MTOP; k++)
@@ -929,6 +933,8 @@ void mapper_script(int argc, char *argv[])
               fprintf(out," -T%d",NTHREADS);
             if (MINT >= 0)
               fprintf(out," -M%d",MINT);
+            if (PDIR != NULL)
+              fprintf(out," -P%s",PDIR);
             for (k = 0; k < MTOP; k++)
               fprintf(out," -m%s",MASK[k]);
 
@@ -1262,6 +1268,7 @@ int main(int argc, char *argv[])
   LINT  = 1000;
   SINT  = 100;
   MINT  = -1;
+  PDIR  = NULL;
 
   MTOP = 0;
   MMAX = 10;
@@ -1294,6 +1301,10 @@ int main(int argc, char *argv[])
           break;
         case 'k':
           ARG_POSITIVE(KINT,"K-mer length")
+          if (KINT > 32)
+            { fprintf(stderr,"%s: K-mer length must be 32 or less\n",Prog_Name);
+              exit (1);
+            }
           break;
         case 'l':
           ARG_POSITIVE(LINT,"Minimum ovlerap length")
@@ -1332,6 +1343,9 @@ int main(int argc, char *argv[])
           break;
         case 'M':
           ARG_NON_NEGATIVE(MINT,"Memory allocation (in Gb)")
+          break;
+        case 'P':
+          PDIR = argv[i]+2;
           break;
         case 'T':
           ARG_POSITIVE(NTHREADS,"Number of threads")
