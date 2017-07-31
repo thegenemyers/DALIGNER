@@ -1218,7 +1218,7 @@ void mapper_script(int argc, char *argv[])
                           { fprintf(out," %s",root2);
                             if (useblock2)
                               fprintf(out,".%d",j);
-                            fprintf(out,".%s.%d",root1,k);
+                            fprintf(out,".%s.%d.las",root1,k);
                           }
                         else
                           fprintf(out," L%d.%d.%d.las",i,j,k);
