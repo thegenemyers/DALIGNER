@@ -45,6 +45,7 @@
 #undef  TEST_CSORT
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
+#define DO_ALIGNMENT
 #undef  TEST_GATHER
 #undef  TEST_CONTAIN
 #undef  SHOW_OVERLAP          //  Show the cartoon
@@ -1734,6 +1735,7 @@ static void *report_thread(void *arg)
 #endif
                     nfilt += 1;
 
+#ifdef DO_ALIGNMENT
                     bpath = Local_Alignment(align,work,MR_spec,apos-bpos,apos-bpos,apos+bpos,-1,-1);
 
                     { int low, hgh, ae;
@@ -1818,6 +1820,7 @@ static void *report_thread(void *arg)
                       printf("  No alignment %d",
                               ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos))/2);
 #endif
+#endif // DO_ALIGNMENT
                   }
               }
 
