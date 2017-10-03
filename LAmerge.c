@@ -48,6 +48,24 @@ static char *Usage = "[-va] <merge:las> <parts:las> ...";
   else						\
     bigger = 0;
 
+static void Fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  size_t rc = fwrite(ptr, size, nmemb, stream);
+  if (rc != nmemb) {
+    EPRINTF(EPLACE,"  Error writing %zu elements (of size %zu)\n", nmemb, size);
+    exit(1);
+  }
+}
+
+static void Fclose(FILE *stream) {
+  // An error in fclose() could be caused by an earlier failure in fwrite().
+  // 'man fclose' for details.
+  int rc = fclose(stream);
+  if (rc != 0) {
+    EPRINTF(EPLACE,"  Error closing stream.\n");
+    exit(1);
+  }
+}
+
 static void reheap(int s, Overlap **heap, int hsize)
 { int      c, l, r;
   int      bigger;
@@ -287,8 +305,8 @@ int main(int argc, char *argv[])
     free(pwd);
     free(root);
 
-    fwrite(&totl,sizeof(int64),1,output);
-    fwrite(&tspace,sizeof(int),1,output);
+    Fwrite(&totl,sizeof(int64),1,output);
+    Fwrite(&tspace,sizeof(int),1,output);
 
     oblock = block+fway*bsize;
     optr   = oblock;
@@ -350,7 +368,7 @@ int main(int argc, char *argv[])
           if (src->ptr + span > src->top)
             ovl_reload(src,bsize);
           if (optr + span > otop)
-            { fwrite(oblock,1,optr-oblock,output);
+            { Fwrite(oblock,1,optr-oblock,output);
               optr = oblock;
             }
 
@@ -374,8 +392,8 @@ int main(int argc, char *argv[])
   //  Flush output buffer and wind up
 
   if (optr > oblock)
-    fwrite(oblock,1,optr-oblock,output);
-  fclose(output);
+    Fwrite(oblock,1,optr-oblock,output);
+  Fclose(output);
 
   for (i = 0; i < fway; i++)
     fclose(in[i].stream);
