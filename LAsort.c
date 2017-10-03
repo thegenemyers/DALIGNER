@@ -25,6 +25,24 @@ static char *Usage = "[-va] <align:las> ...";
 
 static char *IBLOCK;
 
+static void Fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  size_t rc = fwrite(ptr, size, nmemb, stream);
+  if (rc != nmemb) {
+    EPRINTF(EPLACE,"  Error writing %zu elements (of size %zu)\n", nmemb, size);
+    exit(1);
+  }
+}
+
+static void Fclose(FILE *stream) {
+  // An error in fclose() could be caused by an earlier failure in fwrite().
+  // 'man fclose' for details.
+  int rc = fclose(stream);
+  if (rc != 0) {
+    EPRINTF(EPLACE,"  Error closing stream.\n");
+    exit(1);
+  }
+}
+
 static int SORT_OVL(const void *x, const void *y)
 { int64 l = *((int64 *) x);
   int64 r = *((int64 *) y);
@@ -182,8 +200,8 @@ int main(int argc, char *argv[])
         if (foutput == NULL)
           exit (1);
 
-        fwrite(&novl,sizeof(int64),1,foutput);
-        fwrite(&tspace,sizeof(int),1,foutput);
+        Fwrite(&novl,sizeof(int64),1,foutput);
+        Fwrite(&tspace,sizeof(int),1,foutput);
 
         free(pwd);
         free(root);
@@ -258,7 +276,7 @@ int main(int argc, char *argv[])
               { tsize = w->path.tlen*tbytes;
                 span  = ovlsize + tsize;
                 if (fptr + span > ftop)
-                  { fwrite(fblock,1,fptr-fblock,foutput);
+                  { Fwrite(fblock,1,fptr-fblock,foutput);
                     fptr = fblock;
                   }
                 memmove(fptr,((char *) w)+ptrsize,ovlsize);
@@ -270,11 +288,11 @@ int main(int argc, char *argv[])
             while (wo < iend && CHAIN_NEXT(w->flags));
           }
         if (fptr > fblock)
-          fwrite(fblock,1,fptr-fblock,foutput);
+          Fwrite(fblock,1,fptr-fblock,foutput);
       }
 
       free(perm);
-      fclose(foutput);
+      Fclose(foutput);
     }
 
   if (iblock != NULL)
