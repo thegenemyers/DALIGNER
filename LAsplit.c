@@ -141,7 +141,7 @@ int main(int argc, char *argv[])
 
   { int      i, j;
     Overlap *w;
-    int      low, hgh, last;
+    int64    low, hgh, last;
     int64    tsize, povl;
     char    *iptr, *itop;
     char    *optr, *otop;

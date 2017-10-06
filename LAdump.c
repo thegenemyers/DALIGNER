@@ -78,6 +78,20 @@ int main(int argc, char *argv[])
 
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      P #a #b #o #c     - (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and\n");
+        fprintf(stderr,"                            #c is '>' (start of best chain), '+' (start of alternate chain),\n");
+        fprintf(stderr,"                            '-' (continuation of chain), or '.' (no chains in file).\n");
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -c: C #ab #ae #bb #be - #a[#ab,#ae] aligns with #b^#o[#bb,#be]\n");
+        fprintf(stderr,"      -d: D #               - there are # differences in the LA\n");
+        fprintf(stderr,"      -t: T #n              - there are #n trace point intervals for the LA\n");
+        fprintf(stderr,"           (#d #y )^#n      - there are #d difference aligning the #y bp's of B with the\n");
+        fprintf(stderr,"                                 next fixed-size interval of A\n");
+        fprintf(stderr,"      -l: L #la #lb         - #la is the length of the a-read and #lb that of the b-read\n");
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -o: Output proper overlaps only\n");
+
         exit (1);
       }
   }

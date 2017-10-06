@@ -24,6 +24,7 @@ extern int    MINOVER;
 extern int    HGAP_MIN;
 extern int    SYMMETRIC;
 extern int    IDENTITY;
+extern char  *SORT_PATH;
 
 extern uint64 MEM_LIMIT;
 extern uint64 MEM_PHYSICAL;

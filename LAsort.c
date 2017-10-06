@@ -49,7 +49,7 @@ static int SORT_OVL(const void *x, const void *y)
     return (bl-br);
 
   cl = COMP(ol->flags);
-  cr = COMP(ol->flags);
+  cr = COMP(or->flags);
   if (cl != cr)
     return (cl-cr);
 
