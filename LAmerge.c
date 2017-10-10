@@ -287,8 +287,10 @@ int main(int argc, char *argv[])
     free(pwd);
     free(root);
 
-    fwrite(&totl,sizeof(int64),1,output);
-    fwrite(&tspace,sizeof(int),1,output);
+    if (fwrite(&totl,sizeof(int64),1,output) != 1)
+      SYSTEM_ERROR
+    if (fwrite(&tspace,sizeof(int),1,output) != 1)
+      SYSTEM_ERROR
 
     oblock = block+fway*bsize;
     optr   = oblock;
@@ -350,7 +352,8 @@ int main(int argc, char *argv[])
           if (src->ptr + span > src->top)
             ovl_reload(src,bsize);
           if (optr + span > otop)
-            { fwrite(oblock,1,optr-oblock,output);
+            { if (fwrite(oblock,1,optr-oblock,output) != (size_t) (optr-oblock))
+                SYSTEM_ERROR
               optr = oblock;
             }
 
@@ -374,7 +377,9 @@ int main(int argc, char *argv[])
   //  Flush output buffer and wind up
 
   if (optr > oblock)
-    fwrite(oblock,1,optr-oblock,output);
+    { if (fwrite(oblock,1,optr-oblock,output) != (size_t) (optr-oblock))
+        SYSTEM_ERROR
+    }
   fclose(output);
 
   for (i = 0; i < fway; i++)

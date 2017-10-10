@@ -521,7 +521,7 @@ int main(int argc, char *argv[])
           printf("]");
 
         if (!CARTOON)
-          printf("  ~  %4.1f%% ",(200.*ovl->path.diffs) /
+          printf("  ~  %5.2f%% ",(200.*ovl->path.diffs) /
                  ((ovl->path.aepos - ovl->path.abpos) + (ovl->path.bepos - ovl->path.bbpos)) );
         printf("  (");
         if (FLIP)
