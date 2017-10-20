@@ -182,8 +182,10 @@ int main(int argc, char *argv[])
         if (foutput == NULL)
           exit (1);
 
-        fwrite(&novl,sizeof(int64),1,foutput);
-        fwrite(&tspace,sizeof(int),1,foutput);
+        if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
+          SYSTEM_ERROR
+        if (fwrite(&tspace,sizeof(int),1,foutput) != 1)
+          SYSTEM_ERROR
 
         free(pwd);
         free(root);
@@ -258,7 +260,8 @@ int main(int argc, char *argv[])
               { tsize = w->path.tlen*tbytes;
                 span  = ovlsize + tsize;
                 if (fptr + span > ftop)
-                  { fwrite(fblock,1,fptr-fblock,foutput);
+                  { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
+                      SYSTEM_ERROR
                     fptr = fblock;
                   }
                 memmove(fptr,((char *) w)+ptrsize,ovlsize);
@@ -270,7 +273,9 @@ int main(int argc, char *argv[])
             while (wo < iend && CHAIN_NEXT(w->flags));
           }
         if (fptr > fblock)
-          fwrite(fblock,1,fptr-fblock,foutput);
+          { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
+              SYSTEM_ERROR
+          }
       }
 
       free(perm);

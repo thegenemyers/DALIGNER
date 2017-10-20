@@ -715,11 +715,11 @@ int main(int argc, char *argv[])
         if (i == 2)
           { for (j = 0; j < MTOP; j++)
               { if (MSTAT[j] == -2)
-                  printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,MASK[i]);
+                  printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,MASK[j]);
                 else if (MSTAT[j] == -1)
-                  printf("%s: Warning: %s track not sync'd with relevant db.\n",Prog_Name,MASK[i]);
+                  printf("%s: Warning: %s track not sync'd with relevant db.\n",Prog_Name,MASK[j]);
                 else if (MSTAT[j] == -3)
-                  printf("%s: Warning: %s track is not a mask track.\n",Prog_Name,MASK[i]);
+                  printf("%s: Warning: %s track is not a mask track.\n",Prog_Name,MASK[j]);
               }
 
             if (VERBOSE)

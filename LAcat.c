@@ -108,8 +108,10 @@ int main(int argc, char *argv[])
 
         fclose(input);
       }
-    fwrite(&novl,sizeof(int64),1,stdout);
-    fwrite(&tspace,sizeof(int),1,stdout);
+    if (fwrite(&novl,sizeof(int64),1,stdout) != 1)
+      SYSTEM_ERROR
+    if (fwrite(&tspace,sizeof(int),1,stdout) != 1)
+      SYSTEM_ERROR
   }
 
   { int      i, j;
@@ -151,7 +153,8 @@ int main(int argc, char *argv[])
             tsize = w->path.tlen*tbytes;
 
             if (optr + ovlsize + tsize > otop)
-              { fwrite(oblock,1,optr-oblock,stdout);
+              { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
+                  SYSTEM_ERROR
                 optr = oblock;
               }
 
@@ -177,7 +180,9 @@ int main(int argc, char *argv[])
       }
 
     if (optr > oblock)
-      fwrite(oblock,1,optr-oblock,stdout);
+      { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
+          SYSTEM_ERROR
+      }
   }
 
   if (VERBOSE)
