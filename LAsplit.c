@@ -139,9 +139,9 @@ int main(int argc, char *argv[])
   if (VERBOSE)
     fprintf(stderr,"  Distributing %lld la\'s\n",novl);
 
-  { int      i, j;
+  { int      i;
     Overlap *w;
-    int64    low, hgh, last;
+    int64    j, low, hgh, last;
     int64    tsize, povl;
     char    *iptr, *itop;
     char    *optr, *otop;
