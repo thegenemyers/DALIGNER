@@ -959,18 +959,18 @@ void mapper_script(int argc, char *argv[])
               { if (useblock1 || usepath2)
                   { fprintf(out," && mv %s",root2);
                     if (useblock2)
-                      fprintf(out,".%d",i);
+                      fprintf(out,".%d.las",i);
                     if (useblock1)
-                      fprintf(out,".%s.1 ",root1);
+                      fprintf(out,".%s.1.las ",root1);
                     else
-                      fprintf(out,".%s ",root1);
+                      fprintf(out,".%s.las ",root1);
                     if (useblock1)
                       { if (usepath2)
                           fprintf(out,"%s/",pwd2);
                         fprintf(out,"%s",root2);
                         if (useblock2)
                           fprintf(out,".%d",i);
-                        fprintf(out,".%s",root1);
+                        fprintf(out,".%s.las",root1);
                       }
                     else
                       fprintf(out,"%s",pwd2);

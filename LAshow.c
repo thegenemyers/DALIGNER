@@ -399,6 +399,15 @@ int main(int argc, char *argv[])
         ovl->path.trace = (void *) trace;
         Read_Trace(input,ovl,tbytes);
 
+        if (ovl->aread >= db1->nreads)
+          { fprintf(stderr,"%s: A-read is out-of-range of DB %s\n",Prog_Name,argv[1]);
+            exit (1);
+          }
+        if (ovl->bread >= db2->nreads)
+          { fprintf(stderr,"%s: B-read is out-of-range of DB %s\n",Prog_Name,argv[1+ISTWO]);
+            exit (1);
+          }
+
         //  Determine if it should be displayed
 
         ar = ovl->aread+1;
