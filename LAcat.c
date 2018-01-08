@@ -90,10 +90,10 @@ int main(int argc, char *argv[])
         if ((input = fopen(name,"r")) == NULL) break;
 
         if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         novl += povl;
         if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (i == 0)
           { tspace = mspace;
             if (tspace <= TRACE_XOVR && tspace != 0)
@@ -109,9 +109,9 @@ int main(int argc, char *argv[])
         fclose(input);
       }
     if (fwrite(&novl,sizeof(int64),1,stdout) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
     if (fwrite(&tspace,sizeof(int),1,stdout) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
   }
 
   { int      i, j;
@@ -129,9 +129,9 @@ int main(int argc, char *argv[])
         if ((input = fopen(name,"r")) == NULL) break;
 
         if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
 
         if (VERBOSE)
           fprintf(stderr,"  Concatenating %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
 
             if (optr + ovlsize + tsize > otop)
               { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
-                  SYSTEM_ERROR
+                  SYSTEM_READ_ERROR
                 optr = oblock;
               }
 
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
 
     if (optr > oblock)
       { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
       }
   }
 

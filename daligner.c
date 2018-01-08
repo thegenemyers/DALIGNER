@@ -179,13 +179,13 @@ static void reheap(int s, Event **heap, int hsize)
     heap[c] = hs;
 }
 
-static int64 merge_size(HITS_DB *block, int mtop)
+static int64 merge_size(DAZZ_DB *block, int mtop)
 { Event       ev[mtop+1];
   Event      *heap[mtop+2];
   int         r, mhalf;
   int64       nsize;
 
-  { HITS_TRACK *track;
+  { DAZZ_TRACK *track;
     int         i;
 
     track = block->tracks;
@@ -204,7 +204,7 @@ static int64 merge_size(HITS_DB *block, int mtop)
   nsize = 0;
   for (r = 0; r < block->nreads; r++)
     { int         i, level, hsize;
-      HITS_TRACK *track;
+      DAZZ_TRACK *track;
 
       track = block->tracks;
       for (i = 0; i < mtop; i++)
@@ -251,15 +251,15 @@ static int64 merge_size(HITS_DB *block, int mtop)
   return (nsize);
 }
 
-static HITS_TRACK *merge_tracks(HITS_DB *block, int mtop, int64 nsize)
-{ HITS_TRACK *ntrack;
+static DAZZ_TRACK *merge_tracks(DAZZ_DB *block, int mtop, int64 nsize)
+{ DAZZ_TRACK *ntrack;
   Event       ev[mtop+1];
   Event      *heap[mtop+2];
   int         r, mhalf;
   int64      *anno;
   int        *data;
 
-  ntrack = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),"Allocating merged track");
+  ntrack = (DAZZ_TRACK *) Malloc(sizeof(DAZZ_TRACK),"Allocating merged track");
   if (ntrack == NULL)
     exit (1);
   ntrack->name = Strdup("merge","Allocating merged track");
@@ -270,7 +270,7 @@ static HITS_TRACK *merge_tracks(HITS_DB *block, int mtop, int64 nsize)
   if (anno == NULL || data == NULL || ntrack->name == NULL)
     exit (1);
 
-  { HITS_TRACK *track;
+  { DAZZ_TRACK *track;
     int         i;
 
     track = block->tracks;
@@ -289,7 +289,7 @@ static HITS_TRACK *merge_tracks(HITS_DB *block, int mtop, int64 nsize)
   nsize = 0;
   for (r = 0; r < block->nreads; r++)
     { int         i, level, hsize;
-      HITS_TRACK *track;
+      DAZZ_TRACK *track;
 
       anno[r] = nsize;
 
@@ -339,7 +339,7 @@ static HITS_TRACK *merge_tracks(HITS_DB *block, int mtop, int64 nsize)
   return (ntrack);
 }
 
-static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop, int kmer)
+static int read_DB(DAZZ_DB *block, char *name, char **mask, int *mstat, int mtop, int kmer)
 { int i, isdam, status, kind, stop;
 
   isdam = Open_DB(name,block);
@@ -367,7 +367,7 @@ static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop
 
   stop = 0;
   for (i = 0; i < mtop; i++)
-    { HITS_TRACK *track;
+    { DAZZ_TRACK *track;
       int64      *anno;
       int         j;
 
@@ -384,7 +384,7 @@ static int read_DB(HITS_DB *block, char *name, char **mask, int *mstat, int mtop
 
   if (stop > 1)
     { int64       nsize;
-      HITS_TRACK *track;
+      DAZZ_TRACK *track;
 
       nsize = merge_size(block,stop);
       track = merge_tracks(block,stop,nsize);
@@ -425,10 +425,10 @@ static void complement(char *s, int len)
     *s = (char) (3-*s);
 }
 
-static HITS_DB *complement_DB(HITS_DB *block, int inplace)
-{ static HITS_DB _cblock, *cblock = &_cblock;
+static DAZZ_DB *complement_DB(DAZZ_DB *block, int inplace)
+{ static DAZZ_DB _cblock, *cblock = &_cblock;
   int            nreads;
-  HITS_READ     *reads;
+  DAZZ_READ     *reads;
   char          *seq;
   
   nreads = block->nreads;
@@ -463,7 +463,7 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
       complement(seq+reads[i].boff,reads[i].rlen);
   }
 
-  { HITS_TRACK *src, *trg;
+  { DAZZ_TRACK *src, *trg;
     int        *data, *tata;
     int         i, x, rlen;
     int64      *tano, *anno;
@@ -483,7 +483,7 @@ static HITS_DB *complement_DB(HITS_DB *block, int inplace)
                                   "Allocating dazzler interval track data");
             anno = (int64 *) Malloc(sizeof(int64)*(nreads+1),
                                     "Allocating dazzler interval track index");
-            trg  = (HITS_TRACK *) Malloc(sizeof(HITS_TRACK),
+            trg  = (DAZZ_TRACK *) Malloc(sizeof(DAZZ_TRACK),
                                          "Allocating dazzler interval track header");
             if (data == NULL || trg == NULL || anno == NULL)
               exit (1);
@@ -536,8 +536,8 @@ static char *CommandBuffer(char *aname, char *bname)
 }
 
 int main(int argc, char *argv[])
-{ HITS_DB    _ablock, _bblock;
-  HITS_DB    *ablock = &_ablock, *bblock = &_bblock;
+{ DAZZ_DB    _ablock, _bblock;
+  DAZZ_DB    *ablock = &_ablock, *bblock = &_bblock;
   char       *afile,  *bfile;
   char       *aroot,  *broot;
   void       *aindex, *bindex;
@@ -691,7 +691,7 @@ int main(int argc, char *argv[])
   else
     aroot = Root(afile,".db");
 
-  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq);
+  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq, 1);
 
   /* Compare against reads in B in both orientations */
 

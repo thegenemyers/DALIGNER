@@ -12,9 +12,9 @@
  *
  ********************************************************************************************/
 
-#ifndef _HITS_DB
+#ifndef _DAZZ_DB
 
-#define _HITS_DB
+#define _DAZZ_DB
 
 #include <stdio.h>
 
@@ -74,11 +74,6 @@ extern char Ebuffer[];
 
 #endif
 
-#define SYSTEM_ERROR							\
-  { EPRINTF(EPLACE,"%s: System error, read failed!\n",Prog_Name);	\
-    exit (2);								\
-  }
-
 #define ARG_INIT(name)                  \
   Prog_Name = Strdup(name,"");          \
   for (i = 0; i < 128; i++)             \
@@ -124,6 +119,108 @@ extern char Ebuffer[];
                      Prog_Name,argv[i][1],argv[i]+2);      				\
       exit (1);                                                                         \
     }
+
+
+/*******************************************************************************************
+ *
+ *  GUARDED BATCH IO MACROS
+ *
+ ********************************************************************************************/
+
+    //  Utilitieis
+
+int Count_Args(char *arg);
+
+#define SYSTEM_READ_ERROR						\
+  { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);	\
+    exit (2);								\
+  }
+
+#define SYSTEM_WRITE_ERROR						\
+  { fprintf(stderr,"%s: System error, write failed!\n",Prog_Name);	\
+    exit (2);								\
+  }
+
+#define SYSTEM_CLOSE_ERROR						\
+  { fprintf(stderr,"%s: System error, file close failed!\n",Prog_Name);	\
+    exit (2);								\
+  }
+
+    //  Output
+
+#define FWRITE(v,s,n,file)			\
+  { if (fwrite(v,s,n,file) != (size_t) n)	\
+      SYSTEM_WRITE_ERROR			\
+  }
+
+#define FPRINTF(file,...)		\
+  { if (fprintf(file,__VA_ARGS__) < 0)	\
+      SYSTEM_WRITE_ERROR		\
+  }
+
+#define PRINTF(...)			\
+  { if (printf(__VA_ARGS__) < 0)	\
+      SYSTEM_WRITE_ERROR		\
+  }
+
+#define FPUTS(x,file)			\
+  { if (fputs(x,file) == EOF)		\
+      SYSTEM_WRITE_ERROR		\
+  }
+
+    //  Close
+
+#define FCLOSE(file)		\
+  { if (fclose(file) != 0)	\
+      SYSTEM_CLOSE_ERROR	\
+  }
+
+    //  Input
+
+#define FREAD(v,s,n,file)								\
+  { if (fread(v,s,n,file) != (size_t) n)						\
+      { if (ferror(file))								\
+          SYSTEM_READ_ERROR								\
+        else										\
+          { fprintf(stderr,"%s: The file %s is corrupted\n",Prog_Name,file ## _name);	\
+            exit (1);									\
+          }										\
+      }											\
+  }
+
+#define FSCANF(file,...)								\
+  { if (fscanf(file,__VA_ARGS__) != Count_Args(#__VA_ARGS__)-1)				\
+      { if (ferror(file))								\
+          SYSTEM_READ_ERROR								\
+        else										\
+          { fprintf(stderr,"%s: The file %s is corrupted\n",Prog_Name,file ## _name);	\
+            exit (1);									\
+          }										\
+      }											\
+  }
+
+#define FGETS(v,n,file)									\
+  { if (fgets(v,n,file) == NULL)							\
+      { if (ferror(file))								\
+          SYSTEM_READ_ERROR								\
+        else										\
+          { fprintf(stderr,"%s: The file %s is corrupted\n",Prog_Name,file ## _name);	\
+            exit (1);									\
+          }										\
+      }											\
+  }
+
+#define FSEEKO(file,p,d)	\
+  { if (fseeko(file,p,d) < 0)	\
+      SYSTEM_READ_ERROR		\
+  }
+
+#define FTELLO(file)		\
+  ( { int x = ftello(file);	\
+      if (x < 0)		\
+        SYSTEM_READ_ERROR	\
+      ; x; 			\
+  } )
 
 /*******************************************************************************************
  *
@@ -193,7 +290,7 @@ typedef struct
                     //  Offset (in bytes) of scaffold header string in '.hdr' file (DAM)
                     //  4 compressed shorts containing snr info if an arrow DB.
     int     flags;  //  QV of read + flags above (DB only)
-  } HITS_READ;
+  } DAZZ_READ;
 
 //  A track can be of 3 types:
 //    data == NULL: there are nreads 'anno' records of size 'size'.
@@ -208,9 +305,31 @@ typedef struct _track
     int            size;  //  Size in bytes of anno records
     void          *anno;  //  over [0,nreads]: read i annotation: int, int64, or 'size' records 
     void          *data;  //     data[anno[i] .. anno[i+1]-1] is data if data != NULL
-  } HITS_TRACK;
+  } DAZZ_TRACK;
 
-//  The information for accessing QV streams is in a HITS_QV record that is a "pseudo-track"
+//  The tailing part of a .anno track file can contain meta-information produced by the
+//    command that produced the track.  For example, the coverage, or good/bad parameters
+//    for trimming, or even say a histogram of QV values.  Each item is an array of 'nelem'
+//    64-bit ints or floats ('vtype' = DB_INT or DB_REAL), has a 'name' string that
+//    describes it, and an indicator as to whether the values should be equal accross all
+//    block tracks, or summed accross all block tracks (by Catrack).  'value' points at the
+//    array of values
+
+#define DB_INT  0
+#define DB_REAL 1
+
+#define DB_EXACT 0
+#define DB_SUM   1
+
+typedef struct
+  { int   vtype;  //  INT64 or FLOAST64
+    int   nelem;  //  >= 1
+    int   accum;  //  EXACT, SUM
+    char *name;
+    void *value;
+  } DAZZ_EXTRA;
+
+//  The information for accessing QV streams is in a DAZZ_QV record that is a "pseudo-track"
 //    named ".@qvs" and is always the first track record in the list (if present).  Since normal
 //    track names cannot begin with a . (this is enforced), this pseudo-track is never confused
 //    with a normal track.
@@ -223,11 +342,11 @@ typedef struct
     uint16        *table;   //  for i in [0,db->nreads-1]: read i should be decompressed with
                             //    scheme coding[table[i]]
     FILE          *quiva;   //  the open file pointer to the .qvs file
-  } HITS_QV;
+  } DAZZ_QV;
 
 //  The DB record holds all information about the current state of an active DB including an
-//    array of HITS_READS, one per read, and a linked list of HITS_TRACKs the first of which
-//    is always a HITS_QV pseudo-track (if the QVs have been loaded).
+//    array of DAZZ_READS, one per read, and a linked list of DAZZ_TRACKs the first of which
+//    is always a DAZZ_QV pseudo-track (if the QVs have been loaded).
 
 typedef struct
   { int         ureads;     //  Total number of reads in untrimmed DB
@@ -257,9 +376,9 @@ typedef struct
     int         loaded;     //  Are reads loaded in memory?
     void       *bases;      //  file pointer for bases file (to fetch reads from),
                             //    or memory pointer to uncompressed block of all sequences.
-    HITS_READ  *reads;      //  Array [-1..nreads] of HITS_READ
-    HITS_TRACK *tracks;     //  Linked list of loaded tracks
-  } HITS_DB; 
+    DAZZ_READ  *reads;      //  Array [-1..nreads] of DAZZ_READ
+    DAZZ_TRACK *tracks;     //  Linked list of loaded tracks
+  } DAZZ_DB; 
 
 
 /*******************************************************************************************
@@ -294,7 +413,7 @@ typedef struct
   //          contain N-separated contigs), and .fpulse the first base of the contig in the
   //          fasta entry
 
-  // Open the given database or dam, "path" into the supplied HITS_DB record "db". If the name has
+  // Open the given database or dam, "path" into the supplied DAZZ_DB record "db". If the name has
   //   a part # in it then just the part is opened.  The index array is allocated (for all or
   //   just the part) and read in.
   // Return status of routine:
@@ -302,34 +421,34 @@ typedef struct
   //     0: Open of DB proceeded without mishap
   //     1: Open of DAM proceeded without mishap
 
-int Open_DB(char *path, HITS_DB *db);
+int Open_DB(char *path, DAZZ_DB *db);
 
   // Trim the DB or part thereof and all loaded tracks according to the cutoff and all settings
   //   of the current DB partition.  Reallocate smaller memory blocks for the information kept
   //   for the retained reads.
 
-void Trim_DB(HITS_DB *db);
+void Trim_DB(DAZZ_DB *db);
 
   // Shut down an open 'db' by freeing all associated space, including tracks and QV structures,
   //   and any open file pointers.  The record pointed at by db however remains (the user
   //   supplied it and so should free it).
 
-void Close_DB(HITS_DB *db);
+void Close_DB(DAZZ_DB *db);
 
   // Return the size in bytes of the given DB
 
-int64 sizeof_DB(HITS_DB *db);
+int64 sizeof_DB(DAZZ_DB *db);
 
   // If QV pseudo track is not already in db's track list, then load it and set it up.
   //   The database must not have been trimmed yet.  -1 is returned if a .qvs file is not
   //   present, and 1 is returned if an error (reported to EPLACE) occured and INTERACTIVE
   //   is defined.  Otherwise a 0 is returned.
 
-int Load_QVs(HITS_DB *db);
+int Load_QVs(DAZZ_DB *db);
 
   // Remove the QV pseudo track, all space associated with it, and close the .qvs file.
 
-void Close_QVs(HITS_DB *db);
+void Close_QVs(DAZZ_DB *db);
 
   // Look up the file and header in the file of the indicated track.  Return:
   //     1: Track is for trimmed DB
@@ -344,28 +463,47 @@ void Close_QVs(HITS_DB *db);
 #define CUSTOM_TRACK 0
 #define   MASK_TRACK 1
 
-int Check_Track(HITS_DB *db, char *track, int *kind);
+int Check_Track(DAZZ_DB *db, char *track, int *kind);
 
   // If track is not already in the db's track list, then allocate all the storage for it,
   //   read it in from the appropriate file, add it to the track list, and return a pointer
-  //   to the newly created HITS_TRACK record.  If the track does not exist or cannot be
+  //   to the newly created DAZZ_TRACK record.  If the track does not exist or cannot be
   //   opened for some reason, then NULL is returned if INTERACTIVE is defined.  Otherwise
   //   the routine prints an error message to stderr and exits if an error occurs, and returns
   //   with NULL only if the track does not exist.
 
-HITS_TRACK *Load_Track(HITS_DB *db, char *track);
+DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track);
+
+  // Assumming file pointer for afile is correctly positioned at the start of a extra item,
+  //   and aname is the name of the .anno file, decode the value present and places it in
+  //   extra if extra->nelem == 0, otherwise reduce the value just read into extra according
+  //   according the to the directive given by 'accum'.  Leave the read poinrt at the next
+  //   extra or end-of-file.
+  //   Returns:
+  //      1 if at the end of file,
+  //      0 if item was read and folded correctly,
+  //     -1 if there was a system IO or allocation error (if interactive), and
+  //     -2 if the new value could not be reduced into the currenct value of extra (interactive)
+
+int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra);
+
+//  Write extra record to end of file afile and advance write pointer
+//  If interactive, then return non-zero on error, if bash, then print
+//  and halt if an error
+
+int Write_Extra(FILE *afile, DAZZ_EXTRA *extra);
 
   // If track is on the db's track list, then it is removed and all storage associated with it
   //   is freed.
 
-void Close_Track(HITS_DB *db, char *track);
+void Close_Track(DAZZ_DB *db, char *track);
 
   // Allocate and return a buffer big enough for the largest read in 'db'.
   // **NB** free(x-1) if x is the value returned as *prefix* and suffix '\0'(4)-byte
   // are needed by the alignment algorithms.  If cannot allocate memory then return NULL
   // if INTERACTIVE is defined, or print error to stderr and exit otherwise.
 
-char *New_Read_Buffer(HITS_DB *db);
+char *New_Read_Buffer(DAZZ_DB *db);
 
   // Load into 'read' the i'th read in 'db'.  As a lower case ascii string if ascii is 1, an
   //   upper case ascii string if ascii is 2, and a numeric string over 0(A), 1(C), 2(G), and 3(T)
@@ -373,12 +511,12 @@ char *New_Read_Buffer(HITS_DB *db);
   //   for traversals in either direction.  A non-zero value is returned if an error occured
   //   and INTERACTIVE is defined.
 
-int  Load_Read(HITS_DB *db, int i, char *read, int ascii);
+int  Load_Read(DAZZ_DB *db, int i, char *read, int ascii);
 
   // Exactly the same as Load_Read, save the arrow information is loaded, not the DNA sequence,
   //   and there is only a choice between numeric (0) or ascii (1);
 
-int  Load_Arrow(HITS_DB *db, int i, char *read, int ascii);
+int  Load_Arrow(DAZZ_DB *db, int i, char *read, int ascii);
 
   // Load into 'read' the subread [beg,end] of the i'th read in 'db' and return a pointer to the
   //   the start of the subinterval (not necessarily = to read !!! ).  As a lower case ascii
@@ -387,7 +525,7 @@ int  Load_Arrow(HITS_DB *db, int i, char *read, int ascii);
   //   the string holding the substring so it has a delimeter for traversals in either direction.
   //   A NULL pointer is returned if an error occured and INTERACTIVE is defined.
 
-char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii);
+char *Load_Subread(DAZZ_DB *db, int i, int beg, int end, char *read, int ascii);
 
   // Allocate a set of 5 vectors large enough to hold the longest QV stream that will occur
   //   in the database.  If cannot allocate memory then return NULL if INTERACTIVE is defined,
@@ -399,13 +537,13 @@ char *Load_Subread(HITS_DB *db, int i, int beg, int end, char *read, int ascii);
 #define SUB_QV  3   //  The substitution QVs
 #define MRG_QV  4   //  The merge QVs
 
-char **New_QV_Buffer(HITS_DB *db);
+char **New_QV_Buffer(DAZZ_DB *db);
 
   // Load into 'entry' the 5 QV vectors for i'th read in 'db'.  The deletion tag or characters
   //   are converted to a numeric or upper/lower case ascii string as per ascii.  Return with
   //   a zero, except when an error occurs and INTERACTIVE is defined in which case return wtih 1.
 
-int   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
+int   Load_QVentry(DAZZ_DB *db, int i, char **entry, int ascii);
 
   // Allocate a block big enough for all the uncompressed sequences, read them into it,
   //   reset the 'off' in each read record to be its in-memory offset, and set the
@@ -415,7 +553,7 @@ int   Load_QVentry(HITS_DB *db, int i, char **entry, int ascii);
   //   Return with a zero, except when an error occurs and INTERACTIVE is defined in which
   //   case return wtih 1.
 
-int Read_All_Sequences(HITS_DB *db, int ascii);
+int Read_All_Sequences(DAZZ_DB *db, int ascii);
 
   // For the DB or DAM "path" = "prefix/root.[db|dam]", find all the files for that DB, i.e. all
   //   those of the form "prefix/[.]root.part" and call actor with the complete path to each file
@@ -429,4 +567,4 @@ int Read_All_Sequences(HITS_DB *db, int ascii);
 
 int List_DB_Files(char *path, void actor(char *path, char *extension));
 
-#endif // _HITS_DB
+#endif // _DAZZ_DB

@@ -161,6 +161,7 @@ static double Bias_Factor[10] = { .690, .690, .690, .690, .780,
 typedef struct
   { double ave_corr;
     int    trace_space;
+    int    reach;
     float  freq[4];
     int    ave_path;
     int16 *score;
@@ -196,7 +197,7 @@ static void set_table(int bit, int prefix, int score, int max, Table_Bits *parms
 
 /* Create an alignment specification record including path tip tables & values */
 
-Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
+Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq, int reach)
 { _Align_Spec *spec;
   Table_Bits   parms;
   double       match;
@@ -208,6 +209,7 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq)
 
   spec->ave_corr    = ave_corr;
   spec->trace_space = trace_space;
+  spec->reach       = reach;
   spec->freq[0]     = freq[0];
   spec->freq[1]     = freq[1];
   spec->freq[2]     = freq[2];
@@ -256,6 +258,9 @@ int Trace_Spacing(Align_Spec *espec)
 
 float *Base_Frequencies(Align_Spec *espec)
 { return (((_Align_Spec *) espec)->freq); }
+
+int Overlap_If_Possible(Align_Spec *espec)
+{ return (((_Align_Spec *) espec)->reach); }
 
 
 /****************************************************************************************\
@@ -343,6 +348,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
+  int     REACH       = spec->reach;
   int16  *SCORE       = spec->score;
   int16  *TABLE       = spec->table;
 
@@ -874,7 +880,7 @@ static int forward_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     int     a, b, k, h;
     int     d, e;
 
-    if (morem >= 0)
+    if (morem >= 0 && REACH)
       { trimx  = morea-morey;
         trimy  = morey;
         trimd  = mored;
@@ -1004,6 +1010,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
 
   int     TRACE_SPACE = spec->trace_space;
   int     PATH_AVE    = spec->ave_path;
+  int     REACH       = spec->reach;
   int16  *SCORE       = spec->score;
   int16  *TABLE       = spec->table;
 
@@ -1527,7 +1534,7 @@ static int reverse_wave(_Work_Data *work, _Align_Spec *spec, Alignment *align, P
     int     a, b, k, h;
     int     d, e;
 
-    if (morem >= 0)
+    if (morem >= 0 && REACH)
       { trimx  = morea-morey;
         trimy  = morey;
         trimd  = mored;

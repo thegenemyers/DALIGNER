@@ -252,10 +252,10 @@ int main(int argc, char *argv[])
       free(root);
 
       if (fread(&novl,sizeof(int64),1,input) != 1)
-        SYSTEM_ERROR
+        SYSTEM_READ_ERROR
       totl += novl;
       if (fread(&mspace,sizeof(int),1,input) != 1)
-        SYSTEM_ERROR
+        SYSTEM_READ_ERROR
       if (i == 0)
         { tspace = mspace;
           if (tspace <= TRACE_XOVR && tspace != 0)
@@ -288,9 +288,9 @@ int main(int argc, char *argv[])
     free(root);
 
     if (fwrite(&totl,sizeof(int64),1,output) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
     if (fwrite(&tspace,sizeof(int),1,output) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
 
     oblock = block+fway*bsize;
     optr   = oblock;
@@ -353,7 +353,7 @@ int main(int argc, char *argv[])
             ovl_reload(src,bsize);
           if (optr + span > otop)
             { if (fwrite(oblock,1,optr-oblock,output) != (size_t) (optr-oblock))
-                SYSTEM_ERROR
+                SYSTEM_READ_ERROR
               optr = oblock;
             }
 
@@ -378,7 +378,7 @@ int main(int argc, char *argv[])
 
   if (optr > oblock)
     { if (fwrite(oblock,1,optr-oblock,output) != (size_t) (optr-oblock))
-        SYSTEM_ERROR
+        SYSTEM_READ_ERROR
     }
   fclose(output);
 

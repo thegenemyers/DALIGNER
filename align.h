@@ -138,6 +138,10 @@ typedef struct
 #define CHAIN_NEXT(x)   ((x) & NEXT_FLAG)
 #define BEST_CHAIN(x)   ((x) & BEST_FLAG)
 
+#define ELIM_FLAG  0x20  //  This LA should be ignored
+
+#define ELIM(x)  ((x) & ELIM_FLAG)
+
 typedef struct
   { Path   *path;
     uint32  flags;        /* Pipeline status and complementation flags          */
@@ -173,7 +177,9 @@ void Complement_Seq(char *a, int n);
                     description of 'trace' for Paths above)
      freq[4]:     a 4-element vector where afreq[0] = frequency of A, f(A), freq[1] = f(C),
                     freq[2] = f(G), and freq[3] = f(T).  This vector is part of the header
-                    of every HITS database (see db.h).
+                    of every DAZZ database (see db.h).
+     reach:       a boolean, if set alignment extend to the boundary when reasonable, otherwise
+                    the terminate only at suffix-positive points.
 
      If an alignment cannot reach the boundary of the d.p. matrix with this condition (i.e.
      overlap), then the last/first 30 columns of the alignment are guaranteed to be
@@ -187,13 +193,14 @@ void Complement_Seq(char *a, int n);
 
   typedef void Align_Spec;
 
-  Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq);
+  Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq, int reach);
 
   void        Free_Align_Spec(Align_Spec *spec);
 
   int    Trace_Spacing      (Align_Spec *spec);
   double Average_Correlation(Align_Spec *spec);
   float *Base_Frequencies   (Align_Spec *spec);
+  int    Overlap_If_Possible(Align_Spec *spec);
 
   /* Local_Alignment finds the longest significant local alignment between the sequences in
      'align' subject to:
@@ -303,7 +310,7 @@ void Complement_Seq(char *a, int n);
 /*** OVERLAP ABSTRACTION:
 
      Externally, between modules an Alignment is modeled by an "Overlap" record, which
-     (a) replaces the pointers to the two sequences with their ID's in the HITS data bases,
+     (a) replaces the pointers to the two sequences with their ID's in the DAZZ data bases,
      (b) does not contain the length of the 2 sequences (must fetch from DB), and
      (c) contains its path as a subrecord rather than as a pointer (indeed, typically the
      corresponding Alignment record points at the Overlap's path sub-record).  The trace pointer

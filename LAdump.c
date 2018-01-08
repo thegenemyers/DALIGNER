@@ -22,7 +22,7 @@
 #include "align.h"
 
 static char *Usage =
-    "[-cdtlo] <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]";
+    "[-cdtlo] <src1:db|dam> [<src2:db|dam>] <align:las> [<reads:FILE> | <reads:range> ...]";
 
 #define LAST_READ_SYMBOL  '$'
 
@@ -33,8 +33,8 @@ static int ORDER(const void *l, const void *r)
 }
 
 int main(int argc, char *argv[])
-{ HITS_DB   _db1, *db1 = &_db1; 
-  HITS_DB   _db2, *db2 = &_db2; 
+{ DAZZ_DB   _db1, *db1 = &_db1; 
+  DAZZ_DB   _db2, *db2 = &_db2; 
   Overlap   _ovl, *ovl = &_ovl;
 
   FILE   *input;
@@ -280,9 +280,9 @@ int main(int argc, char *argv[])
       exit (1);
 
     if (fread(&novl,sizeof(int64),1,input) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
     if (fread(&tspace,sizeof(int),1,input) != 1)
-      SYSTEM_ERROR
+      SYSTEM_READ_ERROR
 
     if (tspace <= TRACE_XOVR && tspace != 0)
       { small  = 1;
@@ -393,7 +393,7 @@ int main(int argc, char *argv[])
   { int        j, k;
     uint16    *trace;
     int        in, npt, idx, ar;
-    HITS_READ *read1, *read2;
+    DAZZ_READ *read1, *read2;
 
     rewind(input);
     fread(&novl,sizeof(int64),1,input);

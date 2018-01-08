@@ -81,19 +81,19 @@ int main(int argc, char *argv[])
         free(root);
 
         if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         while (nfiles-- > 0)
           if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
-            SYSTEM_ERROR
+            SYSTEM_READ_ERROR
         parts = 0;
         if (fscanf(dbvis,DB_NBLOCK,&parts) != 1)
           { fprintf(stderr,"%s: DB %s has not been partitioned\n",Prog_Name,argv[2]);
             exit (1);
           }
         if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
       }
     else
       { dbvis = NULL;
@@ -128,9 +128,9 @@ int main(int argc, char *argv[])
   *root2++ = '\0';
 
   if (fread(&novl,sizeof(int64),1,stdin) != 1)
-    SYSTEM_ERROR
+    SYSTEM_READ_ERROR
   if (fread(&tspace,sizeof(int),1,stdin) != 1)
-    SYSTEM_ERROR
+    SYSTEM_READ_ERROR
   if (tspace <= TRACE_XOVR && tspace != 0)
     tbytes = sizeof(uint8);
   else
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         low = hgh;
         if (dbvis != NULL)
           { if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-              SYSTEM_ERROR
+              SYSTEM_READ_ERROR
             last = blast-1;
             hgh  = 0;
           }

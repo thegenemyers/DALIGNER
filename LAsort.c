@@ -160,9 +160,9 @@ int main(int argc, char *argv[])
         size = info.st_size;
 
         if (fread(&novl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fread(&tspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
 
         if (tspace <= TRACE_XOVR && tspace != 0)
           tbytes = sizeof(uint8);
@@ -183,9 +183,9 @@ int main(int argc, char *argv[])
           exit (1);
 
         if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fwrite(&tspace,sizeof(int),1,foutput) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
 
         free(pwd);
         free(root);
@@ -203,7 +203,7 @@ int main(int argc, char *argv[])
         size -= (sizeof(int64) + sizeof(int));
         if (size > 0)
           { if (fread(iblock,size,1,input) != 1)
-              SYSTEM_ERROR
+              SYSTEM_READ_ERROR
           }
         fclose(input);
         iend = iblock + (size - ptrsize);
@@ -261,7 +261,7 @@ int main(int argc, char *argv[])
                 span  = ovlsize + tsize;
                 if (fptr + span > ftop)
                   { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-                      SYSTEM_ERROR
+                      SYSTEM_READ_ERROR
                     fptr = fblock;
                   }
                 memmove(fptr,((char *) w)+ptrsize,ovlsize);
@@ -274,7 +274,7 @@ int main(int argc, char *argv[])
           }
         if (fptr > fblock)
           { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-              SYSTEM_ERROR
+              SYSTEM_READ_ERROR
           }
       }
 

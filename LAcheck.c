@@ -23,8 +23,8 @@ static char *Usage = "[-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...";
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ HITS_DB   _db1,  *db1  = &_db1;
-  HITS_DB   _db2,  *db2  = &_db2;
+{ DAZZ_DB   _db1,  *db1  = &_db1;
+  DAZZ_DB   _db2,  *db2  = &_db2;
   int        VERBOSE;
   int        SORTED;
   int        ISTWO;
@@ -103,9 +103,9 @@ int main(int argc, char *argv[])
   { char      *iblock;
     int64      bsize, ovlsize, ptrsize;
     int        i, j;
-    HITS_READ *reads1  = db1->reads;
+    DAZZ_READ *reads1  = db1->reads;
     int        nreads1 = db1->nreads;
-    HITS_READ *reads2  = db2->reads;
+    DAZZ_READ *reads2  = db2->reads;
     int        nreads2 = db2->nreads;
 
     //  Setup IO buffers
@@ -138,9 +138,9 @@ int main(int argc, char *argv[])
           goto error;
 
         if (fread(&novl,sizeof(int64),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fread(&tspace,sizeof(int),1,input) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (novl < 0)
           { if (VERBOSE)
               fprintf(stderr,"  %s: Number of alignments < 0\n",root);
