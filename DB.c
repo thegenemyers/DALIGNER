@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <limits.h>
 
 #include "DB.h"
 
@@ -1988,4 +1989,176 @@ void Print_Read(char *s, int width)
         }
       printf("\n");
     }
+}
+
+
+/*******************************************************************************************
+ *
+ *  COMMAND LINE BLOCK PARSER
+ *    Take a command line argument and interpret the '@' block number ranges.
+ *    Parse_Block_Arg produces an Block_Looper iterator object that can then
+ *    be invoked multiple times to iterate through all the files implied by
+ *    the @ pattern/range.
+ *
+ ********************************************************************************************/
+
+typedef struct
+  { int first, last, next;
+    char *root, *pwd, *ppnt;
+    char *slice;
+  } _Block_Looper;
+
+  //  Advance the iterator e_parse to the next file, open it, and return the file pointer
+  //   to it.  Return NULL if at the end of the list of files.
+
+FILE *Next_Block_Arg(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  char *disp;
+  FILE *input;
+
+  parse->next += 1;
+  if (parse->next > parse->last)
+    return (NULL);
+
+  if (parse->next < 0)
+    disp  = parse->root;
+  else
+    disp = Numbered_Suffix(parse->root,parse->next,parse->ppnt);
+
+  if ((input = fopen(Catenate(parse->pwd,"/",disp,".las"),"r")) == NULL)
+    { if (parse->last != INT_MAX)
+        { fprintf(stderr,"%s: %s.las is not present\n",Prog_Name,disp);
+           exit (1);
+        }
+      return (NULL);
+    }
+  return (input);
+}
+
+  //  Reset the iterator e_parse to the first file
+
+void Reset_Block_Arg(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  parse->next = parse->first - 1;
+}
+
+  //  Return a pointer to the path for the current file
+
+char *Block_Arg_Path(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  return (parse->pwd);
+}
+
+  //  Return a pointer to the root name for the current file
+
+char *Block_Arg_Root(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  if (parse->next < 0)
+    return (parse->root);
+  else
+    return (Numbered_Suffix(parse->root,parse->next,parse->ppnt));
+}
+
+  //  Free the iterator
+
+void Free_Block_Arg(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  free(parse->root);
+  free(parse->pwd);
+  free(parse->slice);
+  free(parse);
+}
+
+char *Next_Block_Slice(Block_Looper *e_parse, int slice)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  if (parse->slice == NULL)
+    { int size = strlen(parse->pwd) + strlen(Block_Arg_Root(parse)) + 30;
+      parse->slice =  (char *)  Malloc(size,"Block argument slice");
+      if (parse->slice == NULL)
+        exit (1);
+    }
+
+  if (parse->first < 0)
+    sprintf(parse->slice,"%s/%s",parse->pwd,parse->root);
+  else
+    sprintf(parse->slice,"%s/%s%c%d-%d%s",parse->pwd,parse->root,BLOCK_SYMBOL,parse->next+1,
+                                          parse->next+slice,parse->ppnt);
+  parse->next += slice;
+  return (parse->slice);
+}
+
+  //  Parse the command line argument and return an iterator to move through the
+  //    file names, setting it up to report the first file.
+
+Block_Looper *Parse_Block_Arg(char *arg)
+{ _Block_Looper *parse;
+  char *pwd, *root;
+  char *ppnt, *cpnt;
+  int   first, last;
+
+  parse = (_Block_Looper *) Malloc(sizeof(_Block_Looper),"Allocating parse node");
+  pwd   = PathTo(arg);
+  root  = Root(arg,".las");
+  if (parse == NULL || pwd == NULL || root == NULL)
+    exit (1);
+
+  ppnt = index(root,BLOCK_SYMBOL);
+  if (ppnt == NULL)
+    first = last = -1;
+  else
+    { if (index(ppnt+1,BLOCK_SYMBOL) != NULL)
+        { fprintf(stderr,"%s: Two or more occurences of %c-sign in source name '%s'\n",
+                         Prog_Name,BLOCK_SYMBOL,root);
+          exit (1);
+        }
+      *ppnt++ = '\0';
+      first = strtol(ppnt,&cpnt,10);
+      if (cpnt == ppnt)
+        { first = 1;
+          last  = INT_MAX;
+        }
+      else
+        { if (first < 0)
+            { fprintf(stderr,
+                      "%s: Integer following %c-sigan is less than 0 in source name '%s'\n",
+                      Prog_Name,BLOCK_SYMBOL,root);
+              exit (1);
+            }
+          if (*cpnt == '-')
+            { ppnt = cpnt+1;
+              last = strtol(ppnt,&cpnt,10);
+              if (cpnt == ppnt)
+                { fprintf(stderr,"%s: Second integer must follow - in source name '%s'\n",
+                                 Prog_Name,root);
+                  exit (1);
+                }
+              if (last < first)
+                { fprintf(stderr,
+                          "%s: 2nd integer is less than 1st integer in source name '%s'\n",
+                          Prog_Name,root);
+                  exit (1);
+                }
+              ppnt = cpnt;
+            }
+          else
+            { last = INT_MAX;
+              ppnt = cpnt;
+            }
+        }
+    }
+
+  parse->pwd   = pwd;
+  parse->root  = root;
+  parse->ppnt  = ppnt;
+  parse->first = first;
+  parse->last  = last;
+  parse->next  = first-1;
+  parse->slice = NULL;
+  return ((Block_Looper *) parse);
 }

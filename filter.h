@@ -33,4 +33,6 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
                   void *atable, int alen, void *btable, int blen,
                   int comp, Align_Spec *asettings);
 
+void Clean_Exit(int val);
+
 #endif

@@ -26,8 +26,6 @@ static char *Usage[] =
       "    <src1:db|dam> [ <src2:db|dam> ] <align:las> [ <reads:FILE> | <reads:range> ... ]"
     };
 
-#define LAST_READ_SYMBOL  '$'
-
 static int ORDER(const void *l, const void *r)
 { int x = *((int *) l);
   int y = *((int *) r);
@@ -96,6 +94,17 @@ int main(int argc, char *argv[])
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage[0]);
         fprintf(stderr,"       %*s %s\n",(int) strlen(Prog_Name),"",Usage[1]);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -c: Show a cartoon of the LA between reads.\n");
+        fprintf(stderr,"      -a: Show the alignment of each LA.\n");
+        fprintf(stderr,"      -r: Show the alignment of each LA with -w bp's of A in each row.\n");
+        fprintf(stderr,"      -o: Show only proper overlaps.\n");
+        fprintf(stderr,"      -F: Switch the roles of A- and B-reads.\n");
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -U: Show alignments in upper case.\n");
+        fprintf(stderr,"      -i: Indent alignments and cartoons by -i.\n");
+        fprintf(stderr,"      -w: Width of each row of alignment in symbols (-a) or bps (-r).\n");
+        fprintf(stderr,"      -b: # of border bp.s to show on each side of LA.\n");
         exit (1);
       }
   }

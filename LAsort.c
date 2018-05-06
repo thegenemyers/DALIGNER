@@ -125,6 +125,10 @@ int main(int argc, char *argv[])
 
     if (argc <= 1)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: Verbose mode, output statistics as proceed.\n");
+        fprintf(stderr,"      -a: sort .las by A-read,A-position pairs for map usecase\n");
+        fprintf(stderr,"          off => sort .las by A,B-read pairs for overlap piles\n");
         exit (1);
       }
   }
@@ -142,146 +146,143 @@ int main(int argc, char *argv[])
     { int64    *perm;
       FILE     *input, *foutput;
       int64     novl, sov;
+      Block_Looper *parse;
 
-      //  Read in the entire file and output header
+      parse = Parse_Block_Arg(argv[i]);
 
-      { int64  size;
-        struct stat info;
-        char  *pwd, *root, *name;
+      while ((input = Next_Block_Arg(parse)) != NULL)
+        {
+          //  Read in the entire file and output header
 
-        pwd   = PathTo(argv[i]);
-        root  = Root(argv[i],".las");
-        name  = Catenate(pwd,"/",root,".las");
-        input = Fopen(name,"r");
-        if (input == NULL)
-          exit (1);
+          { int64  size;
+            struct stat info;
 
-        stat(name,&info);
-        size = info.st_size;
+            stat(Catenate(Block_Arg_Path(parse),"/",Block_Arg_Root(parse),".las"),&info);
+            size = info.st_size;
 
-        if (fread(&novl,sizeof(int64),1,input) != 1)
-          SYSTEM_READ_ERROR
-        if (fread(&tspace,sizeof(int),1,input) != 1)
-          SYSTEM_READ_ERROR
+            if (fread(&novl,sizeof(int64),1,input) != 1)
+              SYSTEM_READ_ERROR
+            if (fread(&tspace,sizeof(int),1,input) != 1)
+              SYSTEM_READ_ERROR
 
-        if (tspace <= TRACE_XOVR && tspace != 0)
-          tbytes = sizeof(uint8);
-        else
-          tbytes = sizeof(uint16);
-
-        if (VERBOSE)
-          { printf("  %s: ",root);
-            Print_Number(novl,0,stdout);
-            printf(" records ");
-            Print_Number(size-novl*ovlsize,0,stdout);
-            printf(" trace bytes\n");
-            fflush(stdout);
-          }
-
-        foutput = Fopen(Catenate(pwd,"/",root,".S.las"),"w");
-        if (foutput == NULL)
-          exit (1);
-
-        if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
-          SYSTEM_READ_ERROR
-        if (fwrite(&tspace,sizeof(int),1,foutput) != 1)
-          SYSTEM_READ_ERROR
-
-        free(pwd);
-        free(root);
-
-        if (size > isize)
-          { if (iblock == NULL)
-              iblock = Malloc(size+ptrsize,"Allocating LAsort input block");
+            if (tspace <= TRACE_XOVR && tspace != 0)
+              tbytes = sizeof(uint8);
             else
-              iblock = Realloc(iblock-ptrsize,size+ptrsize,"Allocating LAsort input block");
-            if (iblock == NULL)
+              tbytes = sizeof(uint16);
+
+            if (VERBOSE)
+              { printf("  %s: ",Block_Arg_Root(parse));
+                Print_Number(novl,0,stdout);
+                printf(" records ");
+                Print_Number(size-novl*ovlsize,0,stdout);
+                printf(" trace bytes\n");
+                fflush(stdout);
+              }
+
+            foutput = Fopen(Catenate(Block_Arg_Path(parse),"/",Block_Arg_Root(parse),".S.las"),"w");
+            if (foutput == NULL)
               exit (1);
-            iblock += ptrsize;
-            isize   = size;
-          }
-        size -= (sizeof(int64) + sizeof(int));
-        if (size > 0)
-          { if (fread(iblock,size,1,input) != 1)
+
+            if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
               SYSTEM_READ_ERROR
-          }
-        fclose(input);
-        iend = iblock + (size - ptrsize);
-      }
-
-      //  Set up unsorted permutation array
-
-      perm = (int64 *) Malloc(sizeof(int64)*novl,"Allocating LAsort permutation vector");
-      if (perm == NULL)
-        exit (1);
-
-      { int64 off;
-        int   j;
-
-        if (CHAIN_START(((Overlap *) (iblock-ptrsize))->flags))
-          { sov = 0;
-            off = -ptrsize;
-            for (j = 0; j < novl; j++)
-              { if (CHAIN_START(((Overlap *) (iblock+off))->flags))
-                  perm[sov++] = off;
-                off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+            if (fwrite(&tspace,sizeof(int),1,foutput) != 1)
+              SYSTEM_READ_ERROR
+    
+            if (size > isize)
+              { if (iblock == NULL)
+                  iblock = Malloc(size+ptrsize,"Allocating LAsort input block");
+                else
+                  iblock = Realloc(iblock-ptrsize,size+ptrsize,"Allocating LAsort input block");
+                if (iblock == NULL)
+                  exit (1);
+                iblock += ptrsize;
+                isize   = size;
               }
-          }
-        else
-          { off = -ptrsize;
-            for (j = 0; j < novl; j++)
-              { perm[j] = off;
-                off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+            size -= (sizeof(int64) + sizeof(int));
+            if (size > 0)
+              { if (fread(iblock,size,1,input) != 1)
+                  SYSTEM_READ_ERROR
               }
-            sov = novl;
+            fclose(input);
+            iend = iblock + (size - ptrsize);
           }
-      }
-
-      //  Sort permutation array of ptrs to records
-
-      IBLOCK = iblock;
-      if (MAP_ORDER)
-        qsort(perm,sov,sizeof(int64),SORT_MAP);
-      else
-        qsort(perm,sov,sizeof(int64),SORT_OVL);
-
-      //  Output the records in sorted order
-
-      { int      j;
-        Overlap *w;
-        int64    tsize, span;
-        char    *fptr, *ftop, *wo;
-
-        fptr = fblock;
-        ftop = fblock + osize;
-        for (j = 0; j < sov; j++)
-          { w = (Overlap *) (wo = iblock+perm[j]);
-            do
-              { tsize = w->path.tlen*tbytes;
-                span  = ovlsize + tsize;
-                if (fptr + span > ftop)
-                  { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-                      SYSTEM_READ_ERROR
-                    fptr = fblock;
+    
+          //  Set up unsorted permutation array
+        
+          perm = (int64 *) Malloc(sizeof(int64)*novl,"Allocating LAsort permutation vector");
+          if (perm == NULL)
+            exit (1);
+    
+          { int64 off;
+            int   j;
+    
+            if (CHAIN_START(((Overlap *) (iblock-ptrsize))->flags))
+              { sov = 0;
+                off = -ptrsize;
+                for (j = 0; j < novl; j++)
+                  { if (CHAIN_START(((Overlap *) (iblock+off))->flags))
+                      perm[sov++] = off;
+                    off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
                   }
-                memmove(fptr,((char *) w)+ptrsize,ovlsize);
-                fptr += ovlsize;
-                memmove(fptr,(char *) (w+1),tsize);
-                fptr += tsize;
-                w = (Overlap *) (wo += span);
               }
-            while (wo < iend && CHAIN_NEXT(w->flags));
+            else
+              { off = -ptrsize;
+                for (j = 0; j < novl; j++)
+                  { perm[j] = off;
+                    off += ovlsize + ((Overlap *) (iblock+off))->path.tlen*tbytes;
+                  }
+                sov = novl;
+              }
           }
-        if (fptr > fblock)
-          { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-              SYSTEM_READ_ERROR
+    
+          //  Sort permutation array of ptrs to records
+    
+          IBLOCK = iblock;
+          if (MAP_ORDER)
+            qsort(perm,sov,sizeof(int64),SORT_MAP);
+          else
+            qsort(perm,sov,sizeof(int64),SORT_OVL);
+    
+          //  Output the records in sorted order
+    
+          { int      j;
+            Overlap *w;
+            int64    tsize, span;
+            char    *fptr, *ftop, *wo;
+    
+            fptr = fblock;
+            ftop = fblock + osize;
+            for (j = 0; j < sov; j++)
+              { w = (Overlap *) (wo = iblock+perm[j]);
+                do
+                  { tsize = w->path.tlen*tbytes;
+                    span  = ovlsize + tsize;
+                    if (fptr + span > ftop)
+                      { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
+                          SYSTEM_READ_ERROR
+                        fptr = fblock;
+                      }
+                    memmove(fptr,((char *) w)+ptrsize,ovlsize);
+                    fptr += ovlsize;
+                    memmove(fptr,(char *) (w+1),tsize);
+                    fptr += tsize;
+                    w = (Overlap *) (wo += span);
+                  }
+                while (wo < iend && CHAIN_NEXT(w->flags));
+              }
+            if (fptr > fblock)
+              { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
+                  SYSTEM_READ_ERROR
+              }
           }
-      }
-
+        }
+    
       free(perm);
       fclose(foutput);
+      Free_Block_Arg(parse);
     }
 
+    
   if (iblock != NULL)
     free(iblock - ptrsize);
   free(fblock);

@@ -10,19 +10,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <dirent.h>
 
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-va] <merge:las> <parts:las> ...";
+#undef   DEBUG
+
+static char *Usage = "[-va] [-P<dir(/tmp)>] <merge:las> <parts:las> ...";
 
 #define MEMORY 4000   // in Mb
 
-#undef   DEBUG
+#define MAX_FILES 250
 
   //  Heap sort of records according to (aread,bread,COMP(flags),abpos) order
 
@@ -180,7 +184,7 @@ int main(int argc, char *argv[])
 { IO_block *in;
   int64     bsize, osize, psize;
   char     *block, *oblock;
-  int       i, fway;
+  int       i, c, fway, clen, nfile[argc];
   Overlap **heap;
   int       hsize;
   Overlap  *ovls;
@@ -191,18 +195,34 @@ int main(int argc, char *argv[])
 
   int       VERBOSE;
   int       MAP_SORT;
+  char     *TEMP_PATH;
 
   //  Process command line
 
-  { int j, k;
-    int flags[128];
+  { int  j, k;
+    int  flags[128];
+    DIR *dirp;
 
     ARG_INIT("LAmerge")
+
+    TEMP_PATH = "/tmp";
 
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
-        { ARG_FLAGS("va") }
+        switch (argv[i][1])
+        { default:
+            ARG_FLAGS("va")
+            break;
+          case 'P':
+            TEMP_PATH = argv[i]+2;
+            if ((dirp = opendir(TEMP_PATH)) == NULL)
+              { fprintf(stderr,"%s: -P option: cannot open directory %s\n",Prog_Name,TEMP_PATH);
+                exit (1);
+              }
+            closedir(dirp);
+            break;
+        }
       else
         argv[j++] = argv[i];
     argc = j;
@@ -212,17 +232,129 @@ int main(int argc, char *argv[])
 
     if (argc < 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-        exit (1);
-      }
-
-    fway = argc-2;
-    if (fway > 252)
-      { fprintf(stderr,"Exceeded maximum # of inputs and outputs (252) of merge\n");
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: Verbose mode, output statistics as proceed.\n");
+        fprintf(stderr,"      -a: sort .las by A-read,A-position pairs for map usecase\n");
+        fprintf(stderr,"          off => sort .las by A,B-read pairs for overlap piles\n");
+        fprintf(stderr,"      -P: Do any intermediate merging in directory -P.\n");
         exit (1);
       }
   }
 
-  //  Open all the input files and initialize their buffers
+  //  Determine the number of files and check they are all mergeable
+
+  clen   = 2*strlen(TEMP_PATH) + 50;
+  fway   = 0;
+  totl   = 0;
+  tspace = -1;
+  for (c = 2; c < argc; c++)
+    { Block_Looper *parse;
+      FILE *input;
+
+      parse = Parse_Block_Arg(argv[c]);
+
+      clen += strlen(Block_Arg_Path(parse)) + strlen(Block_Arg_Root(parse)) + 30;
+
+      nfile[c] = 0;
+      while ((input = Next_Block_Arg(parse)) != NULL)
+        { int64 povl;
+          int   mspace;
+
+          if (fread(&povl,sizeof(int64),1,input) != 1)
+            SYSTEM_READ_ERROR
+          totl += povl;
+          if (fread(&mspace,sizeof(int),1,input) != 1)
+            SYSTEM_READ_ERROR
+          if (tspace < 0)
+            tspace = mspace;
+          else if (tspace != mspace)
+            { fprintf(stderr,"%s: trace-point spacing conflict between %s and earlier files",
+                             Prog_Name,Block_Arg_Root(parse));
+              fprintf(stderr," (%d vs %d)\n",tspace,mspace);
+              exit (1);
+            }
+
+          fclose(input);
+          nfile[c] += 1;
+        }
+
+      Free_Block_Arg(parse);
+      fway += nfile[c];
+    }
+
+  if (VERBOSE)
+    { printf("  Merging %d files totalling ",fway);
+      Print_Number(totl,0,stdout);
+      printf(" records\n");
+      fflush(stdout);
+    }
+
+  //  Must recursively merge, emit sub-merges, then merge their results
+
+  if (fway > MAX_FILES)
+    { Block_Looper *parse;
+      int   mul, dim, fsum, cut;
+      char  command[clen], *com;
+      int   pid;
+
+      mul = 1;
+      for (c = 0; mul < fway; c++)
+        mul *= MAX_FILES;
+      dim = pow(1.*fway,1./c)+1;
+
+      fsum = 0;
+      c = 2;
+
+      parse = Parse_Block_Arg(argv[c]);
+
+      pid = getpid();
+      for (i = 1; i <= dim; i++)
+        { com = command;
+          com += sprintf(com,"LAmerge");
+          if (MAP_SORT)
+            com += sprintf(com," -a");
+          if (mul > 2)
+            com += sprintf(com," -P%s",TEMP_PATH);
+          com += sprintf(com," %s/LM%d.P%d",TEMP_PATH,pid,i);
+
+          cut = (fway * i) / dim;
+          while (fsum + nfile[c] <= cut)
+            { com  += sprintf(com," %s",Next_Block_Slice(parse,nfile[c]));
+              fsum += nfile[c];
+
+              c += 1;
+              if (c >= argc)
+                break;
+
+              Free_Block_Arg(parse);
+
+              parse = Parse_Block_Arg(argv[c]);
+            }
+          if (c < argc && fsum < cut)
+            { int n = cut-fsum;
+              com += sprintf(com," %s",Next_Block_Slice(parse,n));
+              nfile[c] -= n;
+              fsum     += n;
+            }
+          system(command);
+        }
+
+      Free_Block_Arg(parse);
+
+      com = command;
+      com += sprintf(com,"LAmerge");
+      if (MAP_SORT)
+        com += sprintf(com," -a");
+      com += sprintf(com," %s %s/LM%d.P%c",argv[1],TEMP_PATH,pid,BLOCK_SYMBOL);
+      system(command);
+
+      sprintf(command,"rm %s/LM%d.P*.las",TEMP_PATH,pid);
+      system(command);
+
+      exit (0);
+    }
+
+  //  Base level merge: Open all the input files and initialize their buffers
 
   psize  = sizeof(void *);
   osize  = sizeof(Overlap) - psize;
@@ -233,47 +365,37 @@ int main(int argc, char *argv[])
     exit (1);
   block += psize;
 
-  totl   = 0;
-  tbytes = 0;
-  tspace = 0;
-  for (i = 0; i < fway; i++)
-    { int64  novl;
-      int    mspace;
+  fway = 0;
+  for (c = 2; c < argc; c++)
+    { Block_Looper *parse;
       FILE  *input;
-      char  *pwd, *root;
-      char  *iblock;
 
-      pwd   = PathTo(argv[i+2]);
-      root  = Root(argv[i+2],".las");
-      input = Fopen(Catenate(pwd,"/",root,".las"),"r");
-      if (input == NULL)
-        exit (1);
-      free(pwd);
-      free(root);
+      parse = Parse_Block_Arg(argv[c]);
 
-      if (fread(&novl,sizeof(int64),1,input) != 1)
-        SYSTEM_READ_ERROR
-      totl += novl;
-      if (fread(&mspace,sizeof(int),1,input) != 1)
-        SYSTEM_READ_ERROR
-      if (i == 0)
-        { tspace = mspace;
-          if (tspace <= TRACE_XOVR && tspace != 0)
-            tbytes = sizeof(uint8);
-          else
-            tbytes = sizeof(uint16);
-        }
-      else if (tspace != mspace)
-        { fprintf(stderr,"%s: PT-point spacing conflict (%d vs %d)\n",Prog_Name,tspace,mspace);
-          exit (1);
+      while ((input = Next_Block_Arg(parse)) != NULL)
+        { int64  novl;
+          int    mspace;
+          char  *iblock;
+
+          if (fread(&novl,sizeof(int64),1,input) != 1)
+            SYSTEM_READ_ERROR
+          if (fread(&mspace,sizeof(int),1,input) != 1)
+            SYSTEM_READ_ERROR
+
+          in[fway].stream = input;
+          in[fway].block  = iblock = block+fway*bsize;
+          in[fway].ptr    = iblock;
+          in[fway].top    = iblock + fread(in[fway].block,1,bsize,input);
+          in[fway].count  = 0;
+          fway += 1;
         }
 
-      in[i].stream = input;
-      in[i].block  = iblock = block+i*bsize;
-      in[i].ptr    = iblock;
-      in[i].top    = iblock + fread(in[i].block,1,bsize,input);
-      in[i].count  = 0;
+      Free_Block_Arg(parse);
     }
+  if (tspace <= TRACE_XOVR && tspace != 0)
+    tbytes = sizeof(uint8);
+  else
+    tbytes = sizeof(uint16);
 
   //  Open the output file buffer and write (novl,tspace) header
 
@@ -296,12 +418,6 @@ int main(int argc, char *argv[])
     optr   = oblock;
     otop   = oblock + bsize;
   }
-
-  if (VERBOSE)
-    { printf("Merging %d files totalling ",fway);
-      Print_Number(totl,0,stdout);
-      printf(" records\n");
-    }
 
   //  Initialize the heap
 

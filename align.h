@@ -235,30 +235,25 @@ void Complement_Seq(char *a, int n);
   int   Find_Extension(Alignment *align, Work_Data *work, Align_Spec *spec,    //  experimental !!
                        int diag, int anti, int lbord, int hbord, int prefix);
 
-  /* Given a legitimate Alignment object, Compute_Trace_X computes an exact trace for the alignment.
-     If 'path.trace' is non-NULL, then it is assumed to be a sequence of pass-through points
-     and diff levels computed by Local_Alignment.  In either case 'path.trace' is set
+  /* Given a legitimate Alignment object and associated trace point vector in 'align->path.trace',
+     Compute_Trace_X, computes an exact trace for the alignment and resets 'align->path.trace'
      to point at an integer array within the storage of the Work_Data packet encoding an
      exact optimal trace from the start to end points.  If the trace is needed beyond the
      next call to a routine that sets it, then it should be copied to an array allocated
      and managed by the caller.
 
-     Compute_Trace_ALL does not require a sequence of pass-through points, as it computes the
-     best alignment between (path->abpos,path->bbpos) and (path->aepos,path->bepos) in the
-     edit graph between the sequences.  Compute_Trace_PTS computes a trace by computing the
-     trace between successive pass through points.  It is much, much faster than Compute_Trace_ALL
-     but at the tradeoff of not necessarily being optimal as pass-through points are not all
-     perfect.  Compute_Trace_MID computes a trace by computing the trace between the mid-points
-     of alignments between two adjacent pairs of pass through points.  It is generally twice as
-     slow as Compute_Trace_PTS, but it produces nearer optimal alignments.  All these routines
-     return 1 if an error occurred and 0 otherwise.
+     Compute_Trace_PTS computes a trace by computing the trace between successive trace points.
+     It is much, much faster than Compute_Alignment below but at the tradeoff of not necessarily
+     being optimal as pass-through points are not all perfect.  Compute_Trace_MID computes a trace
+     by computing the trace between the mid-points of alignments between two adjacent pairs of trace
+     points.  It is generally twice as slow as Compute_Trace_PTS, but it produces nearer optimal
+     alignments.  Both these routines return 1 if an error occurred and 0 otherwise.
   */
 
 #define LOWERMOST -1   //   Possible modes for "mode" parameter below)
 #define GREEDIEST  0
 #define UPPERMOST  1
 
-  int Compute_Trace_ALL(Alignment *align, Work_Data *work);
   int Compute_Trace_PTS(Alignment *align, Work_Data *work, int trace_spacing, int mode);
   int Compute_Trace_MID(Alignment *align, Work_Data *work, int trace_spacing, int mode);
 
@@ -270,6 +265,25 @@ void Complement_Seq(char *a, int n);
   */
 
   int Compute_Trace_IRR(Alignment *align, Work_Data *work, int mode);   //  experimental !!
+
+  /* Compute Alignment determines the best alignment between the substrings specified by align.
+     If the task is DIFF_ONLY, then only the difference of this alignment is computed and placed
+     in the "diffs" field of align's path.  If the task is PLUS_TRACE or DIFF_TRACE, then
+     'path.trace' is set to point at an integer array within the storage of the Work_Data packet
+     encoding a trace point sequence for an optimal alignment, whereas if the task is PLUS_ALIGN
+     or DIFF_ALIGN, then it points to an optimal trace of an optimatl alignment.  The PLUS
+     tasks can only be called if the immmediately proceeding call was a DIFF_ONLY on the same
+     alignment record and sequences, in which case a little efficiency is gained by avoiding
+     the repetition of the top level search for an optimal mid-point.
+  */
+
+#define PLUS_ALIGN   0
+#define PLUS_TRACE   1
+#define DIFF_ONLY    2
+#define DIFF_ALIGN   3
+#define DIFF_TRACE   4
+
+  int Compute_Alignment(Alignment *align, Work_Data *work, int task, int trace_spacing);
 
   /* Alignment_Cartoon prints an ASCII representation of the overlap relationhip between the
      two reads of 'align' to the given 'file' indented by 'indent' space.  Coord controls
@@ -339,7 +353,9 @@ typedef struct {
      margin by 'indent' spaces.
 
      Compress_TraceTo8 converts a trace fo 16-bit values to 8-bit values in place, and
-     Decompress_TraceTo16 does the reverse conversion.
+     Decompress_TraceTo16 does the reverse conversion.  If check is set in a call to Compress
+     then it checks whether the values fit in 8-bits, and if not returns a non-zero result
+     in interactive mode, or exits with an error message in batch mode.
 
      Check_Trace_Points checks that the number of trace points is correct and that the sum
      of the b-read displacements equals the b-read alignment interval, assuming the trace
@@ -353,7 +369,7 @@ typedef struct {
   int  Write_Overlap(FILE *output, Overlap *ovl, int tbytes);
   void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent);
 
-  void Compress_TraceTo8(Overlap *ovl);
+  int  Compress_TraceTo8(Overlap *ovl, int check);
   void Decompress_TraceTo16(Overlap *ovl);
 
   int  Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname);

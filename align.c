@@ -34,7 +34,8 @@
 #undef  DEBUG_EXTEND       //  Show waves of Extend_Until_Overlap
 
 #undef  DEBUG_ALIGN        //  Show division points of Compute_Trace
-#undef  DEBUG_SCRIPT       //  Show trace additions for Compute_Trace
+#undef  DEBUG_TRACE        //  Show trace additions for Compute_Trace
+#undef  DEBUG_SCRIPT       //  Show script additions for Compute_Trace
 #undef  DEBUG_AWAVE        //  Show F/R waves of Compute_Trace
 
 #undef  SHOW_TRACE         //  Show full trace for Print_Alignment
@@ -3060,13 +3061,24 @@ int Write_Overlap(FILE *output, Overlap *ovl, int tbytes)
   return (0);
 }
 
-void Compress_TraceTo8(Overlap *ovl)
+int Compress_TraceTo8(Overlap *ovl, int check)
 { uint16 *t16 = (uint16 *) ovl->path.trace;
   uint8  *t8  = (uint8  *) ovl->path.trace;
-  int     j;
+  int     j, x;
 
-  for (j = 0; j < ovl->path.tlen; j++)
-    t8[j] = (uint8) (t16[j]);
+  if (check)
+    for (j = 0; j < ovl->path.tlen; j++)
+      { x = t16[j];
+        if (x > 255)
+          { fprintf(stderr,"%s: Compression of trace to bytes fails, value too big\n",Prog_Name);
+            EXIT(1);
+          }
+        t8[j] = (uint8) x;
+      }
+  else
+    for (j = 0; j < ovl->path.tlen; j++)
+      t8[j] = (uint8) (t16[j]);
+  return (0);
 }
 
 void Decompress_TraceTo16(Overlap *ovl)
@@ -3908,15 +3920,322 @@ static int depth = 0;
 #endif
 
 typedef struct
-  { int  *Stop;          //  Ongoing stack of alignment indels
+  { int    *Stop;        //  Ongoing stack of alignment indels
+    uint16 *Trace;       //  Base of Trace Vector
     char *Aabs, *Babs;   //  Absolute base of A and B sequences
 
     int  **PVF, **PHF;   //  List of waves for iterative np algorithms
     int   mida,  midb;   //  mid point division for mid-point algorithms
 
     int   *VF,   *VB;    //  Forward/Reverse waves for nd algorithms
-                         //  (defunct: were used for O(nd) algorithms)
   } Trace_Waves;
+
+static int split_nd(char *A, int M, char *B, int N, Trace_Waves *wave, int *px, int *py)
+{ int x, y;
+  int D;
+
+  int  *VF = wave->VF;
+  int  *VB = wave->VB;
+  int   flow;  //  fhgh == D !
+  int   blow, bhgh;
+  char *a;
+
+  y = 0;
+  if (N < M)
+    while (y < N && B[y] == A[y])
+      y += 1;
+  else
+    { while (y < M && B[y] == A[y])
+        y += 1;
+      if (y >= M && N == M)
+        { *px = *py = M;
+          return (0);
+        }
+    }
+
+  flow   = 0;
+  VF[0]  = y;
+  VF[-1] = -2;
+
+  x = N-M;
+  a = A-x;
+  y = N-1;
+  if (N > M)
+    while (y >= x && B[y] == a[y])
+      y -= 1;
+  else
+    while (y >= 0 && B[y] == a[y])
+      y -= 1;
+
+  blow = bhgh = -x;
+  VB += x;
+  VB[blow]   = y;
+  VB[blow-1] = N+1;
+
+  for (D = 1; 1; D += 1)
+    { int   k, r;
+      int   am, ac, ap;
+
+      //  Forward wave
+
+      flow -= 1;
+      am = ac = VF[flow-1] = -2;
+
+      a = A + D;
+      x = M - D;
+      for (k = D; k >= flow; k--)
+        { ap = ac;
+          ac = am+1;
+          am = VF[k-1];
+
+          if (ac < am)
+            if (ap < am)
+              y  = am;
+            else
+              y = ap;
+          else
+            if (ap < ac)
+              y = ac;
+            else
+              y = ap;
+
+          if (blow <= k && k <= bhgh)
+            { r = VB[k];
+              if (y > r)
+                { D = (D<<1)-1;
+                  if (ap > r)
+                    y = ap;
+                  else if (ac > r)
+                    y = ac;
+                  else
+                    y = r+1;
+                  x = k+y;
+                  *px = x;
+                  *py = y;
+                  return (D);
+                }
+            }
+
+          if (N < x)
+            while (y < N && B[y] == a[y])
+              y += 1;
+          else
+            while (y < x && B[y] == a[y])
+              y += 1;
+          
+          VF[k] = y;
+          a -= 1;
+          x += 1;
+        }
+
+#ifdef DEBUG_AWAVE
+      print_awave(VF,flow,D);
+#endif
+
+      //  Reverse Wave
+
+      bhgh += 1;
+      blow -= 1;
+	am = ac = VB[blow-1] = N+1;
+
+      a = A + bhgh;
+      x = -bhgh;
+      for (k = bhgh; k >= blow; k--)
+        { ap = ac+1;
+          ac = am;
+          am = VB[k-1];
+
+          if (ac > am)
+            if (ap > am)
+              y  = am;
+            else
+              y = ap;
+          else
+            if (ap > ac)
+              y = ac;
+            else
+              y = ap;
+
+          if (flow <= k && k <= D)
+            { r = VF[k];
+	        if (y <= r)
+                { D = (D << 1);
+                  if (ap <= r)
+                    y = ap;
+                  else if (ac <= r)
+                    y = ac;
+                  else
+                    y = r;
+                  x = k+y;
+                  *px = x;
+                  *py = y;
+                  return (D);
+                }
+            }
+
+          y -= 1;
+          if (x > 0)
+            while (y >= x && B[y] == a[y])
+              y -= 1;
+          else
+            while (y >= 0 && B[y] == a[y])
+              y -= 1;
+
+          VB[k] = y;
+          a -= 1;
+          x += 1;
+        }
+
+#ifdef DEBUG_AWAVE
+      print_awave(VB,blow,bhgh);
+#endif
+    }
+}
+
+static int trace_nd(char *A, int M, char *B, int N, Trace_Waves *wave, int tspace)
+{ int x, y;
+  int D, s;
+
+#ifdef DEBUG_ALIGN
+  printf("%*s %ld,%ld: %d vs %d\n",depth,"",A-wave->Aabs,B-wave->Babs,M,N);
+  fflush(stdout);
+#endif
+
+  if (M <= 0)
+    { y = (((A-wave->Aabs)/tspace) << 1);
+      wave->Trace[y] += N;
+      wave->Trace[y+1] += N;
+#ifdef DEBUG_TRACE
+      printf("%*s Adding1 (%d,%d) to tp %d(%d,%d)\n",depth,"",N,N,y>>1,
+                                                     wave->Trace[y+1],wave->Trace[y]);
+      fflush(stdout);
+#endif
+      return (N);
+    }
+
+  if (N <= 0)
+    { x = A - wave->Aabs;
+      y = x/tspace;
+      x = (y+1)*tspace - x;
+      y <<= 1;
+      for (s = M; s > 0; s -= x, x = tspace)
+        { if (x > s)
+            x = s;
+          wave->Trace[y] += x;
+#ifdef DEBUG_TRACE
+          printf("%*s Adding2 (0,%d) to tp %d(%d,%d)\n",depth,"",x,y>>1,
+                                                        wave->Trace[y+1],wave->Trace[y]);
+          fflush(stdout);
+#endif
+          y += 2;
+        }
+      return (M);
+    }
+
+  D = split_nd(A,M,B,N,wave,&x,&y);
+
+  if (D > 1)
+    {
+#ifdef DEBUG_ALIGN
+      printf("%*s (%d,%d) @ %d\n",depth,"",x,y,D);
+      fflush(stdout);
+      depth += 2;
+#endif
+
+      s = A-wave->Aabs;
+      if ((s/tspace+1)*tspace - s >= x)
+        { s = ((s/tspace)<<1);
+          wave->Trace[s] += (D+1)/2;
+          wave->Trace[s+1] += y;
+#ifdef DEBUG_TRACE
+          printf("%*s Adding3 (%d,%d) to tp %d(%d,%d)\n",depth,"",y,(D+1)/2,s>>1,
+                                                         wave->Trace[s+1],wave->Trace[s]);
+          fflush(stdout);
+#endif
+        }
+      else
+        trace_nd(A,x,B,y,wave,tspace);
+
+      s = (A+x)-wave->Aabs;
+      if ((s/tspace+1)*tspace - s >= M-x)
+        { s = ((s/tspace)<<1);
+          wave->Trace[s] += D/2;
+          wave->Trace[s+1] += N-y;
+#ifdef DEBUG_TRACE
+          printf("%*s Adding4 (%d,%d)) to tp %d(%d,%d)\n",depth,"",N-y,D/2,s>>1,
+                                                          wave->Trace[s+1],wave->Trace[s]);
+          fflush(stdout);
+#endif
+        }
+      else
+        trace_nd(A+x,M-x,B+y,N-y,wave,tspace);
+
+#ifdef DEBUG_ALIGN
+      depth -= 2;
+#endif
+    }
+
+  else
+    { int u, v;
+
+      if (D == 0 || M < N)
+        s = x;
+      else
+        s = x-1;
+      if (s > 0)
+        { u = A - wave->Aabs;
+          v = u/tspace;
+          u = (v+1)*tspace - u;
+          for (v <<= 1; s > 0; s -= u, u = tspace)
+            { if (u > s)
+                u = s;
+              wave->Trace[v+1] += u;
+#ifdef DEBUG_TRACE
+              printf("%*s Adding5 (%d,0)) to tp %d(%d,%d)\n",depth,"",u,v>>1,
+                                                             wave->Trace[v+1],wave->Trace[v]);
+              fflush(stdout);
+#endif
+              v += 2;
+            }
+        }
+
+      if (D == 0)
+        return (D);
+
+      if (M < N)
+        y = ((((A+x)-wave->Aabs)/tspace)<<1);
+      else
+        y = ((((A+(x-1))-wave->Aabs)/tspace)<<1);
+      wave->Trace[y] += 1;
+      if (M <= N)
+        wave->Trace[y+1] += 1;
+#ifdef DEBUG_TRACE
+      printf("%*s Adding5 (%d,1)) to tp %d(%d,%d)\n",depth,"",N>=M,y>>1,
+                                                     wave->Trace[y+1],wave->Trace[y]);
+      fflush(stdout);
+#endif
+
+      s = M-x;
+      if (s > 0)
+        { u = (A+x) - wave->Aabs;
+          v = u/tspace;
+          u = (v+1)*tspace - u;
+          for (v <<= 1; s > 0; s -= u, u = tspace)
+            { if (u > s)
+                u = s;
+              wave->Trace[v+1] += u;
+#ifdef DEBUG_TRACE
+              printf("%*s Adding5 (%d,0)) to tp %d(%d,%d)\n",depth,"",u,v>>1,
+                                                             wave->Trace[v+1],wave->Trace[v]);
+              fflush(stdout);
+#endif
+              v += 2;
+            }
+        }
+    }
+
+  return (D);
+}
 
 static int dandc_nd(char *A, int M, char *B, int N, Trace_Waves *wave)
 { int x, y;
@@ -3936,6 +4255,7 @@ static int dandc_nd(char *A, int M, char *B, int N, Trace_Waves *wave)
         }
       return (N);
     }
+
   if (N <= 0)
     { y = (B-wave->Babs)+1;
       for (x = 1; x <= M; x++)
@@ -3947,188 +4267,40 @@ static int dandc_nd(char *A, int M, char *B, int N, Trace_Waves *wave)
       return (M);
     }
 
-  { int  *VF = wave->VF;
-    int  *VB = wave->VB;
-    int   flow;  //  fhgh == D !
-    int   blow, bhgh;
-    char *a;
+  D = split_nd(A,M,B,N,wave,&x,&y);
 
-    y = 0;
-    if (N < M)
-      while (y < N && B[y] == A[y])
-        y += 1;
-    else
-      { while (y < M && B[y] == A[y])
-          y += 1;
-        if (y >= M && N == M)
-          return (0);
-      }
-
-    flow   = 0;
-    VF[0]  = y;
-    VF[-1] = -2;
-
-    x = N-M;
-    a = A-x;
-    y = N-1;
-    if (N > M)
-      while (y >= x && B[y] == a[y])
-        y -= 1;
-    else
-      while (y >= 0 && B[y] == a[y])
-        y -= 1;
-
-    blow = bhgh = -x;
-    VB += x;
-    VB[blow]   = y;
-    VB[blow-1] = N+1;
-
-    for (D = 1; 1; D += 1)
-      { int   k, r;
-        int   am, ac, ap;
-
-        //  Forward wave
-
-        flow -= 1;
-        am = ac = VF[flow-1] = -2;
-
-        a = A + D;
-        x = M - D;
-        for (k = D; k >= flow; k--)
-          { ap = ac;
-            ac = am+1;
-            am = VF[k-1];
-
-            if (ac < am)
-              if (ap < am)
-                y  = am;
-              else
-                y = ap;
-            else
-              if (ap < ac)
-                y = ac;
-              else
-                y = ap;
-
-            if (blow <= k && k <= bhgh)
-              { r = VB[k];
-                if (y > r)
-                  { D = (D<<1)-1;
-                    if (ap > r)
-                      y = ap;
-                    else if (ac > r)
-                      y = ac;
-                    else
-                      y = r+1;
-                    x = k+y;
-                    goto OVERLAP2;
-                  }
-              }
-
-            if (N < x)
-              while (y < N && B[y] == a[y])
-                y += 1;
-            else
-              while (y < x && B[y] == a[y])
-                y += 1;
-            
-            VF[k] = y;
-            a -= 1;
-            x += 1;
-          }
-
-#ifdef DEBUG_AWAVE
-        print_awave(VF,flow,D);
-#endif
-
-        //  Reverse Wave
-
-        bhgh += 1;
-        blow -= 1;
-	am = ac = VB[blow-1] = N+1;
-
-        a = A + bhgh;
-        x = -bhgh;
-        for (k = bhgh; k >= blow; k--)
-          { ap = ac+1;
-            ac = am;
-            am = VB[k-1];
-
-            if (ac > am)
-              if (ap > am)
-                y  = am;
-              else
-                y = ap;
-            else
-              if (ap > ac)
-                y = ac;
-              else
-                y = ap;
-
-            if (flow <= k && k <= D)
-              { r = VF[k];
-	        if (y <= r)
-                  { D = (D << 1);
-                    if (ap <= r)
-                      y = ap;
-                    else if (ac <= r)
-                      y = ac;
-                    else
-                      y = r;
-                    x = k+y;
-                    goto OVERLAP2;
-                  }
-              }
-
-            y -= 1;
-            if (x > 0)
-              while (y >= x && B[y] == a[y])
-                y -= 1;
-            else
-              while (y >= 0 && B[y] == a[y])
-                y -= 1;
-
-            VB[k] = y;
-            a -= 1;
-            x += 1;
-          }
-
-#ifdef DEBUG_AWAVE
-        print_awave(VB,blow,bhgh);
-#endif
-      }
-  }
-
-OVERLAP2:
-
-#ifdef DEBUG_ALIGN
-  printf("%*s (%d,%d) @ %d\n",depth,"",x,y,D);
-  fflush(stdout);
-#endif
   if (D > 1)
     { 
 #ifdef DEBUG_ALIGN
+      printf("%*s (%d,%d) @ %d\n",depth,"",x,y,D);
+      fflush(stdout);
       depth += 2;
 #endif
+
       dandc_nd(A,x,B,y,wave);
       dandc_nd(A+x,M-x,B+y,N-y,wave);
+
 #ifdef DEBUG_ALIGN
       depth -= 2;
 #endif
     }
+
   else if (D == 1)
+
     { if (M > N)
         { *wave->Stop++ = (B-wave->Babs)+y+1;
 #ifdef DEBUG_SCRIPT
           printf("%*s  D %ld(%ld)\n",depth,"",(A-wave->Aabs)+x,(B-wave->Babs)+y+1);
 #endif
         }
+
       else if (M < N)
         { *wave->Stop++ = (wave->Aabs-A)-x-1;
 #ifdef DEBUG_SCRIPT
           printf("%*s  I %ld(%ld)\n",depth,"",(B-wave->Babs)+y,(A-wave->Aabs)+x+1);
 #endif
         }
+
 #ifdef DEBUG_SCRIPT
       else
         printf("%*s  %ld S %ld\n",depth,"",(wave->Aabs-A)+x,(B-wave->Babs)+y);
@@ -4138,47 +4310,138 @@ OVERLAP2:
   return (D);
 }
 
-
-static int Compute_Trace_ND_ALL(Alignment *align, Work_Data *ework)
+int Compute_Alignment(Alignment *align, Work_Data *ework, int task, int tspace)
 { _Work_Data *work = (_Work_Data *) ework;
   Trace_Waves wave;
 
-  int   L, D;
-  int   asub, bsub;
-  Path *path;
-  int  *trace;
+  int     L, D;
+  int     asub, bsub;
+  char   *aseq, *bseq;
+  Path   *path;
+  int    *trace;
+  uint16 *strace;
 
   path = align->path;
   asub = path->aepos-path->abpos;
   bsub = path->bepos-path->bbpos;
+  aseq = align->aseq+path->abpos;
+  bseq = align->bseq+path->bbpos;
 
-  if (asub < bsub)
-    L = bsub;
+  if (task != DIFF_ONLY)
+    { if (task == DIFF_TRACE || task == PLUS_TRACE)
+        L = 2*(((path->aepos + (tspace-1))/tspace - path->abpos/tspace) + 1)*sizeof(uint16);
+      else if (asub < bsub)
+        L = bsub*sizeof(int);
+      else
+        L = asub*sizeof(int);
+      if (L > work->tramax)
+        if (enlarge_trace(work,L))
+          EXIT(1);
+    }
+
+  trace  = ((int *) work->trace);
+  strace = ((uint16 *) work->trace);
+
+  if (asub > bsub)
+    D = (4*asub+6)*sizeof(int);
   else
-    L = asub;
-  L *= sizeof(int);
-  if (L > work->tramax)
-    if (enlarge_trace(work,L))
-      EXIT(1);
-
-  trace = wave.Stop = ((int *) work->trace);
-
-  D = 2*(path->diffs + 4)*sizeof(int);
+    D = (4*bsub+6)*sizeof(int);
   if (D > work->vecmax)
     if (enlarge_vector(work,D))
       EXIT(1);
   
-  D = (path->diffs+3)/2;
-  wave.VF = ((int *) work->vector) + (D+1);
-  wave.VB = wave.VF + (2*D+1);
+  if (asub > bsub)
+    { wave.VF = ((int *) work->vector) + (asub+1);
+      wave.VB = wave.VF + (2*asub+3);
+    }
+  else
+    { wave.VF = ((int *) work->vector) + (bsub+1);
+      wave.VB = wave.VF + (2*bsub+3);
+    }
 
   wave.Aabs = align->aseq;
   wave.Babs = align->bseq;
 
-  path->diffs = dandc_nd(align->aseq+path->abpos,path->aepos-path->abpos,
-                         align->bseq+path->bbpos,path->bepos-path->bbpos,&wave);
+  if (task == DIFF_ONLY)
+    { wave.mida = -1;
+      if (asub <= 0)
+        path->diffs = bsub;
+      else if (bsub <= 0)
+        path->diffs = asub;
+      else
+        path->diffs = split_nd(aseq,asub,bseq,bsub,&wave,&wave.mida,&wave.midb);
+      path->trace = NULL;
+      path->tlen  = -1;
+      return (0);
+    }
+
+  else if (task < DIFF_ONLY && wave.mida >= 0)
+    { int x = wave.mida;
+      int y = wave.midb;
+
+      if (task == PLUS_ALIGN)
+        { wave.Stop = trace;
+          dandc_nd(aseq,x,bseq,y,&wave);
+          dandc_nd(aseq+x,asub-x,bseq+y,bsub-y,&wave);
+          path->tlen = wave.Stop - trace;
+        }
+      else
+        { int i, n;
+
+          wave.Trace = strace - 2*(path->abpos/tspace);
+          n  = L/sizeof(uint16);
+          for (i = 0; i < n; i++)
+            strace[i] = 0;
+
+          trace_nd(aseq,x,bseq,y,&wave,tspace);
+          trace_nd(aseq+x,asub-x,bseq+y,bsub-y,&wave,tspace);
+
+          if (strace[n-1] != 0)   //  Last element is to capture all inserts on TP boundary
+            { strace[n-3] += strace[n-1];
+              strace[n-4] += strace[n-2];
+            }
+          path->tlen = n-2;
+
+#ifdef DEBUG_SCRIPT
+          printf("  Trace:\n");
+          for (i = 0; i < path->tlen; i += 2)
+            printf("    %3d  %3d\n",strace[i],strace[i+1]);
+          fflush(stdout);
+#endif
+        }
+    }
+
+  else 
+    { if (task == DIFF_ALIGN)
+        { wave.Stop   = trace;
+          path->diffs = dandc_nd(aseq,asub,bseq,bsub,&wave);
+          path->tlen  = wave.Stop - trace;
+        }
+      else
+        { int i, n;
+
+          wave.Trace  = strace - 2*(path->abpos/tspace);
+          n  = L/sizeof(uint16);
+          for (i = 0; i < n; i++)
+            strace[i] = 0;
+          path->diffs = trace_nd(aseq,asub,bseq,bsub,&wave,tspace);
+
+          if (strace[n-1] != 0)   //  Last element is to capture all inserts on TP boundary
+            { strace[n-3] += strace[n-1];
+              strace[n-4] += strace[n-2];
+            }
+          path->tlen = n-2;
+
+#ifdef DEBUG_SCRIPT
+          printf("  Trace:\n");
+          for (i = 0; i < path->tlen; i += 2)
+            printf("    %3d  %3d\n",strace[i],strace[i+1]);
+          fflush(stdout);
+#endif
+        }
+    }
+
   path->trace = trace;
-  path->tlen  = wave.Stop - trace;
   return (0);
 }
 
@@ -4824,79 +5087,6 @@ static int middle_np(char *A, int M, char *B, int N, Trace_Waves *wave, int mode
 \****************************************************************************************/
 
 static char *TP_Error = "Trace point out of bounds (Compute_Trace), source DB likely incorrect";
-
-int Compute_Trace_ALL(Alignment *align, Work_Data *ework)
-{ _Work_Data *work = (_Work_Data *) ework;
-  Trace_Waves wave;
-
-  Path *path;
-  char *aseq, *bseq;
-  int   alen, blen;
-  int   M, N, D;
-  int   dmax;
-
-  alen   = align->alen;
-  blen   = align->blen;
-  path = align->path;
-  aseq = align->aseq;
-  bseq = align->bseq;
-
-  M = path->aepos-path->abpos;
-  N = path->bepos-path->bbpos;
-  
-  { int64 s;
-    int   d;
-    int   **PVF, **PHF;
-
-    if (M < N)
-      s = N;
-    else
-      s = M;
-    s *= sizeof(int);
-    if (s > work->tramax)
-      if (enlarge_trace(work,s))
-        EXIT(1);
-
-    dmax = path->diffs - abs(M-N);
-
-    s = (dmax+3)*2*((M+N+3)*sizeof(int) + sizeof(int *));
-
-    if (s > 256000000)
-      return (Compute_Trace_ND_ALL(align,ework));
-
-    if (s > work->vecmax)
-      if (enlarge_vector(work,s))
-        EXIT(1);
-
-    wave.PVF = PVF = ((int **) (work->vector)) + 2;
-    wave.PHF = PHF = PVF + (dmax+3);
-
-    s = M+N+3;
-    PVF[-2] = ((int *) (PHF + (dmax+1))) + (N+1);
-    for (d = -1; d <= dmax; d++)
-      PVF[d] = PVF[d-1] + s;
-    PHF[-2] = PVF[dmax] + s;
-    for (d = -1; d <= dmax; d++)
-      PHF[d] = PHF[d-1] + s;
-  }
-
-  wave.Stop = ((int *) work->trace);
-  wave.Aabs = aseq;
-  wave.Babs = bseq;
-
-  if (path->aepos > alen || path->bepos > blen)
-    { EPRINTF(EPLACE,"%s: %s\n",Prog_Name,TP_Error);
-      EXIT(1);
-    }
-  D = iter_np(aseq+path->abpos,M,bseq+path->bbpos,N,&wave,GREEDIEST,dmax);
-  if (D < 0)
-    EXIT(1);
-  path->diffs = D;
-  path->trace = work->trace;
-  path->tlen  = wave.Stop - ((int *) path->trace);
-
-  return (0);
-}
 
 int Compute_Trace_PTS(Alignment *align, Work_Data *ework, int trace_spacing, int mode)
 { _Work_Data *work = (_Work_Data *) ework;

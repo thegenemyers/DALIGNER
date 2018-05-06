@@ -19,16 +19,16 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-v] <source:las> > <target>.las";
+static char *Usage = "[-v] <source:las> ... > <target>.las";
 
-#define MEMORY   1000   //  How many megabytes for output buffer
+#define MEMORY   1000         //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
 { char     *iblock, *oblock;
   FILE     *input;
   int64     novl, bsize, ovlsize, ptrsize;
   int       tspace, tbytes;
-  char     *pwd, *root, *root2;
+  int       c;
 
   int       VERBOSE;
 
@@ -51,6 +51,10 @@ int main(int argc, char *argv[])
 
     if (argc <= 1)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"    <source>'s may contain a template that is %c-sign optionally\n",
+                        BLOCK_SYMBOL);
+        fprintf(stderr,"      followed by an integer or integer range\n");
         exit (1);
       }
   }
@@ -64,57 +68,49 @@ int main(int argc, char *argv[])
     exit (1);
   iblock += ptrsize;
 
-  pwd    = PathTo(argv[1]);
-  root   = Root(argv[1],".las");
+  novl   = 0;
+  tspace = -1;
+  for (c = 1; c < argc; c++)
+    { Block_Looper *parse;
+      FILE *input;
 
-  root2 = index(root,'#');
-  if (root2 == NULL)
-    { fprintf(stderr,"%s: No #-sign in source name '%s'\n",Prog_Name,root);
-      exit (1);
+      parse = Parse_Block_Arg(argv[c]);
+
+      while ((input = Next_Block_Arg(parse)) != NULL)
+        { int64 povl;
+          int   mspace;
+
+          if (fread(&povl,sizeof(int64),1,input) != 1)
+            SYSTEM_READ_ERROR
+          novl += povl;
+          if (fread(&mspace,sizeof(int),1,input) != 1)
+            SYSTEM_READ_ERROR
+          if (tspace < 0)
+            tspace = mspace;
+          else if (tspace != mspace)
+            { fprintf(stderr,"%s: trace-point spacing conflict between %s and earlier files",
+                             Prog_Name,Block_Arg_Root(parse));
+              fprintf(stderr," (%d vs %d)\n",tspace,mspace);
+              exit (1);
+            }
+
+          fclose(input);
+        }
+
+      Free_Block_Arg(parse);
     }
-  if (index(root2+1,'#') != NULL)
-    { fprintf(stderr,"%s: Two or more occurences of #-sign in source name '%s'\n",Prog_Name,root);
-      exit (1);
-    }
-  *root2++ = '\0';
 
-  { int64    povl;
-    int      i, mspace;
+  if (tspace <= TRACE_XOVR && tspace != 0)
+    tbytes = sizeof(uint8);
+  else
+    tbytes = sizeof(uint16);
+  if (fwrite(&novl,sizeof(int64),1,stdout) != 1)
+    SYSTEM_READ_ERROR
+  if (fwrite(&tspace,sizeof(int),1,stdout) != 1)
+    SYSTEM_READ_ERROR
 
-    novl   = 0;
-    tspace = 0;
-    mspace = 0;
-    tbytes = 0;
-    for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",Numbered_Suffix(root,i+1,root2),".las");
-        if ((input = fopen(name,"r")) == NULL) break;
-
-        if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_READ_ERROR
-        novl += povl;
-        if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_READ_ERROR
-        if (i == 0)
-          { tspace = mspace;
-            if (tspace <= TRACE_XOVR && tspace != 0)
-              tbytes = sizeof(uint8);
-            else
-              tbytes = sizeof(uint16);
-          }
-        else if (tspace != mspace)
-          { fprintf(stderr,"%s: PT-point spacing conflict (%d vs %d)\n",Prog_Name,tspace,mspace);
-            exit (1);
-          }
-
-        fclose(input);
-      }
-    if (fwrite(&novl,sizeof(int64),1,stdout) != 1)
-      SYSTEM_READ_ERROR
-    if (fwrite(&tspace,sizeof(int),1,stdout) != 1)
-      SYSTEM_READ_ERROR
-  }
-
-  { int      i, j;
+  { Block_Looper *parse;
+    int      c, j;
     Overlap *w;
     int64    tsize, povl;
     int      mspace;
@@ -124,59 +120,65 @@ int main(int argc, char *argv[])
     optr = oblock;
     otop = oblock + bsize;
 
-    for (i = 0; 1; i++)
-      { char *name = Catenate(pwd,"/",Numbered_Suffix(root,i+1,root2),".las");
-        if ((input = fopen(name,"r")) == NULL) break;
+    for (c = 1; c < argc; c++)
+      { parse = Parse_Block_Arg(argv[c]);
 
-        if (fread(&povl,sizeof(int64),1,input) != 1)
-          SYSTEM_READ_ERROR
-        if (fread(&mspace,sizeof(int),1,input) != 1)
-          SYSTEM_READ_ERROR
+        while ((input = Next_Block_Arg(parse)) != NULL)
+          { if (fread(&povl,sizeof(int64),1,input) != 1)
+              SYSTEM_READ_ERROR
+            if (fread(&mspace,sizeof(int),1,input) != 1)
+              SYSTEM_READ_ERROR
 
-        if (VERBOSE)
-          fprintf(stderr,"  Concatenating %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
-
-        iptr = iblock;
-        itop = iblock + fread(iblock,1,bsize,input);
-
-        for (j = 0; j < povl; j++)
-          { if (iptr + ovlsize > itop)
-              { int64 remains = itop-iptr;
-                if (remains > 0)
-                  memmove(iblock,iptr,remains);
-                iptr  = iblock;
-                itop  = iblock + remains;
-                itop += fread(itop,1,bsize-remains,input);
+            if (VERBOSE)
+              { fprintf(stderr,
+                    "  Concatenating %s: %lld la\'s\n",Block_Arg_Root(parse),povl);
+                fflush(stderr);
               }
 
-            w = (Overlap *) (iptr - ptrsize);
-            tsize = w->path.tlen*tbytes;
+            iptr = iblock;
+            itop = iblock + fread(iblock,1,bsize,input);
 
-            if (optr + ovlsize + tsize > otop)
-              { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
-                  SYSTEM_READ_ERROR
-                optr = oblock;
+            for (j = 0; j < povl; j++)
+              { if (iptr + ovlsize > itop)
+                  { int64 remains = itop-iptr;
+                    if (remains > 0)
+                      memmove(iblock,iptr,remains);
+                    iptr  = iblock;
+                    itop  = iblock + remains;
+                    itop += fread(itop,1,bsize-remains,input);
+                  }
+
+                w = (Overlap *) (iptr - ptrsize);
+                tsize = w->path.tlen*tbytes;
+
+                if (optr + ovlsize + tsize > otop)
+                  { if (fwrite(oblock,1,optr-oblock,stdout) != (size_t) (optr-oblock))
+                      SYSTEM_READ_ERROR
+                    optr = oblock;
+                  }
+
+                memmove(optr,iptr,ovlsize);
+                optr += ovlsize;
+                iptr += ovlsize;
+
+                if (iptr + tsize > itop)
+                  { int64 remains = itop-iptr;
+                    if (remains > 0)
+                      memmove(iblock,iptr,remains);
+                    iptr  = iblock;
+                    itop  = iblock + remains;
+                    itop += fread(itop,1,bsize-remains,input);
+                  }
+
+                memmove(optr,iptr,tsize);
+                optr += tsize;
+                iptr += tsize;
               }
 
-            memmove(optr,iptr,ovlsize);
-            optr += ovlsize;
-            iptr += ovlsize;
-
-            if (iptr + tsize > itop)
-              { int64 remains = itop-iptr;
-                if (remains > 0)
-                  memmove(iblock,iptr,remains);
-                iptr  = iblock;
-                itop  = iblock + remains;
-                itop += fread(itop,1,bsize-remains,input);
-              }
-            
-            memmove(optr,iptr,tsize);
-            optr += tsize;
-            iptr += tsize;
+            fclose(input);
           }
 
-        fclose(input);
+        Free_Block_Arg(parse);
       }
 
     if (optr > oblock)
@@ -186,10 +188,10 @@ int main(int argc, char *argv[])
   }
 
   if (VERBOSE)
-    fprintf(stderr,"  Totalling %lld la\'s\n",novl);
+    { fprintf(stderr,"  Totalling %lld la\'s\n",novl);
+      fflush(stderr);
+    }
 
-  free(pwd);
-  free(root);
   free(oblock);
   free(iblock-ptrsize);
 

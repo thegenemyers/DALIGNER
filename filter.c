@@ -48,8 +48,11 @@
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
 #define DO_ALIGNMENT
+#undef  DO_BRIDGING
+
 #undef  TEST_GATHER
 #undef  TEST_CONTAIN
+#undef  TEST_BRIDGE
 #undef  SHOW_OVERLAP          //  Show the cartoon
 #undef  SHOW_ALIGNMENT        //  Show the alignment
 #define   ALIGN_WIDTH    80   //     Parameters for alignment
@@ -683,7 +686,7 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
 
       NormShift = (int *) Malloc(sizeof(int)*(Kmer+1),"Allocating Sort_Kmers bias shift");
       if (NormShift == NULL)
-        exit (1);
+        Clean_Exit(1);
       for (i = 0; i <= Kmer; i++)
         NormShift[i] = Kshift - 2*i;
       LogNorm = 10000 * Kmer;
@@ -697,6 +700,11 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
   nreads = block->nreads;
   kmers  = block->reads[nreads].boff - Kmer * nreads;
 
+  if (block->reads[nreads].boff > 0x7fffffffll)
+    { fprintf(stderr,"%s: Fatal error, DB blocks are greater than 2Gbp!\n",Prog_Name);
+      Clean_Exit(1);
+    }
+
   if (kmers <= 0)
     goto no_mers;
 
@@ -709,7 +717,7 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
       trg = (KmerPos *) Malloc(sizeof(KmerPos)*(kmers+2),"Allocating Sort_Kmers vectors");
     }
   if (src == NULL || trg == NULL)
-    exit (1);
+    Clean_Exit(1);
 
   if (VERBOSE)
     { printf("\n   Kmer count = ");
@@ -1213,6 +1221,208 @@ typedef struct
     uint16  *trace;
   } Trace_Buffer;
 
+#ifdef DO_BRIDGING
+
+static inline int MapToTPAbove(Path *path, int *x, int isA, Trace_Buffer *tbuf)
+{ uint16 *trace = tbuf->trace + (uint64) path->trace;
+  int a, b, i;
+
+  a = (path->abpos / MR_tspace) * MR_tspace;
+  b = path->bbpos;
+  for (i = 1; i < path->tlen; i += 2)
+    { a += MR_tspace;
+      b += trace[i];
+      if (a > path->aepos)
+        a = path->aepos;
+      if (isA)
+        { if (a >= *x)
+            { *x = a;
+              return (b);
+            }
+        }
+      else
+        { if (b >= *x)
+            { *x = b;
+              return (a);
+            }
+        }
+    }
+  if (isA)
+    { *x = a;
+      return (b);
+    }
+  else
+    { *x = b;
+      return (a);
+    }
+}
+
+static inline int MapToTPBelow(Path *path, int *x, int isA, Trace_Buffer *tbuf)
+{ uint16 *trace = tbuf->trace + (uint64) path->trace;
+  int a, b, i;
+
+  a = ((path->aepos + (MR_tspace-1)) / MR_tspace) * MR_tspace;
+  b = path->bepos;
+  for (i = path->tlen-1; i >= 0; i -= 2)
+    { a -= MR_tspace;
+      b -= trace[i];
+      if (a < path->abpos)
+        a = path->abpos;
+      if (isA)
+        { if (a <= *x)
+            { *x = a;
+              return (b);
+            }
+        }
+      else
+        { if (b <= *x)
+            { *x = b;
+              return (a);
+            }
+        }
+    }
+  if (isA)
+    { *x = a;
+      return (b);
+    }
+  else
+    { *x = b;
+      return (a);
+    }
+}
+
+static int Check_Bridge(Path *path)
+{ uint16 *trace = (uint16 *) path->trace;
+  int     i;
+
+  if (MR_tspace <= TRACE_XOVR)
+    { for (i = 0; i < path->tlen; i++)
+        if (trace[i] > 250)
+          return (1);
+    }
+  return (0);
+}
+
+static void Compute_Bridge_Path(Path *path1, Path *path2, Alignment *align, int comp,
+                                int aovl, int bovl, Work_Data *work, Trace_Buffer *tbuf)
+{ Path   *apath;
+  int     ain, aout;
+  int     bin, bout, boff;
+  int     err;
+  int     i, j, p;
+  uint16 *trk;
+
+  apath = align->path;
+
+  if (bovl > aovl)
+    { bin  = path2->bbpos;
+      bout = path1->bepos;
+      ain  = MapToTPBelow(path1,&bin,0,tbuf);
+      aout = MapToTPAbove(path2,&bout,0,tbuf);
+    }
+  else
+    { ain  = path2->abpos;
+      aout = path1->aepos;
+      bin  = MapToTPBelow(path1,&ain,1,tbuf);
+      bout = MapToTPAbove(path2,&aout,1,tbuf);
+    }
+
+#ifdef TEST_BRIDGE
+  printf("\n  Tangle [%5d..%5d] vs [%5d..%5d]  %4d\n",
+      path1->abpos,path1->aepos,path2->abpos,path2->aepos,abs(aovl-bovl));
+  printf("         [%5d..%5d] vs [%5d..%5d]  %4d vs %4d\n",
+      path1->bbpos,path1->bepos,path2->bbpos,path2->bepos,aovl,bovl);
+  printf("      (%d,%d) to (%d,%d)\n",ain,bin,aout,bout);
+  fflush(stdout);
+#endif
+
+  apath->abpos = ain - 2*MR_tspace;
+  apath->aepos = aout + 2*MR_tspace;
+  apath->bbpos = MapToTPBelow(path1,&(apath->abpos),1,tbuf);
+  apath->bepos = MapToTPAbove(path2,&(apath->aepos),1,tbuf);
+
+  if (comp)
+    { boff = MR_tspace - apath->aepos % MR_tspace;
+
+      p = align->alen - apath->abpos;
+      apath->abpos = align->alen - apath->aepos;
+      apath->aepos = p;
+      p = align->blen - apath->bbpos;
+      apath->bbpos = align->blen - apath->bepos;
+      apath->bepos = p;
+
+      boff = boff - apath->abpos % MR_tspace;
+      align->aseq  -= boff;
+      apath->abpos += boff;
+      apath->aepos += boff;
+      align->alen  += boff;
+    }
+
+#ifdef TEST_BRIDGE
+  printf("\n      (%d,%d) to (%d,%d)\n",apath->abpos,apath->bbpos,apath->aepos,apath->bepos);
+  fflush(stdout);
+
+  Compute_Alignment(align,work,DIFF_ALIGN,0);
+  Print_Reference(stdout,align,work,8,100,10,0,6);
+  fflush(stdout);
+#endif
+
+  Compute_Alignment(align,work,DIFF_TRACE,MR_tspace);
+
+  trk = (uint16 *) apath->trace;
+  if (comp)
+    { j = apath->tlen-2;
+      i = 0;
+      while (i < j)
+        { p = trk[i];
+          trk[i] = trk[j];
+          trk[j] = p;
+          p = trk[i+1];
+          trk[i+1] = trk[j+1];
+          trk[j+1] = p;
+          i += 2;
+          j -= 2;
+        }
+
+      align->aseq  += boff;
+      apath->abpos -= boff;
+      apath->aepos -= boff;
+      align->alen  -= boff;
+
+      p = align->alen - apath->abpos;
+      apath->abpos = align->alen - apath->aepos;
+      apath->aepos = p;
+      p = align->blen - apath->bbpos;
+      apath->bbpos = align->blen - apath->bepos;
+      apath->bepos = p;
+    }
+
+  bin  = apath->bbpos;
+  bout = apath->bepos;
+  err  = apath->diffs;
+
+  p = 2*(ain / MR_tspace - apath->abpos / MR_tspace);
+  for (i = 0; i < p; i += 2)
+    { bin += trk[i+1];
+      err -= trk[i];
+    }
+
+  p = 2*(apath->aepos / MR_tspace - aout / MR_tspace);
+  for (i = align->path->tlen, p = i-p; i > p; i -= 2)
+    { bout -= trk[i-1];
+      err  -= trk[i-2];
+    }
+
+#ifdef TEST_BRIDGE
+  printf("      (%d,%d) to (%d,%d)\n",ain,bin,aout,bout);
+  printf("  Box %d vs %d -> %d %d%%\n",aout-ain,bout-bin,err,
+                                       (200*err)/((aout-ain)+(bout-bin)));
+  fflush(stdout);
+#endif
+}
+
+#endif // DO_BRIDGING
+
 static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
 { int   ac, b2, y2, ae;
   int   i, j, k;
@@ -1322,8 +1532,7 @@ static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
 
 
 //  Produce the concatentation of path1 and path2 where they are known to meet at
-//    the trace point with coordinate ap. Place this result in a big growing buffer,
-//    that gets reset when fusion is called with path1 = NULL
+//    the trace point with coordinate ap. Place this result in a big growing buffer
 
 static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
 { int     k, k1, k2;
@@ -1339,7 +1548,7 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
     { tbuf->max = 1.2*(tbuf->top+len) + 1000;
       tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
       if (tbuf->trace == NULL)
-        exit (1);
+        Clean_Exit(1);
     }
 
   trace = tbuf->trace + tbuf->top;
@@ -1371,21 +1580,101 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
   path1->tlen  = len;
 }
 
+#ifdef DO_BRIDGING
 
-static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buffer *tbuf)
-{ Path *jpath, *kpath;
+//  Produce the concatentation of path1, path2, and path3 where they are known to meet at
+//    the the ends of path2 which was produced by Compute-Alignment. Place this result in
+//    a big growing buffer.
+
+static void Bridge(Path *path1, Path *path2, Path *path3, Trace_Buffer *tbuf)
+{ int     k, k1, k2;
+  int     len, diff;
+  uint16 *trace;
+
+  k1 = 2 * ((path2->abpos/MR_tspace) - (path1->abpos/MR_tspace));
+  if (path2->aepos == path3->aepos)
+    k2 = path3->tlen;
+  else
+    k2 = 2 * ((path2->aepos/MR_tspace) - (path3->abpos/MR_tspace));
+
+  len = k1 + path2->tlen + (path3->tlen-k2);
+
+  if (tbuf->top + len >= tbuf->max)
+    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
+      tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
+      if (tbuf->trace == NULL)
+        Clean_Exit(1);
+    }
+
+  trace = tbuf->trace + tbuf->top;
+  tbuf->top += len;
+
+  diff = 0;
+  len  = 0;
+  if (k1 > 0)
+    { uint16 *t = tbuf->trace + (uint64) (path1->trace);
+      for (k = 0; k < k1; k += 2)
+        { trace[len++] = t[k];
+          trace[len++] = t[k+1];
+          diff += t[k];
+        }
+    }
+  if (path2->tlen > 0)
+    { uint16 *t = (uint16 *) (path2->trace);
+      for (k = 0; k < path2->tlen; k += 2)
+        { trace[len++] = t[k];
+          trace[len++] = t[k+1];
+          diff += t[k];
+        }
+    }
+  if (k2 < path3->tlen)
+    { uint16 *t = tbuf->trace + (uint64) (path3->trace);
+      for (k = k2; k < path3->tlen; k += 2)
+        { trace[len++] = t[k];
+          trace[len++] = t[k+1];
+          diff += t[k];
+        }
+    }
+
+  path1->aepos = path3->aepos;
+  path1->bepos = path3->bepos;
+  path1->diffs = diff;
+  path1->trace = (void *) (trace - tbuf->trace);
+  path1->tlen  = len;
+}
+
+#endif // DO_BRIDGING
+
+static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
+                               Alignment *align, Work_Data *work, Trace_Buffer *tbuf)
+{ Path      *jpath, *kpath, *apath;
+  Path      _bpath, *bpath = &_bpath;
+  Alignment _blign, *blign = &_blign;
+
   int   j, k, no;
   int   dist;
   int   awhen = 0, bwhen = 0;
   int   hasB;
 
-#ifdef TEST_CONTAIN
+#if defined(TEST_CONTAIN) || defined(TEST_BRIDGE)
   for (j = 0; j < novls; j++)
     printf("  %3d: [%5d,%5d] x [%5d,%5d]\n",j,amatch[j].abpos,amatch[j].aepos,
                                               amatch[j].bbpos,amatch[j].bepos);
 #endif
 
+  (void) work;
+
+  //  Loop to catch LA's that share a common trace point and fuse them
+
   hasB = (bmatch != NULL);
+  if (hasB)
+    { blign->aseq = align->bseq;
+      blign->bseq = align->aseq;
+      blign->alen = align->blen;
+      blign->blen = align->alen;
+      blign->path = bpath;
+    }
+  apath = align->path;
 
   for (j = 1; j < novls; j++)
     { jpath = amatch+j;
@@ -1502,6 +1791,123 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
         }
     }
 
+#ifdef DO_BRIDGING
+
+  //  Loop to catch LA's that have a narrow parallel overlap and bridge them
+
+  for (j = 1; j < novls; j++)
+    { jpath = amatch+j;
+      if (jpath->abpos < 0)
+        continue;
+
+      for (k = j-1; k >= 0; k--)
+        { Path   *path1, *path2;
+          Path   *bath1, *bath2;
+          int     aovl, bovl;
+          Path    jback, kback;
+
+          kpath = amatch+k;
+	  if (kpath->abpos < 0)
+            continue;
+
+          if (jpath->abpos < kpath->abpos)
+            { path1 = jpath;
+              path2 = kpath;
+            }
+          else
+            { path1 = kpath;
+              path2 = jpath;
+            }
+
+          if (path2->abpos >= path1->aepos || path1->aepos >= path2->aepos ||
+              path1->bbpos >= path2->bbpos || path2->bbpos >= path1->bepos ||
+              path1->bepos >= path2->bepos)
+            continue;
+          aovl = path1->aepos - path2->abpos;
+          bovl = path1->bepos - path2->bbpos;
+          if (abs(aovl-bovl) > .2 * (aovl+bovl))
+            continue;
+
+          if (hasB)
+            { if (MG_comp == (jpath->abpos < kpath->abpos))
+                { bath1 = bmatch+k;
+                  bath2 = bmatch+j;
+                }
+              else
+                { bath1 = bmatch+j;
+                  bath2 = bmatch+k;
+                }
+              if (bath1->abpos > bath2->abpos)
+                { printf("  SYMFAIL %d %d\n",j,k);
+                  continue;
+                }
+            }
+
+          Compute_Bridge_Path(path1,path2,align,0,aovl,bovl,work,tbuf);
+
+          if (Check_Bridge(apath))
+            continue;
+
+          jback = *jpath;
+          kback = *kpath;
+
+          Bridge(path1,apath,path2,tbuf);
+          *jpath = *path1;
+          kpath->abpos = -1;
+
+#ifdef TEST_BRIDGE
+          { Alignment extra;
+            Path      pcopy;
+
+            pcopy  = *jpath;
+            extra  = *align;
+            pcopy.trace = tbuf->trace + (uint64) jpath->trace;
+            extra.path = &pcopy;
+            Compute_Trace_PTS(&extra,work,MR_tspace,GREEDIEST);
+            Print_Reference(stdout,&extra,work,8,100,10,0,6);
+            fflush(stdout);
+          }
+#endif
+
+          if (hasB)
+            { Compute_Bridge_Path(bath1,bath2,blign,MG_comp,bovl,aovl,work,tbuf);
+
+              if (Check_Bridge(bpath))
+                { *jpath = jback;
+                  *kpath = kback;
+                  continue;
+                }
+             
+              Bridge(bath1,bpath,bath2,tbuf);
+              bmatch[j] = *bath1;
+
+#ifdef TEST_BRIDGE
+              { Alignment extra;
+                Path      pcopy;
+
+	        pcopy  = bmatch[j];
+	        extra  = *blign;
+                pcopy.trace = tbuf->trace + (uint64) bmatch[j].trace;
+                extra.path = &pcopy;
+                if (MG_comp)
+                  { Complement_Seq(extra.aseq,extra.alen);
+                    Complement_Seq(extra.bseq,extra.blen);
+                  }
+                Compute_Trace_PTS(&extra,work,MR_tspace,GREEDIEST);
+                Print_Reference(stdout,&extra,work,8,100,10,0,6);
+                fflush(stdout);
+                if (MG_comp)
+                  { Complement_Seq(extra.aseq,extra.alen);
+                    Complement_Seq(extra.bseq,extra.blen);
+                  }
+              }
+#endif
+            }
+        } 
+    }
+
+#endif // DO_BRIDGING
+
   no = 0;
   for (j = 0; j < novls; j++)
     if (amatch[j].abpos >= 0)
@@ -1511,7 +1917,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch, Trace_Buff
       }
   novls = no;
 
-#ifdef TEST_CONTAIN
+#if defined(TEST_CONTAIN) || defined(TEST_BRIDGE)
   for (j = 0; j < novls; j++)
     printf("  %3d: [%5d,%5d] x [%5d,%5d]\n",j,amatch[j].abpos,amatch[j].aepos,
                                               amatch[j].bbpos,amatch[j].bepos);
@@ -1629,7 +2035,7 @@ static void *report_thread(void *arg)
   tbuf->trace = Malloc(sizeof(short)*tbuf->max,"Allocating trace vector");
 
   if (amatch == NULL || bmatch == NULL || tbuf->trace == NULL)
-    exit (1);
+    Clean_Exit(1);
 
   fwrite(&ahits,sizeof(int64),1,ofile1);
   fwrite(&MR_tspace,sizeof(int),1,ofile1);
@@ -1768,14 +2174,14 @@ static void *report_thread(void *arg)
                                 amatch = Realloc(amatch,sizeof(Path)*AOmax,
                                                  "Reallocating match vector");
                                 if (amatch == NULL)
-                                  exit (1);
+                                  Clean_Exit(1);
                               }
                             if (tbuf->top + apath->tlen > tbuf->max)
                               { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
                                 tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
-                                  exit (1);
+                                  Clean_Exit(1);
                               }
                             amatch[novla] = *apath;
                             amatch[novla].trace = (void *) (tbuf->top);
@@ -1789,14 +2195,14 @@ static void *report_thread(void *arg)
                                 bmatch = Realloc(bmatch,sizeof(Path)*BOmax,
                                                         "Reallocating match vector");
                                 if (bmatch == NULL)
-                                  exit (1);
+                                  Clean_Exit(1);
                               }
                             if (tbuf->top + bpath->tlen > tbuf->max)
                               { tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
                                 tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
                                                       "Reallocating trace vector");
                                 if (tbuf->trace == NULL)
-                                  exit (1);
+                                  Clean_Exit(1);
                               }
                             bmatch[novlb] = *bpath;
                             bmatch[novlb].trace = (void *) (tbuf->top);
@@ -1866,31 +2272,31 @@ static void *report_thread(void *arg)
 
            if (novla > 1)
              { if (novlb > 1)
-                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,tbuf);
+                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,align,work,tbuf);
                else
-                 novla = Handle_Redundancies(amatch,novla,NULL,tbuf);
+                 novla = Handle_Redundancies(amatch,novla,NULL,align,work,tbuf);
              }
            else if (novlb > 1)
-             novlb = Handle_Redundancies(bmatch,novlb,NULL,tbuf);
+             novlb = Handle_Redundancies(bmatch,novlb,NULL,align,work,tbuf);
 
            for (i = 0; i < novla; i++)
              { ovla->path = amatch[i];
                ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
                if (small)
-                 Compress_TraceTo8(ovla);
+                 Compress_TraceTo8(ovla,1);
                if (Write_Overlap(ofile1,ovla,tbytes))
                  { fprintf(stderr,"%s: Cannot write to %s too small?\n",SORT_PATH,Prog_Name);
-                   exit (1);
+                   Clean_Exit(1);
                  }
              }
            for (i = 0; i < novlb; i++)
              { ovlb->path = bmatch[i];
                ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
                if (small)
-                 Compress_TraceTo8(ovlb);
+                 Compress_TraceTo8(ovlb,1);
                if (Write_Overlap(ofile2,ovlb,tbytes))
                  { fprintf(stderr,"%s: Cannot write to %s, too small?\n",SORT_PATH,Prog_Name);
-                   exit (1);
+                   Clean_Exit(1);
                  }
              }
            ahits += novla;
@@ -1937,7 +2343,7 @@ static char *NameBuffer(char *aname, char *bname)
     { max = ((int) (1.2*len)) + 100;
       if ((cat = (char *) realloc(cat,max+1)) == NULL)
         { fprintf(stderr,"%s: Out of memory (Making path name)\n",Prog_Name);
-          exit (1);
+          Clean_Exit(1);
         }
     }
   return (cat);
@@ -2079,7 +2485,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
                 fprintf(stderr," reduce block size or increase allocation\n");
               }
             fflush(stderr);
-            exit (1);
+            Clean_Exit(1);
           }
         if (limit < 10)
           { fprintf(stderr,"\nWarning: Sensitivity hampered by low ");
@@ -2140,7 +2546,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
     khit = work2 = (SeedPair *) Malloc(sizeof(SeedPair)*(nhits+1),
                                         "Allocating daligner hit vectors");
     if (hhit == NULL || khit == NULL || bsort == NULL)
-      exit (1);
+      Clean_Exit(1);
 
     MG_blist = bsort;
     MG_hits  = khit;
@@ -2223,7 +2629,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
     w = ((ablock->maxlen >> Binshift) - ((-bblock->maxlen) >> Binshift)) + 1;
     counters = (int *) Malloc(NTHREADS*3*w*sizeof(int),"Allocating diagonal buckets");
     if (counters == NULL)
-      exit (1);
+      Clean_Exit(1);
 
     fname = NameBuffer(aname,bname);
 
@@ -2241,14 +2647,14 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
         sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,aname,bname,(comp?'C':'N'),i+1);
         parmr[i].ofile1 = Fopen(fname,"w");
         if (parmr[i].ofile1 == NULL)
-          exit (1);
+          Clean_Exit(1);
         if (MG_self)
           parmr[i].ofile2 = parmr[i].ofile1;
         else if (SYMMETRIC)
           { sprintf(fname,"%s/%s.%s.%c%d.las",SORT_PATH,bname,aname,(comp?'C':'N'),i+1);
             parmr[i].ofile2 = Fopen(fname,"w");
             if (parmr[i].ofile2 == NULL)
-              exit (1);
+              Clean_Exit(1);
           }
       }
 

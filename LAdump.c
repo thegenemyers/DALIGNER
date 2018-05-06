@@ -24,8 +24,6 @@
 static char *Usage =
     "[-cdtlo] <src1:db|dam> [<src2:db|dam>] <align:las> [<reads:FILE> | <reads:range> ...]";
 
-#define LAST_READ_SYMBOL  '$'
-
 static int ORDER(const void *l, const void *r)
 { int x = *((int *) l);
   int y = *((int *) r);

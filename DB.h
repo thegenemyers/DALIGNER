@@ -59,6 +59,8 @@ typedef signed long long   int64;
 typedef float              float32;
 typedef double             float64;
 
+#define LAST_READ_SYMBOL '$'
+#define BLOCK_SYMBOL     '@'
 
 /*******************************************************************************************
  *
@@ -566,5 +568,25 @@ int Read_All_Sequences(DAZZ_DB *db, int ascii);
   //   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
 
 int List_DB_Files(char *path, void actor(char *path, char *extension));
+
+  //   Take a command line argument and interpret the '@' block number ranges.
+  //   Parse_Block_Arg produces a Block_Looper iterator object that can then
+  //   be invoked multiple times to iterate through all the files implied by
+  //   the @ pattern/range.  Next_Block_Slice returns a string encoing the next
+  //   slice files represented by an @-notation, and advances the iterator by
+  //   that many files.
+
+typedef void Block_Looper;
+
+Block_Looper *Parse_Block_Arg(char *arg);
+
+FILE *Next_Block_Arg(Block_Looper *e_parse);
+
+char *Next_Block_Slice(Block_Looper *e_parse,int slice);
+
+void  Reset_Block_Arg(Block_Looper *e_parse);  //  Reset iterator to first file
+char *Block_Arg_Path(Block_Looper *e_parse);   //  Path of current file
+char *Block_Arg_Root(Block_Looper *e_parse);   //  Root name of current file
+void  Free_Block_Arg(Block_Looper *e_parse);   //  Free the iterator
 
 #endif // _DAZZ_DB

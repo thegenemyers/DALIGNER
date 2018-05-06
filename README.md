@@ -18,8 +18,19 @@ in the data set.  The alignment records are parsimonious in that they do not rec
 alignment but simply a set of trace points, typically every 100bp or so, that allow the
 efficient reconstruction of alignments on demand.
 
+All programs add suffixes (e.g. .db, .las) as needed.
+For the commands that take multiple .las files as arguments, i.e. LAsort, LAmerge, LAindex, LAcat,
+and LAcheck, one can place a @-sign in the name, which is then interpreted as the sequence of files
+obtained by replacing the @-sign by 1, 2, 3, ... in sequence until a number is reached for
+which no file matches.  One can also place a @-sign followed by an integer, say, i, in which
+case the sequence starts at i.  Lastly, one can also place @i-j where i and j are integers, in
+which case the sequence is from i to j, inclusive.
+
+The formal UNIX command line
+descriptions and options for the DALIGNER module commands are as follows:
+
 ```
-1. daligner [-vbAI]
+1. daligner [-vabAI]
        [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
        [-m<track>]+ <subject:db|dam> <target:db|dam> ...
@@ -78,6 +89,8 @@ between different portions of the same read will also be found and reported.  In
 the command "daligner -A X Y" produces a single file X.Y..las and "daligner X Y" produces
 2 files X.Y..las and Y.X.las (unless X=Y in which case only a single file, X.X.las, is
 produced).  The overlap records in one of these files are sorted as described for LAsort.
+The -a option to daligner is passed directly through to LAsort which is actually called
+as a sub-process to produce the sorted file.
 In order to produce the aforementioned .las file, several temporary .las files, two for
 each thread, are produce in the sub-directory /tmp by default.  You can overide this
 location by specifying the directory you would like this activity to take place in with
@@ -114,7 +127,7 @@ LAsort can detects that it has been passed such a file and if so treats the chai
 a unit and sorts them on the basis of the first LA in the chain.
 
 ```
-3. LAmerge [-va] <merge:las> <parts:las> ...
+3. LAmerge [-va] [-P<dir(/tmp)>] <merge:las> <parts:las> ...
 ```
 
 Merge the .las files \<parts\> into a singled sorted file \<merge\>, where it is assumed
@@ -248,7 +261,7 @@ first character of every line is a "1-code" character that tells you what inform
 to expect on the line.  The rest of the line contains information where each item is
 separated by a single blank space.  The trace point line gives the number of trace
 point intervals in the LA and is immediately followed by that many lines containing
-a pair of integers giving the # of differences and b-displacement in each successive
+a pair of integers giving the number of differences and b-displacement in each successive
 trace point interval.
 
 ```
@@ -290,12 +303,10 @@ they need at any momment int time, as opposed to having to sequentially scan
 through the .las file.
 
 ```
-7. LAcat [-v] <source:las> > <target>.las
+7. LAcat [-v] <source:las> ... > <target>.las
 ```
 
-Given template name \<source\> that contains a single #-sign somewhere within it,
-find all files that match it when the # is replace by i for i in 1,2,3,...  and
-a .las extension is added if not present.  Then concatenate these files in order
+The sequence of \<source\> files (that can contain @-sign block ranges) are
 into a single .las file and pipe the result to the standard output.  The -v
 option reports the files concatenated and the number of la's within them to
 standard error (as the standard output receives the concatenated file).
@@ -308,7 +319,7 @@ If the second argument is an integer n, then divide the alignment file \<source\
 in through the standard input, as evenly as possible into n alignment files with the
 names specified by template \<target\>, subject to the restriction that all alignment
 records for a given a-read are in the same file.  The name of the n files is the
-string \<target\> where the single #-sign that occurs somewhere in it is replaced
+string \<target\> where the single @-sign that occurs somewhere in it is replaced
 by i for i in [1,n] and a .las extension is added if necessary.
 
 If the second argument refers to a database \<path\>.db that has been partitioned, then
@@ -317,14 +328,15 @@ in \<path\>.i.db are in the i'th file generated from the template \<target\>.  T
 option reports the files produced and the number of la's within them to standard error.
 
 ```
-9. LAcheck [-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
+9. LAcheck [-vaS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
 ```
 
 LAcheck checks each .las file for structural integrity, where the a- and b-sequences
 come from src1 or from src1 and scr2, respectively.  That is, it makes sure each file
 makes sense as a plausible .las file, e.g. values are not out of bound, the number of
 records is correct, the number of trace points for a record is correct, and so on.  If
-the -S option is set then it further checks that the alignments are in sorted order.
+the -S option is set then it further checks that the alignments are in sorted order,
+by default pile order, but if -a is also set, then map order.
 If the -v option is set then a line is output for each .las file saying either the
 file is OK or reporting the first error.  If the -v option is not set then the program
 runs silently.  The exit status is 0 if every file is deemed good, and 1 if at least
@@ -335,8 +347,8 @@ information, and if it does, then it checks the validity of chains and assumes t
 the chains were sorted with the -a option to LAsort and LAmerge.
 
 ```
-10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)] [-P<dir(/tmp)>]
-                    [-M<int>] [-B<int(4)>] [-D<int( 250)>] [-T<int(4)>] [-f<name>]
+10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)] [-M<int>]
+                    [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]
                   ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-H<int>]
                     [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
                     [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]
@@ -372,10 +384,7 @@ concatenated would give a single large sorted overlap file.
 The -B option (default 4) gives the desired number of block comparisons per call to
 daligner. Some must contain B-1 comparisons, and the first B-2 block comparisons
 even less, but the HPCdaligner "planner" does the best it can to give an average load
-of dal block comparisons per command. The -D option (default 250) gives the maximum
-number of files that will be merged in a single LAmerge command.  The planner performs
-D-way merges at all of the ceil(log<sub>D</sub> N) levels save the last, so as to minimize the
-number of intermediate files.
+of -B block comparisons per command.
 
 If the integers \<first\> and \<last\> are missing then the script produced is for every
 block in the database.  If \<first\> is present then HPCdaligner produces an incremental

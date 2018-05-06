@@ -18,7 +18,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "[-vS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...";
+static char *Usage = "[-vaS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -26,6 +26,7 @@ int main(int argc, char *argv[])
 { DAZZ_DB   _db1,  *db1  = &_db1;
   DAZZ_DB   _db2,  *db2  = &_db2;
   int        VERBOSE;
+  int        MAP_ORDER;
   int        SORTED;
   int        ISTWO;
   int        status;
@@ -42,26 +43,32 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vS")
+            ARG_FLAGS("vaS")
             break;
         }
       else
         argv[j++] = argv[i];
     argc = j;
 
-    VERBOSE = flags['v'];
-    SORTED  = flags['S'];
+    VERBOSE   = flags['v'];
+    MAP_ORDER = flags['a'];
+    SORTED    = flags['S'];
 
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"      -v: Verbose mode, output error messages.\n");
+        fprintf(stderr,"      -S: Check that .las is in sorted order.\n");
+        fprintf(stderr,"      -a: If -S, then check sorted by A-read, A-position pairs\n");
+        fprintf(stderr,"          off => check sorted by A,B-read pairs (LA-piles)\n");
         exit (1);
       }
   }
 
   //  Open trimmed DB
 
-  { int   status;
-    char *pwd, *root;
+  { Block_Looper *parse;
+    int   status;
     FILE *input;
 
     ISTWO  = 0;
@@ -73,31 +80,28 @@ int main(int argc, char *argv[])
         exit (1);
       }
 
-    pwd    = PathTo(argv[2]);
-    root   = Root(argv[2],".las");
-    if ((input = fopen(Catenate(pwd,"/",root,".las"),"r")) == NULL)
-      { ISTWO = 1;
-        if (argc <= 3)
-          { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
-            exit (1);
-          }
-        status = Open_DB(argv[2],db2);
-        if (status < 0)
-          exit (1);
-        if (db2->part > 0)
-          { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[2]);
-            exit (1);
-          }
-        Trim_DB(db2);
-      }
+    if (argc <= 3)
+      db2 = db1;
     else
-      { fclose(input);
-        db2 = db1;
+      { parse = Parse_Block_Arg(argv[2]);
+        if ((input = Next_Block_Arg(parse)) == NULL)
+          { ISTWO = 1;
+            status = Open_DB(argv[2],db2);
+            if (status < 0)
+              exit (1);
+            if (db2->part > 0)
+              { fprintf(stderr,"%s: Cannot be called on a block: %s\n",Prog_Name,argv[2]);
+                exit (1);
+              }
+            Trim_DB(db2);
+          }
+        else
+          { db2 = db1;
+            fclose(input);
+          }
+        Free_Block_Arg(parse);
       }
     Trim_DB(db1);
-
-    free(root);
-    free(pwd);
   }
 
   { char      *iblock;
@@ -122,8 +126,9 @@ int main(int argc, char *argv[])
 
     status = 0;
     for (i = 2+ISTWO; i < argc; i++)
-      { char     *pwd, *root;
+      { Block_Looper *parse;
         FILE     *input;
+        char     *disp;
         char     *iptr, *itop;
         Overlap   last, prev;
         int64     novl;
@@ -132,222 +137,256 @@ int main(int argc, char *argv[])
 
         //  Establish IO and (novl,tspace) header
 
-        pwd    = PathTo(argv[i]);
-        root   = Root(argv[i],".las");
-        if ((input = Fopen(Catenate(pwd,"/",root,".las"),"r")) == NULL)
-          goto error;
+        parse = Parse_Block_Arg(argv[i]);
 
-        if (fread(&novl,sizeof(int64),1,input) != 1)
-          SYSTEM_READ_ERROR
-        if (fread(&tspace,sizeof(int),1,input) != 1)
-          SYSTEM_READ_ERROR
-        if (novl < 0)
-          { if (VERBOSE)
-              fprintf(stderr,"  %s: Number of alignments < 0\n",root);
-            goto error;
-          }
-        if (tspace < 0)
-          { if (VERBOSE)
-              fprintf(stderr,"  %s: Trace spacing < 0\n",root);
-            goto error;
-          }
+        while ((input = Next_Block_Arg(argv[i])) != NULL)
+          { disp = Block_Arg_Root(parse);
 
-        if (tspace <= TRACE_XOVR && tspace != 0)
-          tbytes = sizeof(uint8);
-        else
-          tbytes = sizeof(uint16);
-
-        iptr = iblock;
-        itop = iblock + fread(iblock,1,bsize,input);
-
-        //  For each record in file do
-
-        has_chains = 0;
-        last.aread = -1;
-        last.bread = -1;
-        last.flags =  0;
-        last.path.bbpos = last.path.abpos = 0;
-        last.path.bepos = last.path.aepos = 0;
-        prev = last;
-        for (j = 0; j < novl; j++)
-          { Overlap ovl;
-            int     tsize;
-            int     equal;
-
-            //  Fetch next record
-
-            if (iptr + ovlsize > itop)
-              { int64 remains = itop-iptr;
-                if (remains > 0)
-                  memmove(iblock,iptr,remains);
-                iptr  = iblock;
-                itop  = iblock + remains;
-                itop += fread(itop,1,bsize-remains,input);
-                if (iptr + ovlsize > itop)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: Too few alignment records\n",root);
-                    goto error;
-                  }
-              }
-
-            ovl   = *((Overlap *) (iptr - ptrsize));
-            iptr += ovlsize;
-            tsize = ovl.path.tlen*tbytes;
-
-            if (iptr + tsize > itop)
-              { int64 remains = itop-iptr;
-                if (remains > 0)
-                  memmove(iblock,iptr,remains);
-                iptr  = iblock;
-                itop  = iblock + remains;
-                itop += fread(itop,1,bsize-remains,input);
-                if (iptr + tsize > itop)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: Too few alignment records\n",root);
-                    goto error;
-                  }
-              }
-            ovl.path.trace = iptr;
-            iptr += tsize;
-
-            //  Basic checks
-
-            if (ovl.aread < 0 || ovl.bread < 0)
+            if (fread(&novl,sizeof(int64),1,input) != 1)
+              SYSTEM_READ_ERROR
+            if (fread(&tspace,sizeof(int),1,input) != 1)
+              SYSTEM_READ_ERROR
+            if (novl < 0)
               { if (VERBOSE)
-                  fprintf(stderr,"  %s: Read indices < 0\n",root);
+                  fprintf(stderr,"  %s: Number of alignments < 0\n",disp);
                 goto error;
               }
-            if (ovl.aread >= nreads1 || ovl.bread >= nreads2)
+            if (tspace < 0)
               { if (VERBOSE)
-                  fprintf(stderr,"  %s: Read indices out of range\n",root);
+                  fprintf(stderr,"  %s: Trace spacing < 0\n",disp);
                 goto error;
               }
 
-            if (ovl.path.abpos >= ovl.path.aepos || ovl.path.aepos > reads1[ovl.aread].rlen ||
-                ovl.path.bbpos >= ovl.path.bepos || ovl.path.bepos > reads2[ovl.bread].rlen ||
-                ovl.path.abpos < 0               || ovl.path.bbpos < 0                       )
-              { if (VERBOSE)
-                  fprintf(stderr,"  %s: Non-sense alignment intervals\n",root);
-                goto error;
-              }
-
-            if (ovl.path.diffs < 0 || ovl.path.diffs > reads1[ovl.aread].rlen ||
-                                      ovl.path.diffs > reads2[ovl.bread].rlen)
-              { if (VERBOSE)
-                  fprintf(stderr,"  %s: Non-sense number of differences\n",root);
-                goto error;
-              }
-
-            if (Check_Trace_Points(&ovl,tspace,VERBOSE,root))
-              goto error;
-
-            if (j == 0)
-              has_chains = ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0);
-            if (has_chains)
-              { if ((ovl.flags & (START_FLAG | NEXT_FLAG)) == 0)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: LA has both start & next flag set\n",root);
-                    goto error;
-                  }
-                if (BEST_CHAIN(ovl.flags) && CHAIN_NEXT(ovl.flags))
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: LA has both best & next flag set\n",root);
-                    goto error;
-                  }
-              }
+            if (tspace <= TRACE_XOVR && tspace != 0)
+              tbytes = sizeof(uint8);
             else
-              { if ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0)
+              tbytes = sizeof(uint16);
+
+            iptr = iblock;
+            itop = iblock + fread(iblock,1,bsize,input);
+
+            //  For each record in file do
+
+            has_chains = 0;
+            last.aread = -1;
+            last.bread = -1;
+            last.flags =  0;
+            last.path.bbpos = last.path.abpos = 0;
+            last.path.bepos = last.path.aepos = 0;
+            prev = last;
+            for (j = 0; j < novl; j++)
+              { Overlap ovl;
+                int     tsize;
+                int     equal;
+
+                //  Fetch next record
+
+                if (iptr + ovlsize > itop)
+                  { int64 remains = itop-iptr;
+                    if (remains > 0)
+                      memmove(iblock,iptr,remains);
+                    iptr  = iblock;
+                    itop  = iblock + remains;
+                    itop += fread(itop,1,bsize-remains,input);
+                    if (iptr + ovlsize > itop)
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: Too few alignment records\n",disp);
+                        goto error;
+                      }
+                  }
+
+                ovl   = *((Overlap *) (iptr - ptrsize));
+                iptr += ovlsize;
+                tsize = ovl.path.tlen*tbytes;
+
+                if (iptr + tsize > itop)
+                  { int64 remains = itop-iptr;
+                    if (remains > 0)
+                      memmove(iblock,iptr,remains);
+                    iptr  = iblock;
+                    itop  = iblock + remains;
+                    itop += fread(itop,1,bsize-remains,input);
+                    if (iptr + tsize > itop)
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: Too few alignment records\n",disp);
+                        goto error;
+                      }
+                  }
+                ovl.path.trace = iptr;
+                iptr += tsize;
+
+                //  Basic checks
+
+                if (ovl.aread < 0 || ovl.bread < 0)
                   { if (VERBOSE)
-                      fprintf(stderr,"  %s: LAs should not have chain flags\n",root);
+                      fprintf(stderr,"  %s: Read indices < 0\n",disp);
                     goto error;
                   }
-              }
+                if (ovl.aread >= nreads1 || ovl.bread >= nreads2)
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: Read indices out of range\n",disp);
+                    goto error;
+                  }
 
-            //  Duplicate check and sort check if -S set
+                if (ovl.path.abpos >= ovl.path.aepos || ovl.path.aepos > reads1[ovl.aread].rlen ||
+                    ovl.path.bbpos >= ovl.path.bepos || ovl.path.bepos > reads2[ovl.bread].rlen ||
+                    ovl.path.abpos < 0               || ovl.path.bbpos < 0                       )
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: Non-sense alignment intervals\n",disp);
+                    goto error;
+                  }
 
-            equal = 0;
-            if (SORTED)
-              { if (CHAIN_NEXT(ovl.flags) || !has_chains)
-                  { if (ovl.aread > last.aread) goto inorder;
-                    if (ovl.aread == last.aread)
-                      { if (ovl.bread > last.bread) goto inorder;
-                        if (ovl.bread == last.bread)
-                          { if (COMP(ovl.flags) > COMP(last.flags)) goto inorder;
-                            if (COMP(ovl.flags) == COMP(last.flags))
-                              { if (ovl.path.abpos > last.path.abpos) goto inorder;
-                                if (ovl.path.abpos == last.path.abpos)
-                                  { equal = 1;
-                                    goto inorder;
+                if (ovl.path.diffs < 0 || ovl.path.diffs > reads1[ovl.aread].rlen ||
+                                          ovl.path.diffs > reads2[ovl.bread].rlen)
+                  { if (VERBOSE)
+                      fprintf(stderr,"  %s: Non-sense number of differences\n",disp);
+                    goto error;
+                  }
+
+                if (Check_Trace_Points(&ovl,tspace,VERBOSE,disp))
+                  goto error;
+
+                if (j == 0)
+                  has_chains = ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0);
+                if (has_chains)
+                  { if (CHAIN_START(ovl.flags) && CHAIN_NEXT(ovl.flags))
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: LA has both start & next flag set\n",disp);
+                        goto error;
+                      }
+                    if (BEST_CHAIN(ovl.flags) && CHAIN_NEXT(ovl.flags))
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: LA has both best & next flag set\n",disp);
+                        goto error;
+                      }
+                  }
+                else
+                  { if ((ovl.flags & (START_FLAG | NEXT_FLAG | BEST_FLAG)) != 0)
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: LAs should not have chain flags\n",disp);
+                        goto error;
+                      }
+                  }
+
+                //  Duplicate check and sort check if -S set
+
+                equal = 0;
+                if (SORTED)
+                  { if (CHAIN_NEXT(ovl.flags))
+                      { if (ovl.aread == last.aread && ovl.bread != last.bread &&
+                            COMP(ovl.flags) != COMP(last.flags) &&
+                            ovl.path.abpos >= last.path.abpos &&
+                            ovl.path.bbpos >= last.path.bbpos)
+                          goto dupcheck;
+                        if (VERBOSE)
+                          fprintf(stderr,"  %s: Chain is not valid (%d vs %d)\n",
+                                         disp,ovl.aread+1,ovl.bread+1);
+                        goto error;
+                      }
+                    else if (!has_chains)
+                      { if (ovl.aread > last.aread) goto inorder;
+                        if (ovl.aread == last.aread)
+                          { if (MAP_ORDER)
+                              { if (ovl.path.abpos > prev.path.abpos) goto inorder;
+                                if (ovl.path.abpos == prev.path.abpos)
+                                  goto dupcheck;
+                              }
+                            else
+                              { if (ovl.bread > last.bread) goto inorder;
+                                if (ovl.bread == last.bread)
+                                  { if (COMP(ovl.flags) > COMP(last.flags)) goto inorder;
+                                    if (COMP(ovl.flags) == COMP(last.flags))
+                                      { if (ovl.path.abpos > last.path.abpos) goto inorder;
+                                        if (ovl.path.abpos == last.path.abpos)
+                                          { equal = 1;
+                                            goto inorder;
+                                          }
+                                      }
                                   }
                               }
                           }
+                        if (VERBOSE)
+                          fprintf(stderr,"  %s: LAs are not sorted (%d vs %d)\n",
+                                         disp,ovl.aread+1,ovl.bread+1);
+                        goto error;
                       }
-                    if (VERBOSE)
-                      { if (CHAIN_NEXT(ovl.flags))
-                          fprintf(stderr,"  %s: Chain is not valid (%d vs %d)\n",
-                                         root,ovl.aread+1,ovl.bread+1);
-                        else
-                          fprintf(stderr,"  %s: Reads are not sorted (%d vs %d)\n",
-                                         root,ovl.aread+1,ovl.bread+1);
+                    else //  First element of a chain
+                      { if (ovl.aread > prev.aread) goto inorder;
+                        if (ovl.aread == prev.aread)
+                          { if (MAP_ORDER)
+                              { if (ovl.path.abpos > prev.path.abpos) goto inorder;
+                                if (ovl.path.abpos == prev.path.abpos)
+                                  goto dupcheck;
+                              }
+                            else
+                              { if (ovl.bread > prev.bread) goto inorder;
+                                if (ovl.bread == prev.bread)
+                                  { if (COMP(ovl.flags) > COMP(prev.flags)) goto inorder;
+                                    if (COMP(ovl.flags) == COMP(prev.flags))
+                                      { if (ovl.path.abpos > prev.path.abpos) goto inorder;
+                                        if (ovl.path.abpos == prev.path.abpos)
+                                          { equal = 1;
+                                            goto dupcheck;
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                        if (VERBOSE)
+                          fprintf(stderr,"  %s: Chains are not sorted (%d vs %d)\n",
+                                         disp,ovl.aread+1,ovl.bread+1);
+                        goto error;
                       }
-                    goto error;
                   }
-                else
-                  { if (ovl.aread > prev.aread) goto inorder;
-                    if (ovl.aread == prev.aread)
-                      { if (ovl.path.abpos > prev.path.abpos) goto inorder;
-                        if (ovl.path.abpos == prev.path.abpos)
-                          goto dupcheck;
+              dupcheck:
+                if (ovl.aread == last.aread && ovl.bread == last.bread &&
+                    COMP(ovl.flags) == COMP(last.flags) && ovl.path.abpos == last.path.abpos)
+                  equal = 1;
+              inorder:
+                if (equal)
+                  { if (ovl.path.aepos == last.path.aepos &&
+                        ovl.path.bbpos == last.path.bbpos &&
+                        ovl.path.bepos == last.path.bepos)
+                      { if (VERBOSE)
+                          fprintf(stderr,"  %s: Duplicate LAs (%d vs %d)\n",
+                                         disp,ovl.aread+1,ovl.bread+1);
+                        goto error;
                       }
-                    if (VERBOSE)
-                      fprintf(stderr,"  %s: Chains are not sorted (%d vs %d)\n",
-                                     root,ovl.aread+1,ovl.bread+1);
-                    goto error;
                   }
+
+                last = ovl;
+                if (CHAIN_START(ovl.flags))
+                  prev = ovl;
               }
-          dupcheck:
-            if (ovl.aread == last.aread && ovl.bread == last.bread &&
-                COMP(ovl.flags) == COMP(last.flags) && ovl.path.abpos == last.path.abpos)
-              equal = 1;
-          inorder:
-            if (equal)
-              { if (ovl.path.aepos == last.path.aepos &&
-                    ovl.path.bbpos == last.path.bbpos &&
-                    ovl.path.bepos == last.path.bepos)
-                  { if (VERBOSE)
-                      fprintf(stderr,"  %s: Duplicate overlap (%d vs %d)\n",
-                                     root,ovl.aread+1,ovl.bread+1);
-                    goto error;
-                  }
+
+            //  File processing epilog: Check all data read and print OK if -v
+
+            if (iptr < itop)
+              { if (VERBOSE)
+                  fprintf(stderr,"  %s: Too many alignment records\n",disp);
+                goto error;
               }
 
-            last = ovl;
-            if (CHAIN_START(ovl.flags))
-              prev = ovl;
+            if (VERBOSE)
+              { printf("  %s: ",disp);
+                Print_Number(novl,0,stdout);
+                printf(" all OK\n");
+                fflush(stdout);
+              }
+            goto cleanup;
+
+          error:
+            status = 1;
+            if (VERBOSE)
+              { printf("  %s: Not OK, see stderr\n",disp);
+                fflush(stdout);
+              }
+          cleanup:
+            if (input != NULL)
+              fclose(input);
           }
 
-        //  File processing epilog: Check all data read and print OK if -v
-
-        if (iptr < itop)
-          { if (VERBOSE)
-              fprintf(stderr,"  %s: Too many alignment records\n",root);
-            goto error;
-          }
-
-        if (VERBOSE)
-          { fprintf(stderr,"  %s: ",root);
-            Print_Number(novl,0,stderr);
-            fprintf(stderr," all OK\n");
-          }
-        goto cleanup;
-
-      error:
-        status = 1;
-      cleanup:
-        if (input != NULL)
-          fclose(input);
-        free(pwd);
-        free(root);
+        Free_Block_Arg(parse);
       }
 
     free(iblock-ptrsize);
