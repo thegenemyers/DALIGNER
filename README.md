@@ -131,8 +131,11 @@ a unit and sorts them on the basis of the first LA in the chain.
 ```
 
 Merge the .las files \<parts\> into a singled sorted file \<merge\>, where it is assumed
-that  the input \<parts\> files are sorted. Due to operating system limits, the number of
-\<parts\> files must be &le; 252.  With the -v option set the program reports the # of
+that  the input \<parts\> files are sorted.  There are no limits to how many files can be
+merged, but if there are more than 252, a typical UNIX OS limit on the number of simultaneously
+open files, then the program recursively spawns sub-processes and creates temporary files
+in the directory specified by the -P option, /tmp by default.
+With the -v option set the program reports the number of
 records read and written.  The -a option indicates the sort is as describe for LAsort
 above.
 
@@ -307,6 +310,7 @@ through the .las file.
 ```
 
 The sequence of \<source\> files (that can contain @-sign block ranges) are
+concatenated in order
 into a single .las file and pipe the result to the standard output.  The -v
 option reports the files concatenated and the number of la's within them to
 standard error (as the standard output receives the concatenated file).
@@ -376,9 +380,9 @@ these parameters are as for daligner. The -v and -a flags are passed to all call
 LAsort and LAmerge. All other options are described later. For a database divided into
 N sub-blocks, the calls to daligner will produce in total N<sup>2</sup> .las files,
 on per block pair.
-These are then merged in ceil(log<sub>D</sub> N) phases where
-the number of files decreases geometrically in -D until there is 1 file per row of
-the N x N block matrix. So at the end one has N sorted .las files that when
+These are then merged so that there is 1 file per row of
+the N x N block matrix. So at the end one has N sorted .las files, one per block of
+A-reads, that when
 concatenated would give a single large sorted overlap file.
 
 The -B option (default 4) gives the desired number of block comparisons per call to
@@ -428,14 +432,13 @@ DB" would produce the files:
      JOBS.01.OVL
      JOBS.02.CHECK.OPT
      JOBS.03.MERGE
-     JOBS.04.CHECK.OPT
-     JOBS.05.RM.OPT
+     JOBS.04.RM.OPT
 ```
 
-The number of command blocks varies as it depends on the number of merging rounds
-required in the external sort of the .las files.  The files with the suffix .OPT are
-optional and need not be executed albeit we highly recommend that one run all the
-CHECK blocks.
+There are always 4 command blocks.  The files with the suffix .OPT are
+optional and need not be executed albeit we highly recommend that one run the
+CHECK block.  One should *not* run the RM block if one wants to later use
+DASrealign after scrubbing.
 
 A new -d option requests scripts that organize files into a collection of
 sub-directories so as not to overwhelm the underlying OS for large genomes.  Recall
