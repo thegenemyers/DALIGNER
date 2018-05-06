@@ -347,8 +347,8 @@ runs silently.  The exit status is 0 if every file is deemed good, and 1 if at l
 one of the files looks corrupted.
 
 With the introduction of damapper, LAcheck checks to see if a file has chain
-information, and if it does, then it checks the validity of chains and assumes that
-the chains were sorted with the -a option to LAsort and LAmerge.
+information, and if it does, then it checks the validity of chains and checks the
+sorting order of chains as a unit according to the -a option.
 
 ```
 10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)] [-M<int>]
