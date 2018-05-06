@@ -4,7 +4,7 @@
 ## _First:   April 10, 2016_
 
 For typeset documentation, examples of use, and design philosophy please go to
-my [blog](https://dazzlerblog.wordpress.com/command-guides/damasker-commands).
+my [blog](https://dazzlerblog.wordpress.com/command-guides/daligner-command-reference-guide).
 
 The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
