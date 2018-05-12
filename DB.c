@@ -600,8 +600,8 @@ error:
 //   for the retained reads.
 
 void Trim_DB(DAZZ_DB *db)
-{ int         i, j, r;
-  int         allflag, cutoff;
+{ int         i, j, r, f;
+  int         allflag, cutoff, css;
   int64       totlen;
   int         maxlen, nreads;
   DAZZ_TRACK *record;
@@ -679,12 +679,20 @@ void Trim_DB(DAZZ_DB *db)
 
   totlen = maxlen = 0;
   for (j = i = 0; i < nreads; i++)
-    { r = reads[i].rlen;
-      if ((reads[i].flags & DB_BEST) >= allflag && r >= cutoff)
+    { f = reads[i].flags;
+      if ((f & DB_CSS) == 0)
+        css = 0;
+      r = reads[i].rlen;
+      if ((f & DB_BEST) >= allflag && r >= cutoff)
         { totlen += r;
           if (r > maxlen)
             maxlen = r;
-          reads[j++] = reads[i];
+          reads[j] = reads[i];
+          if (css)
+            reads[j++].flags |= DB_CSS;
+          else
+            reads[j++].flags &= ~DB_CSS;
+          css = 1;
         }
     }
   
