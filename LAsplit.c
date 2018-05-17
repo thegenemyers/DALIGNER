@@ -19,7 +19,7 @@
 #include "DB.h"
 #include "align.h"
 
-static char *Usage = "-v <align:las> (<parts:int> | <path:db|dam>) < <source>.las";
+static char *Usage = "-v <target:las> (<parts:int> | <path:db|dam>) < <source>.las";
 
 #define MEMORY   1000   //  How many megabytes for output buffer
 
@@ -52,6 +52,10 @@ int main(int argc, char *argv[])
 
     if (argc != 3)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"    <target> is a template that must have a single %c-sign in it\n",
+                       BLOCK_SYMBOL);
+        fprintf(stderr,"    This symbol is replaced by numbers 1 to n = the number of parts\n");
         exit (1);
       }
   }
@@ -81,19 +85,19 @@ int main(int argc, char *argv[])
         free(root);
 
         if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         while (nfiles-- > 0)
           if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
-            SYSTEM_ERROR
+            SYSTEM_READ_ERROR
         parts = 0;
         if (fscanf(dbvis,DB_NBLOCK,&parts) != 1)
           { fprintf(stderr,"%s: DB %s has not been partitioned\n",Prog_Name,argv[2]);
             exit (1);
           }
         if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
         if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-          SYSTEM_ERROR
+          SYSTEM_READ_ERROR
       }
     else
       { dbvis = NULL;
@@ -116,28 +120,31 @@ int main(int argc, char *argv[])
   pwd   = PathTo(argv[1]);
   root  = Root(argv[1],".las");
 
-  root2 = index(root,'#');
+  root2 = index(root,BLOCK_SYMBOL);
   if (root2 == NULL)
-    { fprintf(stderr,"%s: No #-sign in source name '%s'\n",Prog_Name,root);
+    { fprintf(stderr,"%s: No %c-sign in source name '%s'\n",Prog_Name,BLOCK_SYMBOL,root);
       exit (1);
     }
-  if (index(root2+1,'#') != NULL)
-    { fprintf(stderr,"%s: Two or more occurences of #-sign in source name '%s'\n",Prog_Name,root);
+  if (index(root2+1,BLOCK_SYMBOL) != NULL)
+    { fprintf(stderr,"%s: Two or more occurences of %c-sign in source name '%s'\n",
+                     Prog_Name,BLOCK_SYMBOL,root);
       exit (1);
     }
   *root2++ = '\0';
 
   if (fread(&novl,sizeof(int64),1,stdin) != 1)
-    SYSTEM_ERROR
+    SYSTEM_READ_ERROR
   if (fread(&tspace,sizeof(int),1,stdin) != 1)
-    SYSTEM_ERROR
+    SYSTEM_READ_ERROR
   if (tspace <= TRACE_XOVR && tspace != 0)
     tbytes = sizeof(uint8);
   else
     tbytes = sizeof(uint16);
 
   if (VERBOSE)
-    fprintf(stderr,"  Distributing %lld la\'s\n",novl);
+    { printf("  Distributing %lld la\'s\n",novl);
+      fflush(stdout);
+    }
 
   { int      i;
     Overlap *w;
@@ -158,7 +165,7 @@ int main(int argc, char *argv[])
         low = hgh;
         if (dbvis != NULL)
           { if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-              SYSTEM_ERROR
+              SYSTEM_READ_ERROR
             last = blast-1;
             hgh  = 0;
           }
@@ -227,7 +234,9 @@ int main(int argc, char *argv[])
         fwrite(&povl,sizeof(int64),1,output);
 
         if (VERBOSE)
-          fprintf(stderr,"  Split off %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
+          { printf("  Split off %s: %lld la\'s\n",Numbered_Suffix(root,i+1,root2),povl);
+            fflush(stdout);
+          }
 
         fclose(output);
       }
