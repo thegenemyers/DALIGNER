@@ -18,6 +18,10 @@
 
 #include "DB.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define TRACE_XOVR 125   //  If the trace spacing is not more than this value, then can
                          //    and do compress traces pts to 8-bit unsigned ints
 
@@ -373,5 +377,9 @@ typedef struct {
   void Decompress_TraceTo16(Overlap *ovl);
 
   int  Check_Trace_Points(Overlap *ovl, int tspace, int verbose, char *fname);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // _A_MODULE

@@ -14,6 +14,10 @@
 #include "DB.h"
 #include "align.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 extern int    BIASED;
 extern int    VERBOSE;
 extern int    MINOVER;
@@ -34,5 +38,9 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
                   int comp, Align_Spec *asettings);
 
 void Clean_Exit(int val);
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif

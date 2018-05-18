@@ -20,6 +20,10 @@
 
 #include "QV.h"
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
 #define HIDE_FILES          //  Auxiliary DB files start with a . so they are "hidden"
                             //    Undefine if you don't want this
 
@@ -588,5 +592,9 @@ void  Reset_Block_Arg(Block_Looper *e_parse);  //  Reset iterator to first file
 char *Block_Arg_Path(Block_Looper *e_parse);   //  Path of current file
 char *Block_Arg_Root(Block_Looper *e_parse);   //  Root name of current file
 void  Free_Block_Arg(Block_Looper *e_parse);   //  Free the iterator
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif // _DAZZ_DB
