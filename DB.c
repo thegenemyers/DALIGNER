@@ -677,6 +677,7 @@ void Trim_DB(DAZZ_DB *db)
         record->anno = Realloc(record->anno,record->size*(j+1),NULL);
       }
 
+  css    = 0;
   totlen = maxlen = 0;
   for (j = i = 0; i < nreads; i++)
     { f = reads[i].flags;

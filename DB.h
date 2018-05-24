@@ -217,12 +217,11 @@ int Count_Args(char *arg);
       SYSTEM_READ_ERROR		\
   }
 
-#define FTELLO(file)		\
-  ( { int x = ftello(file);	\
-      if (x < 0)		\
-        SYSTEM_READ_ERROR	\
-      ; x; 			\
-  } )
+#define FTELLO(val,file)	\
+  { val = ftello(file);		\
+    if (val < 0)		\
+      SYSTEM_READ_ERROR		\
+  }
 
 /*******************************************************************************************
  *
