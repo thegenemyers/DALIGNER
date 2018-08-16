@@ -3052,6 +3052,14 @@ int Read_Trace(FILE *input, Overlap *ovl, int tbytes)
   return (0);
 }
 
+int Skip_Trace(FILE *input, Overlap *ovl, int tbytes)
+{ if (tbytes > 0 && ovl->path.tlen > 0)
+    { if (fseek(input, tbytes*ovl->path.tlen, SEEK_CUR) != 0)
+        return (1);
+    }
+  return (0);
+}
+
 int Write_Overlap(FILE *output, Overlap *ovl, int tbytes)
 { if (fwrite( ((char *) ovl) + PtrSize, OvlIOSize, 1, output) != 1)
     return (1);
