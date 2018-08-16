@@ -415,8 +415,6 @@ int main(int argc, char *argv[])
        //  Read it in
 
       { Read_Overlap(input,ovl);
-        ovl->path.trace = (void *) trace;
-        Read_Trace(input,ovl,tbytes);
 
         //  Determine if it should be displayed
 
@@ -442,7 +440,14 @@ int main(int argc, char *argv[])
               }
           }
         if (!in)
+        {
+          Skip_Trace(input,ovl,tbytes);
+
           continue;
+        }
+
+        ovl->path.trace = (void *) trace;
+        Read_Trace(input,ovl,tbytes);
 
         //  If -o check display only overlaps
 

@@ -365,6 +365,7 @@ typedef struct {
 
   int Read_Overlap(FILE *input, Overlap *ovl);
   int Read_Trace(FILE *innput, Overlap *ovl, int tbytes);
+  int Skip_Trace(FILE *innput, Overlap *ovl, int tbytes);
 
   int  Write_Overlap(FILE *output, Overlap *ovl, int tbytes);
   void Print_Overlap(FILE *output, Overlap *ovl, int tbytes, int indent);
