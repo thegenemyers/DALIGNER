@@ -496,7 +496,7 @@ void daligner_script(int argc, char *argv[])
         for (i = 1; i <= lblock; i++)
           { if (DON)
               fprintf(out,"cd work%d; ",j);
-            printf("rm %s.%d.%s.*.las",root,i,root);
+            fprintf(out,"rm %s.%d.%s.*.las",root,i,root);
             if (DON)
               fprintf(out,"; cd ..");
             fprintf(out,"\n");
