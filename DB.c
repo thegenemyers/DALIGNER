@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 #include "DB.h"
 
@@ -159,7 +160,7 @@ char *Root(char *name, char *suffix)
 char *Catenate(char *path, char *sep, char *root, char *suffix)
 { static char *cat = NULL;
   static int   max = -1;
-  int len;
+  int   len;
 
   if (path == NULL || root == NULL || sep == NULL || suffix == NULL)
     return (NULL);
@@ -169,7 +170,8 @@ char *Catenate(char *path, char *sep, char *root, char *suffix)
   len += strlen(suffix);
   if (len > max)
     { max = ((int) (1.2*len)) + 100;
-      if ((cat = (char *) realloc(cat,max+1)) == NULL)
+      cat = (char *) realloc(cat,max+1);
+      if (cat == NULL)
         { EPRINTF(EPLACE,"%s: Out of memory (Making path name for %s)\n",Prog_Name,root);
           return (NULL);
         }
@@ -179,9 +181,9 @@ char *Catenate(char *path, char *sep, char *root, char *suffix)
 }
 
 char *Numbered_Suffix(char *left, int num, char *right)
-{ static char *suffix = NULL;
+{ static char *sfx = NULL;
   static int   max = -1;
-  int len;
+  int   len;
 
   if (left == NULL || right == NULL)
     return (NULL);
@@ -189,13 +191,58 @@ char *Numbered_Suffix(char *left, int num, char *right)
   len += strlen(right) + 40;
   if (len > max)
     { max = ((int) (1.2*len)) + 100;
-      if ((suffix = (char *) realloc(suffix,max+1)) == NULL)
+      sfx = (char *) realloc(sfx,max+1);
+      if (sfx == NULL)
         { EPRINTF(EPLACE,"%s: Out of memory (Making number suffix for %d)\n",Prog_Name,num);
           return (NULL);
         }
     }
-  sprintf(suffix,"%s%d%s",left,num,right);
-  return (suffix);
+  sprintf(sfx,"%s%d%s",left,num,right);
+  return (sfx);
+}
+
+static char *MyCatenate(char *path, char *sep, char *root, char *suffix)
+{ static char *cat = NULL;
+  static int   max = -1;
+  int   len;
+
+  if (path == NULL || root == NULL || sep == NULL || suffix == NULL)
+    return (NULL);
+  len =  strlen(path);
+  len += strlen(sep);
+  len += strlen(root);
+  len += strlen(suffix);
+  if (len > max)
+    { max = ((int) (1.2*len)) + 100;
+      cat = (char *) realloc(cat,max+1);
+      if (cat == NULL)
+        { EPRINTF(EPLACE,"%s: Out of memory (Making path name for %s)\n",Prog_Name,root);
+          return (NULL);
+        }
+    }
+  sprintf(cat,"%s%s%s%s",path,sep,root,suffix);
+  return (cat);
+}
+
+static char *MyNumbered_Suffix(char *left, int num, char *right)
+{ static char *sfx = NULL;
+  static int   max = -1;
+  int   len;
+
+  if (left == NULL || right == NULL)
+    return (NULL);
+  len =  strlen(left);
+  len += strlen(right) + 40;
+  if (len > max)
+    { max = ((int) (1.2*len)) + 100;
+      sfx = (char *) realloc(sfx,max+1);
+      if (sfx == NULL)
+        { EPRINTF(EPLACE,"%s: Out of memory (Making number suffix for %d)\n",Prog_Name,num);
+          return (NULL);
+        }
+    }
+  sprintf(sfx,"%s%d%s",left,num,right);
+  return (sfx);
 }
 
 
@@ -393,10 +440,34 @@ void Number_Arrow(char *s)
   *s = 4;
 }
 
+void Change_Read(char *s)
+{ static char change[128] =
+    {   0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0, 'a',   0, 'c',   0,   0,   0, 'g',
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0, 't',   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0, 'A',   0, 'C',   0,   0,   0, 'G',
+        0,   0,   0,   0,   0,   0,   0,   0,
+        0,   0,   0,   0, 'T',   0,   0,   0,
+        0,   0,   0,   0,   0,   0,   0,   0,
+    };
+
+  for ( ; *s != '\0'; s++)
+    *s = change[(int) *s];
+}
+
 
 /*******************************************************************************************
  *
- *  DB OPEN, TRIM & CLOSE ROUTINES
+ *  DB OPEN, TRIM, SIZE_OF, LIST_FILES & CLOSE ROUTINES
  *
  ********************************************************************************************/
 
@@ -409,11 +480,14 @@ void Number_Arrow(char *s)
 //     0: Open of DB proceeded without mishap
 //     1: Open of DAM proceeded without mishap
 
+static char *atrack_name = ".@arw";
+static char *qtrack_name = ".@qvs";
+
 int Open_DB(char* path, DAZZ_DB *db)
 { DAZZ_DB dbcopy;
   char   *root, *pwd, *bptr, *fptr, *cat;
   int     nreads;
-  FILE   *index, *dbvis;
+  FILE   *index, *dbvis, *bases;
   int     status, plen, isdam;
   int     part, cutoff, all;
   int     ufirst, tfirst, ulast, tlast;
@@ -423,9 +497,16 @@ int Open_DB(char* path, DAZZ_DB *db)
 
   plen = strlen(path);
   if (strcmp(path+(plen-4),".dam") == 0)
-    root = Root(path,".dam");
+    { root = Root(path,".dam");
+      isdam = 1;
+    }
   else
-    root = Root(path,".db");
+    { if (strcmp(path+(plen-3),".db") == 0)
+        isdam = -1;
+      else
+        isdam = 0;
+      root = Root(path,".db");
+    }
   pwd = PathTo(path);
 
   bptr = rindex(root,'.');
@@ -439,22 +520,34 @@ int Open_DB(char* path, DAZZ_DB *db)
   else
     part = 0;
 
-  isdam = 0;
-  cat = Catenate(pwd,"/",root,".db");
+  if (isdam > 0)
+    cat = MyCatenate(pwd,"/",root,".dam");
+  else
+    cat = MyCatenate(pwd,"/",root,".db");
   if (cat == NULL)
     return (-1);
   if ((dbvis = fopen(cat,"r")) == NULL)
-    { cat = Catenate(pwd,"/",root,".dam");
+    { if (isdam < 0)
+        { EPRINTF(EPLACE,"%s: Could not open DB %s\n",Prog_Name,path);
+          goto error;
+        }
+      if (isdam > 0)
+        { EPRINTF(EPLACE,"%s: Could not open DAM %s\n",Prog_Name,path);
+          goto error;
+        }
+      cat = MyCatenate(pwd,"/",root,".dam");
       if (cat == NULL)
         return (-1);
       if ((dbvis = fopen(cat,"r")) == NULL)
-        { EPRINTF(EPLACE,"%s: Could not open database %s\n",Prog_Name,path);
+        { EPRINTF(EPLACE,"%s: Could not open %s as a DB or a DAM\n",Prog_Name,path);
           goto error;
         }
       isdam = 1;
     }
+  if (isdam < 0)
+    isdam = 0;
 
-  if ((index = Fopen(Catenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
+  if ((index = Fopen(MyCatenate(pwd,PATHSEP,root,".idx"),"r")) == NULL)
     goto error1;
   if (fread(db,sizeof(DAZZ_DB),1,index) != 1)
     { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
@@ -527,6 +620,7 @@ int Open_DB(char* path, DAZZ_DB *db)
     { db->reads = (DAZZ_READ *) Malloc(sizeof(DAZZ_READ)*(nreads+2),"Allocating Open_DB index");
       if (db->reads == NULL)
         goto error2;
+        
       db->reads += 1;
       if (fread(db->reads,sizeof(DAZZ_READ),nreads,index) != (size_t) nreads)
         { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
@@ -569,10 +663,18 @@ int Open_DB(char* path, DAZZ_DB *db)
   ((int *) (db->reads))[-2] = tlast - tfirst;
 
   db->nreads = nreads;
-  db->path   = Strdup(Catenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
+  db->path   = Strdup(MyCatenate(pwd,PATHSEP,root,""),"Allocating Open_DB path");
   if (db->path == NULL)
-    goto error2;
-  db->bases  = NULL;
+    { free(db->reads-1);
+      goto error2;
+    }
+  bases = Fopen(MyCatenate(db->path,"","",".bps"),"r");
+  if (bases == NULL)
+     { free(db->path);
+       free(db->reads-1);
+       goto error2;
+     }
+  db->bases = (void *) bases;
   db->loaded = 0;
 
   status = isdam;
@@ -595,7 +697,7 @@ error:
 }
 
 
-// Trim the DB or part thereof and all loaded tracks according to the cuttof and all settings
+// Trim the DB or part thereof and all opened tracks according to the cuttof and all settings
 //   of the current DB partition.  Reallocate smaller memory blocks for the information kept
 //   for the retained reads.
 
@@ -611,6 +713,24 @@ void Trim_DB(DAZZ_DB *db)
 
   if (db->cutoff <= 0 && (db->allarr & DB_ALL) != 0) return;
 
+  { int load_error;
+
+    load_error = db->loaded;
+    for (record = db->tracks; record != NULL; record = record->next)
+      if (record->name == atrack_name)
+        { if (((DAZZ_ARROW *) record)->loaded)
+            load_error = 1;
+        }
+      else if (record->name != qtrack_name)
+        { if (record->loaded)
+            load_error = 1;
+        }
+    if (load_error)
+      { EPRINTF(EPLACE,"%s: Cannot load anything before trim (Trim_DB)\n",Prog_Name);
+        return;
+      }
+  }
+
   cutoff = db->cutoff;
   if ((db->allarr & DB_ALL) != 0)
     allflag = 0;
@@ -621,7 +741,7 @@ void Trim_DB(DAZZ_DB *db)
   nreads = db->nreads;
 
   for (record = db->tracks; record != NULL; record = record->next)
-    if (strcmp(record->name,".@qvs") == 0)
+    if (record->name == qtrack_name)
       { uint16 *table = ((DAZZ_QV *) record)->table;
 
         j = 0;
@@ -629,52 +749,56 @@ void Trim_DB(DAZZ_DB *db)
           if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
             table[j++] = table[i];
       }
+    else if (record->name == atrack_name)
+      { DAZZ_ARROW *atrack = (DAZZ_ARROW *) record;
+        int64      *aoff   = atrack->aoff;
+
+        for (j = i = 0; i < nreads; i++)
+          if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
+            aoff[j++] = aoff[i];
+        atrack->aoff = Realloc(aoff,sizeof(int64)*j,NULL);
+      }
     else
-      { int   *anno4, size;
-        int64 *anno8;
-        char  *anno, *data;
+      { int size;
 
         size = record->size;
-        data = (char *) record->data; 
-        if (data == NULL)
-          { anno = (char *) record->anno;
+        if (record->data == NULL)
+          { char *anno = (char *) record->anno;
             j = 0;
             for (i = r = 0; i < db->nreads; i++, r += size)
               if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
                 { memmove(anno+j,anno+r,size);
                   j += size;
                 }
-            memmove(anno+j,anno+r,size);
           }
         else if (size == 4)
-          { int ai;
+          { int *anno4 = (int *) (record->anno);
+            int *alen  = record->alen;
 
-            anno4 = (int *) (record->anno);
-            j = anno4[0] = 0;
+            j = 0;
             for (i = 0; i < db->nreads; i++)
               if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
-                { ai = anno4[i];
-                  anno4[j+1] = anno4[j] + (anno4[i+1]-ai);
-                  memmove(data+anno4[j],data+ai,anno4[i+1]-ai);
+                { anno4[j] = anno4[i];
+                  alen[j]  = alen[i];
                   j += 1;
                 }
-            record->data = Realloc(record->data,anno4[j],NULL);
+            record->alen = Realloc(record->alen,sizeof(int)*j,NULL);
           }
         else // size == 8
-          { int64 ai;
+          { int64 *anno8 = (int64 *) (record->anno);
+            int *alen    = record->alen;
 
-            anno8 = (int64 *) (record->anno);
-            j = anno8[0] = 0;
+            j = 0;
             for (i = 0; i < db->nreads; i++)
               if ((reads[i].flags & DB_BEST) >= allflag && reads[i].rlen >= cutoff)
-                { ai = anno8[i];
-                  anno8[j+1] = anno8[j] + (anno8[i+1]-ai);
-                  memmove(data+anno8[j],data+ai,anno8[i+1]-ai);
+                { anno8[j] = anno8[i];
+                  alen[j]  = alen[i];
                   j += 1;
                 }
-            record->data = Realloc(record->data,anno8[j],NULL);
+            record->alen = Realloc(record->alen,sizeof(int)*j,NULL);
           }
-        record->anno = Realloc(record->anno,record->size*(j+1),NULL);
+        record->anno = Realloc(record->anno,record->size*j,NULL);
+        record->nreads = j;
       }
 
   css    = 0;
@@ -705,136 +829,6 @@ void Trim_DB(DAZZ_DB *db)
   if (j < nreads)
     { db->reads = Realloc(reads-1,sizeof(DAZZ_READ)*(j+2),NULL);
       db->reads += 1;
-    }
-}
-
-// The DB has already been trimmed, but a track over the untrimmed DB needs to be loaded.
-//   Trim the track by rereading the untrimmed DB index from the file system.
-
-static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
-{ int         i, j, r;
-  int         allflag, cutoff;
-  int         ureads;
-  char       *root;
-  DAZZ_READ   read;
-  FILE       *indx;
-
-  if (!db->trimmed) return (0);
-
-  if (db->cutoff <= 0 && (db->allarr & DB_ALL) != 0) return (0);
-
-  cutoff = db->cutoff;
-  if ((db->allarr & DB_ALL) != 0)
-    allflag = 0;
-  else
-    allflag = DB_BEST;
-
-  root = rindex(db->path,'/') + 2;
-  indx = Fopen(Catenate(db->path,"","",".idx"),"r");
-  fseeko(indx,sizeof(DAZZ_DB) + sizeof(DAZZ_READ)*db->ufirst,SEEK_SET);
-  if (ispart)
-    ureads = ((int *) (db->reads))[-1];
-  else
-    ureads = db->ureads;
-
-  if (strcmp(track->name,".@qvs") == 0)
-    { EPRINTF(EPLACE,"%s: Cannot load QV track after trimming\n",Prog_Name);
-      fclose(indx);
-      EXIT(1);
-    }
-
-  { int   *anno4, size;
-    int64 *anno8;
-    char  *anno, *data;
-
-    size = track->size;
-    data = (char *) track->data; 
-    if (data == NULL)
-      { anno = (char *) track->anno;
-        j = r = 0;
-        for (i = r = 0; i < ureads; i++, r += size)
-          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
-              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-                fclose(indx);
-                EXIT(1);
-              }
-            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
-              { memmove(anno+j,anno+r,size);
-                j += size;
-              }
-            r += size;
-          }
-        memmove(anno+j,anno+r,size);
-      }
-    else if (size == 4)
-      { int ai;
-
-        anno4 = (int *) (track->anno);
-        j = anno4[0] = 0;
-        for (i = 0; i < ureads; i++)
-          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
-              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-                fclose(indx);
-                EXIT(1);
-              }
-            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
-              { ai = anno4[i];
-                anno4[j+1] = anno4[j] + (anno4[i+1]-ai);
-                memmove(data+anno4[j],data+ai,anno4[i+1]-ai);
-                j += 1;
-              }
-          }
-        track->data = Realloc(track->data,anno4[j],NULL);
-      }
-    else // size == 8
-      { int64 ai;
-
-        anno8 = (int64 *) (track->anno);
-        j = anno8[0] = 0;
-        for (i = 0; i < ureads; i++)
-          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
-              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-                fclose(indx);
-                EXIT(1);
-              }
-            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
-              { ai = anno8[i];
-                anno8[j+1] = anno8[j] + (anno8[i+1]-ai);
-                memmove(data+anno8[j],data+ai,anno8[i+1]-ai);
-                j += 1;
-              }
-          }
-        track->data = Realloc(track->data,anno8[j],NULL);
-      }
-    track->anno = Realloc(track->anno,track->size*(j+1),NULL);
-  }
-
-  fclose(indx);
-  return (0);
-}
-
-// Shut down an open 'db' by freeing all associated space, including tracks and QV structures, 
-//   and any open file pointers.  The record pointed at by db however remains (the user
-//   supplied it and so should free it).
-
-void Close_DB(DAZZ_DB *db)
-{ DAZZ_TRACK *t, *p;
-
-  if (db->loaded)
-    free(((char *) (db->bases)) - 1);
-  else if (db->bases != NULL)
-    fclose((FILE *) db->bases);
-  if (db->reads != NULL)
-    free(db->reads-1);
-  free(db->path);
-
-  Close_QVs(db);
-
-  for (t = db->tracks; t != NULL; t = p)
-    { p = t->next;
-      free(t->anno);
-      free(t->data);
-      free(t);
     }
 }
 
@@ -876,274 +870,566 @@ int64 sizeof_DB(DAZZ_DB *db)
 }
 
 
-/*******************************************************************************************
- *
- *  QV LOAD & CLOSE ROUTINES
- *
- ********************************************************************************************/
+// For the DB or DAM "path" = "prefix/root.[db|dam]", find all the files for that DB, i.e. all
+//   those of the form "prefix/[.]root.part" and call actor with the complete path to each file
+//   pointed at by path, and the suffix of the path by extension.  The . proceeds the root
+//   name if the defined constant HIDE_FILES is set.  Always the first call is with the
+//   path "prefix/root.[db|dam]" and extension "db" or "dam".  There will always be calls for
+//   "prefix/[.]root.idx" and "prefix/[.]root.bps".  All other calls are for *tracks* and
+//   so this routine gives one a way to know all the tracks associated with a given DB.
+//   -1 is returned if the path could not be found, and 1 is returned if an error (reported
+//   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
 
-DAZZ_DB *Active_DB = NULL;  //  Last db/qv used by "Load_QVentry"
-DAZZ_QV *Active_QV;         //    Becomes invalid after closing
+int List_DB_Files(char *path, void actor(char *path, char *extension))
+{ int            status, plen, rlen, dlen;
+  char          *root, *pwd, *name;
+  int            isdam;
+  DIR           *dirp;
+  struct dirent *dp;
 
-int Load_QVs(DAZZ_DB *db)
-{ FILE        *quiva, *istub, *indx;
-  char        *root;
-  uint16      *table;
-  DAZZ_QV     *qvtrk;
-  QVcoding    *coding, *nx;
-  int          ncodes = 0;
+  status = 0;
+  pwd    = PathTo(path);
+  plen   = strlen(path);
+  if (strcmp(path+(plen-4),".dam") == 0)
+    root = Root(path,".dam");
+  else
+    root = Root(path,".db");
+  rlen = strlen(root);
 
-  if (db->tracks != NULL && strcmp(db->tracks->name,".@qvs") == 0)
-    return (0);
-
-  if (db->trimmed)
-    { EPRINTF(EPLACE,"%s: Cannot load QVs after trimming the DB\n",Prog_Name);
+  if (root == NULL || pwd == NULL)
+    { free(pwd);
+      free(root);
       EXIT(1);
     }
 
-  if (db->reads[db->nreads-1].coff < 0)
-    { if (db->part > 0)
-        { EPRINTF(EPLACE,"%s: All QVs for this block have not been added to the DB!\n",Prog_Name);
-          EXIT(1);
-        }
-      else
-        { EPRINTF(EPLACE,"%s: All QVs for this DB have not been added!\n",Prog_Name);
-          EXIT(1);
-        }
+  if ((dirp = opendir(pwd)) == NULL)
+    { EPRINTF(EPLACE,"%s: Cannot open directory %s (List_DB_Files)\n",Prog_Name,pwd);
+      status = -1;
+      goto error;
     }
 
-  //  Open .qvs, .idx, and .db files
-
-  quiva = Fopen(Catenate(db->path,"","",".qvs"),"r");
-  if (quiva == NULL)
-    return (-1);
-
-  istub  = NULL;
-  indx   = NULL; 
-  table  = NULL;
-  coding = NULL;
-  qvtrk  = NULL;
-
-  root = rindex(db->path,'/');
-  if (root[1] == '.')
-    { *root = '\0';
-      istub = Fopen(Catenate(db->path,"/",root+2,".db"),"r");
-      *root = '/';
+  isdam = 0;
+  while ((dp = readdir(dirp)) != NULL)     //   Get case dependent root name (if necessary)
+    { name = dp->d_name;
+      if (strcmp(name,MyCatenate("","",root,".db")) == 0)
+        break;
+      if (strcmp(name,MyCatenate("","",root,".dam")) == 0)
+        { isdam = 1;
+          break;
+        }
     }
+  if (dp == NULL)
+    { status = -1;
+      closedir(dirp);
+      goto error;
+    }
+
+  if (isdam)
+    actor(MyCatenate(pwd,"/",root,".dam"),"dam");
   else
-    istub = Fopen(Catenate(db->path,"","",".db"),"r");
-  if (istub == NULL)
-    goto error;
+    actor(MyCatenate(pwd,"/",root,".db"),"db");
 
-  { int   first, last, nfiles;
-    char  prolog[MAX_NAME], fname[MAX_NAME];
-    int   i, j;
-
-    if (fscanf(istub,DB_NFILE,&nfiles) != 1)
-      { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
-        goto error;
-      }
-
-    if (db->part > 0)
-      { int       pfirst, plast;
-        int       fbeg, fend;
-        int       n, k;
-        FILE     *indx;
-
-        //  Determine first how many and which files span the block (fbeg to fend)
-
-        pfirst = db->ufirst;
-        plast  = pfirst + db->nreads;
-
-        first = 0;
-        for (fbeg = 0; fbeg < nfiles; fbeg++)
-          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
-                goto error;
-              }
-            if (last > pfirst)
-              break;
-            first = last;
-          }
-        for (fend = fbeg+1; fend <= nfiles; fend++)
-          { if (last >= plast)
-              break;
-            if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
-                goto error;
-              }
-            first = last;
-          }
-
-        indx   = Fopen(Catenate(db->path,"","",".idx"),"r");
-        ncodes = fend-fbeg;
-        coding = (QVcoding *) Malloc(sizeof(QVcoding)*ncodes,"Allocating coding schemes");
-        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
-        if (indx == NULL || coding == NULL || table == NULL)
-          { ncodes = 0;
-            goto error;
-          }
-
-        //  Carefully get the first coding scheme (its offset is most likely in a DAZZ_RECORD
-        //    in .idx that is *not* in memory).  Get all the other coding schemes normally and
-        //    assign the tables # for each read in the block in "tables".
-
-        rewind(istub);
-        (void) fscanf(istub,DB_NFILE,&nfiles);
-
-        first = 0;
-        for (n = 0; n < fbeg; n++)
-          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
-            first = last;
-          }
-
-        for (n = fbeg; n < fend; n++)
-          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
-
-            i = n-fbeg;
-            if (first < pfirst)
-              { DAZZ_READ read;
-
-                fseeko(indx,sizeof(DAZZ_DB) + sizeof(DAZZ_READ)*first,SEEK_SET);
-                if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
-                  { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
-                    ncodes = i;
-                    goto error;
-                  }
-                fseeko(quiva,read.coff,SEEK_SET);
-                nx = Read_QVcoding(quiva);
-                if (nx == NULL)
-                  { ncodes = i;
-                    goto error;
-                  }
-                coding[i] = *nx;
-              }
-            else
-              { fseeko(quiva,db->reads[first-pfirst].coff,SEEK_SET);
-                nx = Read_QVcoding(quiva);
-                if (nx == NULL)
-                  { ncodes = i;
-                    goto error;
-                  }
-                coding[i] = *nx;
-                db->reads[first-pfirst].coff = ftello(quiva);
-              }
-
-            j = first-pfirst;
-            if (j < 0)
-              j = 0;
-            k = last-pfirst;
-            if (k > db->nreads)
-              k = db->nreads;
-            while (j < k)
-              table[j++] = (uint16) i;
-
-            first = last;
-	  }
-
-        fclose(indx);
-        indx = NULL;
-      }
-
-    else
-      { //  Load in coding scheme for each file, adjust .coff of first read in the file, and
-        //    record which table each read uses
-
-        ncodes = nfiles;
-        coding = (QVcoding *) Malloc(sizeof(QVcoding)*nfiles,"Allocating coding schemes");
-        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
-        if (coding == NULL || table == NULL)
-          goto error;
-  
-        first = 0;
-        for (i = 0; i < nfiles; i++)
-          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
-              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
-                goto error;
-              }
-  
-            fseeko(quiva,db->reads[first].coff,SEEK_SET);
-            nx = Read_QVcoding(quiva);
-            if (nx == NULL)
-              { ncodes = i;
-                goto error;
-              }
-            coding[i] = *nx;
-	    db->reads[first].coff = ftello(quiva);
-
-            for (j = first; j < last; j++)
-              table[j] = (uint16) i;
-
-            first = last;
-          }
-      }
-
-    //  Allocate and fill in the DAZZ_QV record and add it to the front of the
-    //    track list
-
-    qvtrk = (DAZZ_QV *) Malloc(sizeof(DAZZ_QV),"Allocating QV pseudo-track");
-    if (qvtrk == NULL)
-      goto error;
-    qvtrk->name   = Strdup(".@qvs","Allocating QV pseudo-track name");
-    if (qvtrk->name == NULL)
-      goto error;
-    qvtrk->next   = db->tracks;
-    db->tracks    = (DAZZ_TRACK *) qvtrk;
-    qvtrk->ncodes = ncodes;
-    qvtrk->table  = table;
-    qvtrk->coding = coding;
-    qvtrk->quiva  = quiva;
-  }
-
-  fclose(istub);
-  return (0);
+  rewinddir(dirp);                         //   Report each auxiliary file
+  while ((dp = readdir(dirp)) != NULL)
+    { name = dp->d_name;
+      dlen = strlen(name);
+#ifdef HIDE_FILES
+      if (name[0] != '.')
+        continue;
+      dlen -= 1;
+      name += 1;
+#endif
+      if (dlen < rlen+1)
+        continue;
+      if (name[rlen] != '.')
+        continue;
+      if (strncmp(name,root,rlen) != 0)
+        continue;
+      actor(MyCatenate(pwd,PATHSEP,name,""),name+(rlen+1));
+    }
+  closedir(dirp);
 
 error:
-  if (qvtrk != NULL)
-    free(qvtrk);
-  if (table != NULL)
-    free(table);
-  if (coding != NULL)
-    { int i;
-      for (i = 0; i < ncodes; i++)
-        Free_QVcoding(coding+i);
-      free(coding);
-    }
-  if (indx != NULL)
-    fclose(indx);
-  if (istub != NULL)
-    fclose(istub);
-  fclose(quiva);
-  EXIT(1);
+  free(pwd);
+  free(root);
+  return (status);
 }
 
-// Close the QV stream, free the QV pseudo track and all associated memory
+void Print_Read(char *s, int width)
+{ int i;
 
-void Close_QVs(DAZZ_DB *db)
-{ DAZZ_TRACK *track;
-  DAZZ_QV    *qvtrk;
-  int         i;
-
-  Active_DB = NULL;
-
-  track = db->tracks;
-  if (track != NULL && strcmp(track->name,".@qvs") == 0)
-    { qvtrk = (DAZZ_QV *) track;
-      for (i = 0; i < qvtrk->ncodes; i++)
-        Free_QVcoding(qvtrk->coding+i);
-      free(qvtrk->coding);
-      free(qvtrk->table);
-      fclose(qvtrk->quiva);
-      db->tracks = track->next;
-      free(track);
+  if (s[0] < 4)
+    { for (i = 0; s[i] != 4; i++)
+        { if (i%width == 0 && i != 0)
+            printf("\n");
+          printf("%d",s[i]);
+        }
+      printf("\n");
     }
-  return;
+  else
+    { for (i = 0; s[i] != '\0'; i++)
+        { if (i%width == 0 && i != 0)
+            printf("\n");
+          printf("%c",s[i]);
+        }
+      printf("\n");
+    }
+}
+
+
+// Shut down an open 'db' by freeing all associated space, including tracks and QV structures, 
+//   and any open file pointers.  The record pointed at by db however remains (the user
+//   supplied it and so should free it).
+
+void Close_DB(DAZZ_DB *db)
+{ if (db->loaded)
+    free(((char *) (db->bases)) - 1);
+  else if (db->bases != NULL)
+    fclose((FILE *) db->bases);
+  if (db->reads != NULL)
+    free(db->reads-1);
+  free(db->path);
+
+  Close_QVs(db);
+
+  Close_Arrow(db);
+
+  while (db->tracks != NULL)
+    Close_Track(db,db->tracks);
 }
 
 
 /*******************************************************************************************
  *
- *  TRACK LOAD & CLOSE ROUTINES
+ *  READ AND ARROW BUFFER ALLOCATION, LOAD, & LOAD_ALL
+ *
+ ********************************************************************************************/
+
+// Allocate and return a buffer big enough for the largest read in 'db', leaving room
+//   for an initial delimiter character
+
+char *New_Read_Buffer(DAZZ_DB *db)
+{ char *read;
+
+  read = (char *) Malloc(db->maxlen+4,"Allocating New Read Buffer");
+  if (read == NULL)
+    EXIT(NULL);
+  return (read+1);
+}
+
+// Load into 'read' the i'th read in 'db'.  As an upper case ASCII string if ascii is 2, as a
+//   lower-case ASCII string is ascii is 1, and as a numeric string over 0(A), 1(C), 2(G), and
+//   3(T) otherwise.
+//
+// **NB**, the byte before read will be set to a delimiter character!
+
+int Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
+{ FILE      *bases  = (FILE *) db->bases;
+  int64      off;
+  int        len, clen;
+  DAZZ_READ *r = db->reads;
+
+  if (i < 0 || i >= db->nreads)
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
+      EXIT(1);
+    }
+
+  if (db->loaded)
+    { len = r[i].rlen;
+      strncpy(read,(char *) bases + r[i].boff,len);
+      if (ascii == 0)
+        { if (*read < 4)
+            read[-1] = read[len] = 4;
+          else
+            { read[len] = '\0';
+              Number_Read(read);
+              read[-1] = 4;
+            }
+        }
+      else
+        { if (*read < 4)
+            { read[len] = 4;
+              if (ascii == 1)
+                Lower_Read(read);
+              else
+                Upper_Read(read);
+              read[-1] = '\0';
+            }
+          else
+            { read[len] = '\0';
+              if ((ascii == 1) != islower(*read))
+                Change_Read(read);
+            }
+          read[-1] = '\0';
+        }
+      return (0);
+    }
+
+  off = r[i].boff;
+  len = r[i].rlen;
+
+  if (ftello(bases) != off)
+    fseeko(bases,off,SEEK_SET);
+  clen = COMPRESSED_LEN(len);
+  if (clen > 0)
+    { if (fread(read,clen,1,bases) != 1)
+        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
+          EXIT(1);
+        }
+    }
+  Uncompress_Read(len,read);
+  if (ascii == 1)
+    { Lower_Read(read);
+      read[-1] = '\0';
+    }
+  else if (ascii == 2)
+    { Upper_Read(read);
+      read[-1] = '\0';
+    }
+  else
+    read[-1] = 4;
+  return (0);
+}
+
+
+// Load into 'read' the subread [beg,end] of the i'th read in 'db' and return a pointer to the
+//   the start of the subinterval (not necessarily = to read !!! ).  As a lower case ascii
+//   string if ascii is 1, an upper case ascii string if ascii is 2, and a numeric string
+//   over 0(A), 1(C), 2(G), and 3(T) otherwise.  A '\0' (or 4) is prepended and appended to
+//   the string holding the substring so it has a delimeter for traversals in either direction.
+//   A NULL pointer is returned if an error occured and INTERACTIVE is defined.
+
+char *Load_Subread(DAZZ_DB *db, int i, int beg, int end, char *read, int ascii)
+{ FILE      *bases  = (FILE *) db->bases;
+  int64      off;
+  int        len, clen;
+  int        bbeg, bend;
+  DAZZ_READ *r = db->reads;
+
+  if (i < 0 || i >= db->nreads)
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
+      EXIT(NULL);
+    }
+    
+  if (db->loaded)
+    { len = end-beg;
+      strncpy(read,(char *) bases + r[i].boff + beg,len);
+      if (ascii == 0)
+        { if (*read < 4)
+            read[-1] = read[len] = 4;
+          else
+            { read[len] = '\0';
+              Number_Read(read);
+              read[-1] = 4;
+            }
+        }
+      else
+        { if (*read < 4)
+            { read[len] = 4;
+              if (ascii == 1)
+                Lower_Read(read);
+              else
+                Upper_Read(read);
+              read[-1] = '\0';
+            }
+          else
+            { read[len] = '\0';
+              if ((ascii == 1) != islower(*read))
+                Change_Read(read);
+            }
+          read[-1] = '\0';
+        }
+      return (read);
+    }
+
+  bbeg = beg/4;
+  bend = (end-1)/4+1;
+
+  off = r[i].boff + bbeg;
+  len = end - beg;
+
+  if (ftello(bases) != off)
+    fseeko(bases,off,SEEK_SET);
+  clen = bend-bbeg;
+  if (clen > 0)
+    { if (fread(read,clen,1,bases) != 1)
+        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
+          EXIT(NULL);
+        }
+    }
+  Uncompress_Read(4*clen,read);
+  read += beg%4;
+  read[len] = 4;
+  if (ascii == 1)
+    { Lower_Read(read);
+      read[-1] = '\0';
+    }
+  else if (ascii == 2)
+    { Upper_Read(read);
+      read[-1] = '\0';
+    }
+  else
+    read[-1] = 4;
+
+  return (read);
+}
+
+// Allocate a block big enough for all the uncompressed sequences, read them into it,
+//   reset the 'off' in each read record to be its in-memory offset, and set the
+//   bases pointer to point at the block after closing the bases file.  If ascii is
+//   non-zero then the reads are converted to ACGT ascii, otherwise the reads are left
+//   as numeric strings over 0(A), 1(C), 2(G), and 3(T).
+
+int Load_All_Reads(DAZZ_DB *db, int ascii)
+{ FILE      *bases = (FILE *) db->bases;
+  int        nreads = db->nreads;
+  DAZZ_READ *reads = db->reads;
+  void     (*translate)(char *s);
+
+  char  *seq;
+  int64  o, off;
+  int    i, len, clen;
+
+  if (db->loaded)
+    return (0);
+
+  seq = (char *) Malloc(db->totlen+nreads+4,"Allocating All Sequence Reads");
+  if (seq == NULL)
+    EXIT(1);
+
+  *seq++ = 4;
+
+  if (ascii == 1)
+    translate = Lower_Read;
+  else
+    translate = Upper_Read;
+
+  o = 0;
+  for (i = 0; i < nreads; i++)
+    { len = reads[i].rlen;
+      off = reads[i].boff;
+      if (ftello(bases) != off)
+        fseeko(bases,off,SEEK_SET);
+      clen = COMPRESSED_LEN(len);
+      if (clen > 0)
+        { if (fread(seq+o,clen,1,bases) != 1)
+            { EPRINTF(EPLACE,"%s: Read of .bps file failed (Load_All_Sequences)\n",Prog_Name);
+              free(seq-1);
+              EXIT(1);
+            }
+        }
+      Uncompress_Read(len,seq+o);
+      if (ascii)
+        translate(seq+o);
+      reads[i].boff = o;
+      o += (len+1);
+    }
+  reads[nreads].boff = o;
+
+  fclose(bases);
+
+  db->bases  = (void *) seq;
+  db->loaded = 1;
+
+  return (0);
+}
+
+
+/*******************************************************************************************
+ *
+ *  ARROW OPEN, LOAD, LOAD_ALL, & CLOSE
+ *
+ ********************************************************************************************/
+
+DAZZ_DB    *Arrow_DB = NULL;         //  Last db/arw used by "Load_Arrow"
+DAZZ_ARROW *Arrow_Ptr;               //    Becomes invalid after closing
+
+// If the Arrow pseudo track is not already in db's track list, then load it and set it up.
+//   The database reads must not have been loaded with Load_All_Reads yet.
+//   -1 is returned if a .arw file is not present, and 1 is returned if an error (reported
+//   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
+
+int Open_Arrow(DAZZ_DB *db)
+{ int64      *avector;
+  DAZZ_ARROW *atrack;
+  FILE       *afile;
+  DAZZ_READ  *reads;
+  int         i, nreads;
+
+  if (db->tracks != NULL && db->tracks->name == atrack_name)
+    return (0);
+ 
+  if ((db->allarr & DB_ARROW) == 0)
+    { EPRINTF(EPLACE,"%s: The DB is not an Arrow database (Open_Arrow)\n",Prog_Name);
+      EXIT(1);
+    }
+  if (db->loaded)
+    { EPRINTF(EPLACE,"%s: Cannot open Arrow vectors after loading all reads (Open_Arrow)\n",
+                        Prog_Name);
+      EXIT(1);
+    }
+
+  afile = Fopen(MyCatenate(db->path,"","",".arw"),"r");
+  if (afile == NULL)
+    return (-1);
+
+  nreads  = db->nreads;
+  avector = (int64 *) Malloc(sizeof(int64)*nreads,"Allocating Arrow index");
+  atrack  = (DAZZ_ARROW *) Malloc(sizeof(DAZZ_ARROW),"Allocating Arrow track");
+  if (avector == NULL || atrack == NULL)
+    { fclose(afile);
+      if (avector != NULL)
+        free(avector);
+      EXIT(1);
+    }
+  db->tracks     = (DAZZ_TRACK *) atrack;
+  atrack->next   = NULL;
+  atrack->name   = atrack_name;
+  atrack->aoff   = avector;
+  atrack->arrow  = (void *) afile;
+  atrack->loaded = 0;
+
+
+  reads = db->reads;
+  for (i = 0; i < nreads; i++)
+    avector[i] = reads[i].boff;
+  return (0);
+}
+
+// Load into 'read' the i'th arrow in 'db'.  As an ASCII string if ascii is 1, 
+//   and as a numeric string otherwise.
+
+int Load_Arrow(DAZZ_DB *db, int i, char *arrow, int ascii)
+{ FILE      *afile;
+  int64      off;
+  int        len, clen;
+
+  if (db != Arrow_DB)
+    { if (db->tracks == NULL || db->tracks->name != atrack_name)
+        { EPRINTF(EPLACE,"%s: Arrow data is not available (Load_Arrow)\n",Prog_Name);
+          EXIT(1);
+        }
+      Arrow_Ptr = (DAZZ_ARROW *) db->tracks;
+      Arrow_DB  = db;
+    }
+
+  if (i < 0 || i >= db->nreads)
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Arrow)\n",Prog_Name);
+      EXIT(1);
+    }
+
+  afile = (FILE *) Arrow_Ptr->arrow;
+  off   = Arrow_Ptr->aoff[i];
+  len   = db->reads[i].rlen;
+
+  if (ftello(afile) != off)
+    fseeko(afile,off,SEEK_SET);
+  clen = COMPRESSED_LEN(len);
+  if (clen > 0)
+    { if (fread(arrow,clen,1,afile) != 1)
+        { EPRINTF(EPLACE,"%s: Failed read of .arw file (Load_Arrow)\n",Prog_Name);
+          EXIT(1);
+        }
+    }
+  Uncompress_Read(len,arrow);
+  if (ascii == 1)
+    { Letter_Arrow(arrow);
+      arrow[-1] = '\0';
+    }
+  else
+    arrow[-1] = 4;
+  return (0);
+}
+
+// Allocate a block big enough for all the uncompressed Arrow vectors, read them into it,
+//   reset the 'off' in each arrow record to be its in-memory offset, and set the
+//   arrow pointer to point at the block after closing the arrow file.  If ascii is
+//   non-zero then the arrows are converted to 0123 ascii, otherwise the arrows are left
+//   as numeric strings over [0-3].
+
+int Load_All_Arrows(DAZZ_DB *db, int ascii)
+{ int        nreads = db->nreads;
+  DAZZ_READ *reads = db->reads;
+  FILE      *afile;
+  int64     *aoff;
+
+  char  *seq;
+  int64  o, off;
+  int    i, len, clen;
+
+  if (db != Arrow_DB)
+    { if (db->tracks == NULL || db->tracks->name != atrack_name)
+        { EPRINTF(EPLACE,"%s: Arrow data is not available (Load_All_Arrows)\n",Prog_Name);
+          EXIT(1);
+        }
+      Arrow_Ptr = (DAZZ_ARROW *) db->tracks;
+      Arrow_DB  = db;
+    }
+
+  if (Arrow_Ptr->loaded)
+    return (0);
+
+  afile = (FILE *) Arrow_Ptr->arrow;
+  aoff  = Arrow_Ptr->aoff;
+
+  seq = (char *) Malloc(db->totlen+nreads+4,"Allocating All Arrows");
+  if (seq == NULL)
+    EXIT(1);
+
+  *seq++ = 4;
+  o = 0;
+  for (i = 0; i < nreads; i++)
+    { len = reads[i].rlen;
+      off = aoff[i];
+      if (ftello(afile) != off)
+        fseeko(afile,off,SEEK_SET);
+      clen = COMPRESSED_LEN(len);
+      if (clen > 0)
+        { if (fread(seq+o,clen,1,afile) != 1)
+            { EPRINTF(EPLACE,"%s: Read of .bps file failed (Load_All_Sequences)\n",Prog_Name);
+              free(seq-1);
+              EXIT(1);
+            }
+        }
+      Uncompress_Read(len,seq+o);
+      if (ascii)
+        Letter_Arrow(seq+o);
+      aoff[i] = o;
+      o += (len+1);
+    }
+  aoff[nreads] = o;
+
+  fclose(afile);
+
+  Arrow_Ptr->arrow  = (void *) seq;
+  Arrow_Ptr->loaded = 1;
+
+  return (0);
+}
+
+// Remove the Arrow pseudo track, all space associated with it, and close the .arw file.
+
+void Close_Arrow(DAZZ_DB *db)
+{ DAZZ_ARROW *atrack;
+
+  Arrow_DB = NULL;
+  if (db->tracks != NULL && db->tracks->name == atrack_name)
+    { atrack = (DAZZ_ARROW *) db->tracks;
+      if (atrack->loaded)
+        free(atrack->arrow);
+      else
+        fclose((FILE *) atrack->arrow);
+      free(atrack->aoff);
+      db->tracks = db->tracks->next;
+      free(atrack);
+    }
+}
+
+
+/*******************************************************************************************
+ *
+ *  TRACK CHECK, OPEN, BUFFER ALLOCATION, LOAD, LOAD_ALL & CLOSE ROUTINES
+ *     TRACK EXTRAS READING & WRITING
  *
  ********************************************************************************************/
 
@@ -1160,11 +1446,11 @@ int Check_Track(DAZZ_DB *db, char *track, int *kind)
 
   afile = NULL;
   if (db->part > 0)
-    { afile  = fopen(Catenate(db->path,Numbered_Suffix(".",db->part,"."),track,".anno"),"r");
+    { afile  = fopen(MyCatenate(db->path,MyNumbered_Suffix(".",db->part,"."),track,".anno"),"r");
       ispart = 1;
     }
   if (afile == NULL)
-    { afile  = fopen(Catenate(db->path,".",track,".anno"),"r");
+    { afile  = fopen(MyCatenate(db->path,".",track,".anno"),"r");
       ispart = 0;
     }
   if (afile == NULL)
@@ -1207,17 +1493,111 @@ int Check_Track(DAZZ_DB *db, char *track, int *kind)
     return (-1);
 }
 
+// The DB has already been trimmed, but a track over the untrimmed DB needs to be opened.
+//   Trim the track by rereading the untrimmed DB index from the file system.
+
+static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
+{ int         i, j, r;
+  int         allflag, cutoff;
+  int         ureads;
+  char       *root;
+  DAZZ_READ   read;
+  FILE       *indx;
+
+  if (db->cutoff <= 0 && (db->allarr & DB_ALL) != 0) return (0);
+
+  cutoff = db->cutoff;
+  if ((db->allarr & DB_ALL) != 0)
+    allflag = 0;
+  else
+    allflag = DB_BEST;
+
+  root = rindex(db->path,'/') + 2;
+  indx = Fopen(MyCatenate(db->path,"","",".idx"),"r");
+  fseeko(indx,sizeof(DAZZ_DB) + sizeof(DAZZ_READ)*db->ufirst,SEEK_SET);
+  if (ispart)
+    ureads = ((int *) (db->reads))[-1];
+  else
+    ureads = db->ureads;
+
+  { int    size;
+
+    size = track->size;
+    if (track->data == NULL)
+      { char *anno = (char *) track->anno;
+        j = r = 0;
+        for (i = r = 0; i < ureads; i++, r += size)
+          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { memmove(anno+j,anno+r,size);
+                j += size;
+              }
+            r += size;
+          }
+        memmove(anno+j,anno+r,size);
+      }
+    else if (size == 4)
+      { int *anno4 = (int *) (track->anno);
+        int *alen  = track->alen;
+
+        j = 0;
+        for (i = 0; i < ureads; i++)
+          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { anno4[j] = anno4[i];
+                alen[j]  = alen[i];
+                j += 1;
+              }
+          }
+        track->data = Realloc(track->data,anno4[j],NULL);
+      }
+    else // size == 8
+      { int64 *anno8 = (int64 *) (track->anno);
+        int   *alen  = track->alen;
+
+        j = 0;
+        for (i = 0; i < ureads; i++)
+          { if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
+              { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                fclose(indx);
+                EXIT(1);
+              }
+            if ((read.flags & DB_BEST) >= allflag && read.rlen >= cutoff)
+              { anno8[j] = anno8[i];
+                alen[j]  = alen[i];
+                j += 1;
+              }
+          }
+        track->data = Realloc(track->data,anno8[j],NULL);
+      }
+    track->anno = Realloc(track->anno,track->size*(j+1),NULL);
+  }
+
+  fclose(indx);
+  return (0);
+}
+
 // If track is not already in the db's track list, then allocate all the storage for it,
 //   read it in from the appropriate file, add it to the track list, and return a pointer
 //   to the newly created DAZZ_TRACK record.  If the track does not exist or cannot be
 //   opened for some reason, then NULL is returned.
 
-DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track)
+DAZZ_TRACK *Open_Track(DAZZ_DB *db, char *track)
 { FILE       *afile, *dfile;
   int         tracklen, size;
   int         nreads, ispart;
   int         treads, ureads;
+  int64       dmax;
   void       *anno;
+  int        *alen;
   void       *data;
   char       *name;
   DAZZ_TRACK *record;
@@ -1233,11 +1613,11 @@ DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track)
 
   afile = NULL;
   if (db->part)
-    { afile  = fopen(Catenate(db->path,Numbered_Suffix(".",db->part,"."),track,".anno"),"r");
+    { afile  = fopen(MyCatenate(db->path,MyNumbered_Suffix(".",db->part,"."),track,".anno"),"r");
       ispart = 1;
     }
   if (afile == NULL)
-    { afile = fopen(Catenate(db->path,".",track,".anno"),"r");
+    { afile = fopen(MyCatenate(db->path,".",track,".anno"),"r");
       ispart = 0;
     }
   if (afile == NULL)
@@ -1247,13 +1627,14 @@ DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track)
 
   dfile  = NULL;
   anno   = NULL;
+  alen   = NULL;
   data   = NULL;
   record = NULL;
 
   if (ispart)
-    name = Catenate(db->path,Numbered_Suffix(".",db->part,"."),track,".data");
+    name = MyCatenate(db->path,MyNumbered_Suffix(".",db->part,"."),track,".data");
   else
-    name = Catenate(db->path,".",track,".data");
+    name = MyCatenate(db->path,".",track,".data");
   if (name == NULL)
     goto error;
   dfile = fopen(name,"r");
@@ -1316,54 +1697,51 @@ DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track)
     goto error;
 
   if (dfile != NULL)
-    { int64 *anno8, off8, dlen;
-      int   *anno4, off4;
+    { int64 *anno8;
+      int   *anno4;
+      int64  x, y;
       int    i;
+
+      alen = (int *)  Malloc(sizeof(int)*nreads,"Allocating Track Anno Lengths");
+      if (alen == NULL)
+        goto error;
 
       if (fread(anno,size,nreads+1,afile) != (size_t) (nreads+1))
         { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
           goto error;
         }
 
+      dmax = 0;
       if (size == 4)
         { anno4 = (int *) anno;
-          off4  = anno4[0];
-          if (off4 != 0)
-            { for (i = 0; i <= nreads; i++)
-                anno4[i] -= off4;
-              fseeko(dfile,off4,SEEK_SET);
+          y = anno4[0];
+          for (i = 1; i <= nreads; i++)
+            { x = anno4[i];
+              y = x-y;
+              if (y > dmax)
+                dmax = y; 
+              alen[i-1] = y;
+              y = x;
             }
-          dlen = anno4[nreads];
-          data = (void *) Malloc(dlen,"Allocating Track Data Vector");
         }
       else
         { anno8 = (int64 *) anno;
-          off8  = anno8[0];
-          if (off8 != 0)
-            { for (i = 0; i <= nreads; i++)
-                anno8[i] -= off8;
-              fseeko(dfile,off8,SEEK_SET);
-            }
-          dlen = anno8[nreads];
-          data = (void *) Malloc(dlen,"Allocating Track Data Vector");
-        }
-      if (data == NULL)
-        goto error;
-      if (dlen > 0)
-        { if (fread(data,dlen,1,dfile) != 1)
-            { EPRINTF(EPLACE,"%s: Track '%s' data file is junk\n",Prog_Name,track);
-              goto error;
+          y = anno8[0];
+          for (i = 1; i <= nreads; i++)
+            { x = anno8[i];
+              y = x-y;
+              if (y > dmax)
+                dmax = y; 
+              alen[i-1] = y;
+              y = x;
             }
         }
-      fclose(dfile);
-      dfile = NULL;
     }
   else
     { if (fread(anno,size,nreads,afile) != (size_t) nreads)
         { EPRINTF(EPLACE,"%s: Track '%s' annotation file is junk\n",Prog_Name,track);
           goto error;
         }
-      data = NULL;
     }
 
   fclose(afile);
@@ -1374,16 +1752,23 @@ DAZZ_TRACK *Load_Track(DAZZ_DB *db, char *track)
   record->name = Strdup(track,"Allocating Track Name");
   if (record->name == NULL)
     goto error;
-  record->data = data;
-  record->anno = anno;
-  record->size = size;
+  if (dfile == NULL)
+    record->data = NULL;
+  else
+    record->data = (void *) dfile;
+  record->anno   = anno;
+  record->alen   = alen;
+  record->size   = size;
+  record->nreads = nreads;
+  record->loaded = 0;
+  record->dmax   = dmax;
 
   if (db->trimmed && tracklen != treads)
     { if (Late_Track_Trim(db,record,ispart))
         goto error;
     }
 
-  if (db->tracks != NULL && strcmp(db->tracks->name,".@qvs") == 0)
+  if (db->tracks != NULL && (db->tracks->name == qtrack_name || db->tracks->name == atrack_name))
     { record->next     = db->tracks->next;
       db->tracks->next = record;
     }
@@ -1399,6 +1784,8 @@ error:
     free(record);
   if (data != NULL)
     free(data);
+  if (alen != NULL)
+    free(alen);
   if (anno != NULL)
     free(anno);
   if (dfile != NULL)
@@ -1406,6 +1793,134 @@ error:
   fclose(afile);
   EXIT (NULL);
 }
+
+// Allocate a data buffer large enough to hold the longest read data block that will occur
+//   in the track.  If cannot allocate memory then return NULL if INTERACTIVE is defined,
+//   or print error to stderr and exit otherwise.
+
+void *New_Track_Buffer(DAZZ_TRACK *track)
+{ void *data;
+
+  data = (void *) Malloc(track->dmax,"Allocating New Track Data Buffer");
+  if (data == NULL)
+    EXIT(NULL);
+  return (data);
+}
+
+// Load into 'data' the read data block for read i's "track" data.  Return the length of
+//   the data in bytes, unless an error occurs and INTERACTIVE is defined in which case
+//   return wtih -1.
+
+int Load_Track_Data(DAZZ_TRACK *track, int i, void *data)
+{ FILE      *dfile;
+  int64      off;
+  int        len;
+
+  if (i < 0 || i >= track->nreads)
+    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Track_Data)\n",Prog_Name);
+      EXIT(-1);
+    }
+
+  if (track->size == 4)
+    off = ((int *) track->anno)[i];
+  else
+    off = ((int64 *) track->anno)[i];
+  len = track->alen[i];
+
+  if (track->loaded)
+    { strncpy(data,(void *) track->data + off,len);
+      return (len);
+    }
+
+  dfile = (FILE *) track->data;
+  if (ftello(dfile) != off)
+    fseeko(dfile,off,SEEK_SET);
+  if (len > 0)
+    if (fread(data,len,1,dfile) != 1)
+      { EPRINTF(EPLACE,"%s: Failed read of .data file (Load_Track_Data)\n",Prog_Name);
+        EXIT(-1);
+      }
+  return (len);
+}
+
+// Allocate a block big enough for all the track data and read the data into it,
+//   reset the 'off' in each anno pointer to be its in-memory offset, and set the
+//   data pointer to point at the block after closing the data file.  Return with a
+//   zero, except when an error occurs and INTERACTIVE is defined in which
+//   case return wtih 1.
+
+int Load_All_Track_Data(DAZZ_TRACK *track)
+{ FILE  *dfile;
+  void  *data;
+  int   *alen;
+  int64  dlen, off, o;
+  int    i, len, nreads;
+
+  if (track->loaded || track->data == NULL)
+    return (0);
+
+  nreads = track->nreads;
+  dfile  = (FILE *) track->data;
+  alen   = track->alen;
+
+  dlen = 0;
+  for (i = 0; i < nreads; i++)
+    dlen += alen[i];
+
+  data = (void *) Malloc(dlen,"Allocating All Track Data");
+  if (data == NULL)
+    EXIT(1);
+
+  o = 0;
+  if (track->size == 4)
+    { int *anno4 = (int *) track->anno;
+
+      for (i = 0; i < nreads; i++)
+        { len = alen[i];
+          off = anno4[i];
+          if (ftello(dfile) != off)
+            fseeko(dfile,off,SEEK_SET);
+          if (len > 0)
+            { if (fread(data+o,len,1,dfile) != 1)
+                { EPRINTF(EPLACE,"%s: Read of .data failed (Load_All_Track_Data)\n",Prog_Name);
+                  free(data);
+                  EXIT(1);
+                }
+            }
+          anno4[i] = o;
+          o += len;
+        }
+      anno4[nreads] = o;
+    }
+  else
+    { int64 *anno8 = (int64 *) track->anno;
+
+      for (i = 0; i < nreads; i++)
+        { len = alen[i];
+          off = anno8[i];
+          if (ftello(dfile) != off)
+            fseeko(dfile,off,SEEK_SET);
+          if (len > 0)
+            { if (fread(data+o,len,1,dfile) != 1)
+                { EPRINTF(EPLACE,"%s: Read of .data failed (Load_All_Track_Data)\n",Prog_Name);
+                  free(data);
+                  EXIT(1);
+                }
+            }
+          anno8[i] = o;
+          o += len;
+        }
+      anno8[nreads] = o;
+    }
+
+  fclose(dfile);
+
+  track->data = (void *) data;
+  track->loaded = 1;
+
+  return (0);
+}
+
 
 // Assumming file pointer for afile is correctly positioned at the start of a extra item,
 //   and aname is the name of the .anno file, decode the value present and places it in
@@ -1542,32 +2057,28 @@ error:
 int Write_Extra(FILE *afile, DAZZ_EXTRA *extra)
 { int slen; 
 
-#define EWRITE(v,s,n,file)                                                      \
-  { if (fwrite(v,s,n,file) != (size_t) n)                                       \
-      { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);           \
-        EXIT(1);								\
-      }									 	\
-  }
-
-  EWRITE(&(extra->vtype),sizeof(int),1,afile)
-  FWRITE(&(extra->nelem),sizeof(int),1,afile)
-  FWRITE(&(extra->accum),sizeof(int),1,afile)
+  FFWRITE(&(extra->vtype),sizeof(int),1,afile)
+  FFWRITE(&(extra->nelem),sizeof(int),1,afile)
+  FFWRITE(&(extra->accum),sizeof(int),1,afile)
   slen = strlen(extra->name);
-  FWRITE(&slen,sizeof(int),1,afile)
-  FWRITE(extra->name,1,slen,afile)
-  FWRITE(extra->value,8,extra->nelem,afile)
+  FFWRITE(&slen,sizeof(int),1,afile)
+  FFWRITE(extra->name,1,slen,afile)
+  FFWRITE(extra->value,8,extra->nelem,afile)
 
   return (0);
 }
 
-void Close_Track(DAZZ_DB *db, char *track)
+void Close_Track(DAZZ_DB *db, DAZZ_TRACK *track)
 { DAZZ_TRACK *record, *prev;
 
   prev = NULL;
   for (record = db->tracks; record != NULL; record = record->next)
-    { if (strcmp(record->name,track) == 0)
+    { if (track == record)
         { free(record->anno);
-          free(record->data);
+          if (record->loaded)
+            free(record->data);
+          else
+            fclose((FILE *) record->data);
           free(record->name);
           if (prev == NULL)
             db->tracks = record->next;
@@ -1584,178 +2095,244 @@ void Close_Track(DAZZ_DB *db, char *track)
 
 /*******************************************************************************************
  *
- *  READ BUFFER ALLOCATION AND READ ACCESS
+ *  QV OPEN, BUFFER ALLOCATION, LOAD, & CLOSE ROUTINES
  *
  ********************************************************************************************/
 
-// Allocate and return a buffer big enough for the largest read in 'db', leaving room
-//   for an initial delimiter character
+DAZZ_DB *Active_DB = NULL;  //  Last db/qv used by "Load_QVentry"
+DAZZ_QV *Active_QV;         //    Becomes invalid after closing
 
-char *New_Read_Buffer(DAZZ_DB *db)
-{ char *read;
+int Open_QVs(DAZZ_DB *db)
+{ FILE        *quiva, *istub, *indx;
+  char        *root;
+  uint16      *table;
+  DAZZ_QV     *qvtrk;
+  QVcoding    *coding, *nx;
+  int          ncodes = 0;
 
-  read = (char *) Malloc(db->maxlen+4,"Allocating New Read Buffer");
-  if (read == NULL)
-    EXIT(NULL);
-  return (read+1);
-}
+  if (db->tracks != NULL && db->tracks->name == qtrack_name)
+    return (0);
 
-// Load into 'read' the i'th read in 'db'.  As an upper case ASCII string if ascii is 2, as a
-//   lower-case ASCII string is ascii is 1, and as a numeric string over 0(A), 1(C), 2(G), and
-//   3(T) otherwise.
-//
-// **NB**, the byte before read will be set to a delimiter character!
-
-int Load_Read(DAZZ_DB *db, int i, char *read, int ascii)
-{ FILE      *bases  = (FILE *) db->bases;
-  int64      off;
-  int        len, clen;
-  DAZZ_READ *r = db->reads;
-
-  if (i >= db->nreads)
-    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
+  if (db->trimmed)
+    { EPRINTF(EPLACE,"%s: Cannot load QVs after trimming the DB\n",Prog_Name);
       EXIT(1);
     }
-  if (bases == NULL)
-    { bases = Fopen(Catenate(db->path,"","",".bps"),"r");
-      if (bases == NULL)
-        EXIT(1);
-      db->bases = (void *) bases;
-    }
 
-  off = r[i].boff;
-  len = r[i].rlen;
-
-  if (ftello(bases) != off)
-    fseeko(bases,off,SEEK_SET);
-  clen = COMPRESSED_LEN(len);
-  if (clen > 0)
-    { if (fread(read,clen,1,bases) != 1)
-        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
+  if (db->reads[db->nreads-1].coff < 0)
+    { if (db->part > 0)
+        { EPRINTF(EPLACE,"%s: All QVs for this block have not been added to the DB!\n",Prog_Name);
+          EXIT(1);
+        }
+      else
+        { EPRINTF(EPLACE,"%s: All QVs for this DB have not been added!\n",Prog_Name);
           EXIT(1);
         }
     }
-  Uncompress_Read(len,read);
-  if (ascii == 1)
-    { Lower_Read(read);
-      read[-1] = '\0';
-    }
-  else if (ascii == 2)
-    { Upper_Read(read);
-      read[-1] = '\0';
+
+  //  Open .qvs, .idx, and .db files
+
+  quiva = Fopen(MyCatenate(db->path,"","",".qvs"),"r");
+  if (quiva == NULL)
+    return (-1);
+
+  istub  = NULL;
+  indx   = NULL; 
+  table  = NULL;
+  coding = NULL;
+  qvtrk  = NULL;
+
+  root = rindex(db->path,'/');
+  if (root[1] == '.')
+    { *root = '\0';
+      istub = Fopen(MyCatenate(db->path,"/",root+2,".db"),"r");
+      *root = '/';
     }
   else
-    read[-1] = 4;
+    istub = Fopen(MyCatenate(db->path,"","",".db"),"r");
+  if (istub == NULL)
+    goto error;
+
+  { int   first, last, nfiles;
+    char  prolog[MAX_NAME], fname[MAX_NAME];
+    int   i, j;
+
+    if (fscanf(istub,DB_NFILE,&nfiles) != 1)
+      { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+        goto error;
+      }
+
+    if (db->part > 0)
+      { int       pfirst, plast;
+        int       fbeg, fend;
+        int       n, k;
+        FILE     *indx;
+
+        //  Determine first how many and which files span the block (fbeg to fend)
+
+        pfirst = db->ufirst;
+        plast  = pfirst + db->nreads;
+
+        first = 0;
+        for (fbeg = 0; fbeg < nfiles; fbeg++)
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
+            if (last > pfirst)
+              break;
+            first = last;
+          }
+        for (fend = fbeg+1; fend <= nfiles; fend++)
+          { if (last >= plast)
+              break;
+            if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
+            first = last;
+          }
+
+        indx   = Fopen(MyCatenate(db->path,"","",".idx"),"r");
+        ncodes = fend-fbeg;
+        coding = (QVcoding *) Malloc(sizeof(QVcoding)*ncodes,"Allocating coding schemes");
+        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
+        if (indx == NULL || coding == NULL || table == NULL)
+          { ncodes = 0;
+            goto error;
+          }
+
+        //  Carefully get the first coding scheme (its offset is most likely in a DAZZ_RECORD
+        //    in .idx that is *not* in memory).  Get all the other coding schemes normally and
+        //    assign the tables # for each read in the block in "tables".
+
+        rewind(istub);
+        (void) fscanf(istub,DB_NFILE,&nfiles);
+
+        first = 0;
+        for (n = 0; n < fbeg; n++)
+          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
+            first = last;
+          }
+
+        for (n = fbeg; n < fend; n++)
+          { (void) fscanf(istub,DB_FDATA,&last,fname,prolog);
+
+            i = n-fbeg;
+            if (first < pfirst)
+              { DAZZ_READ read;
+
+                fseeko(indx,sizeof(DAZZ_DB) + sizeof(DAZZ_READ)*first,SEEK_SET);
+                if (fread(&read,sizeof(DAZZ_READ),1,indx) != 1)
+                  { EPRINTF(EPLACE,"%s: Index file (.idx) of %s is junk\n",Prog_Name,root);
+                    ncodes = i;
+                    goto error;
+                  }
+                fseeko(quiva,read.coff,SEEK_SET);
+                nx = Read_QVcoding(quiva);
+                if (nx == NULL)
+                  { ncodes = i;
+                    goto error;
+                  }
+                coding[i] = *nx;
+              }
+            else
+              { fseeko(quiva,db->reads[first-pfirst].coff,SEEK_SET);
+                nx = Read_QVcoding(quiva);
+                if (nx == NULL)
+                  { ncodes = i;
+                    goto error;
+                  }
+                coding[i] = *nx;
+                db->reads[first-pfirst].coff = ftello(quiva);
+              }
+
+            j = first-pfirst;
+            if (j < 0)
+              j = 0;
+            k = last-pfirst;
+            if (k > db->nreads)
+              k = db->nreads;
+            while (j < k)
+              table[j++] = (uint16) i;
+
+            first = last;
+	  }
+
+        fclose(indx);
+        indx = NULL;
+      }
+
+    else
+      { //  Load in coding scheme for each file, adjust .coff of first read in the file, and
+        //    record which table each read uses
+
+        ncodes = nfiles;
+        coding = (QVcoding *) Malloc(sizeof(QVcoding)*nfiles,"Allocating coding schemes");
+        table  = (uint16 *) Malloc(sizeof(uint16)*db->nreads,"Allocating QV table indices");
+        if (coding == NULL || table == NULL)
+          goto error;
+  
+        first = 0;
+        for (i = 0; i < nfiles; i++)
+          { if (fscanf(istub,DB_FDATA,&last,fname,prolog) != 3)
+              { EPRINTF(EPLACE,"%s: Stub file (.db) of %s is junk\n",Prog_Name,root);
+                goto error;
+              }
+  
+            fseeko(quiva,db->reads[first].coff,SEEK_SET);
+            nx = Read_QVcoding(quiva);
+            if (nx == NULL)
+              { ncodes = i;
+                goto error;
+              }
+            coding[i] = *nx;
+	    db->reads[first].coff = ftello(quiva);
+
+            for (j = first; j < last; j++)
+              table[j] = (uint16) i;
+
+            first = last;
+          }
+      }
+
+    //  Allocate and fill in the DAZZ_QV record and add it to the front of the
+    //    track list
+
+    qvtrk = (DAZZ_QV *) Malloc(sizeof(DAZZ_QV),"Allocating QV pseudo-track");
+    if (qvtrk == NULL)
+      goto error;
+    qvtrk->name   = qtrack_name;
+    if (qvtrk->name == NULL)
+      goto error;
+    qvtrk->next   = db->tracks;
+    db->tracks    = (DAZZ_TRACK *) qvtrk;
+    qvtrk->ncodes = ncodes;
+    qvtrk->table  = table;
+    qvtrk->coding = coding;
+    qvtrk->quiva  = quiva;
+  }
+
+  fclose(istub);
   return (0);
+
+error:
+  if (qvtrk != NULL)
+    free(qvtrk);
+  if (table != NULL)
+    free(table);
+  if (coding != NULL)
+    { int i;
+      for (i = 0; i < ncodes; i++)
+        Free_QVcoding(coding+i);
+      free(coding);
+    }
+  if (indx != NULL)
+    fclose(indx);
+  if (istub != NULL)
+    fclose(istub);
+  fclose(quiva);
+  EXIT(1);
 }
-
-// Load into 'read' the i'th arrow in 'db'.  As an ASCII string if ascii is 1, 
-//   and as a numeric string otherwise.
-//
-
-DAZZ_DB *Arrow_DB = NULL;         //  Last db/arw used by "Load_Arrow"
-FILE    *Arrow_File = NULL;       //    Becomes invalid after closing
-
-int Load_Arrow(DAZZ_DB *db, int i, char *read, int ascii)
-{ FILE      *arrow;
-  int64      off;
-  int        len, clen;
-  DAZZ_READ *r = db->reads;
-
-  if (i >= db->nreads)
-    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Arrow)\n",Prog_Name);
-      EXIT(1);
-    }
-  if (Arrow_DB != db)
-    { if (Arrow_File != NULL)
-        fclose(Arrow_File);
-      arrow = Fopen(Catenate(db->path,"","",".arw"),"r");
-      if (arrow == NULL)
-        EXIT(1);
-      Arrow_File = arrow;
-      Arrow_DB   = db;
-    }
-  else
-    arrow = Arrow_File;
-
-  off = r[i].boff;
-  len = r[i].rlen;
-
-  if (ftello(arrow) != off)
-    fseeko(arrow,off,SEEK_SET);
-  clen = COMPRESSED_LEN(len);
-  if (clen > 0)
-    { if (fread(read,clen,1,arrow) != 1)
-        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Arrow)\n",Prog_Name);
-          EXIT(1);
-        }
-    }
-  Uncompress_Read(len,read);
-  if (ascii == 1)
-    { Letter_Arrow(read);
-      read[-1] = '\0';
-    }
-  else
-    read[-1] = 4;
-  return (0);
-}
-
-char *Load_Subread(DAZZ_DB *db, int i, int beg, int end, char *read, int ascii)
-{ FILE      *bases  = (FILE *) db->bases;
-  int64      off;
-  int        len, clen;
-  int        bbeg, bend;
-  DAZZ_READ *r = db->reads;
-
-  if (i >= db->nreads)
-    { EPRINTF(EPLACE,"%s: Index out of bounds (Load_Read)\n",Prog_Name);
-      EXIT(NULL);
-    }
-  if (bases == NULL)
-    { bases = Fopen(Catenate(db->path,"","",".bps"),"r");
-      if (bases == NULL)
-        EXIT(NULL);
-      db->bases = (void *) bases;
-    }
-
-  bbeg = beg/4;
-  bend = (end-1)/4+1;
-
-  off = r[i].boff + bbeg;
-  len = end - beg;
-
-  if (ftello(bases) != off)
-    fseeko(bases,off,SEEK_SET);
-  clen = bend-bbeg;
-  if (clen > 0)
-    { if (fread(read,clen,1,bases) != 1)
-        { EPRINTF(EPLACE,"%s: Failed read of .bps file (Load_Read)\n",Prog_Name);
-          EXIT(NULL);
-        }
-    }
-  Uncompress_Read(4*clen,read);
-  read += beg%4;
-  read[len] = 4;
-  if (ascii == 1)
-    { Lower_Read(read);
-      read[-1] = '\0';
-    }
-  else if (ascii == 2)
-    { Upper_Read(read);
-      read[-1] = '\0';
-    }
-  else
-    read[-1] = 4;
-
-  return (read);
-}
-
-
-/*******************************************************************************************
- *
- *  QV BUFFER ALLOCATION QV READ ACCESS
- *
- ********************************************************************************************/
 
 // Allocate and return a buffer of 5 vectors big enough for the largest read in 'db'
 
@@ -1783,13 +2360,14 @@ int Load_QVentry(DAZZ_DB *db, int i, char **entry, int ascii)
 
   if (db != Active_DB)
     { if (db->tracks == NULL || strcmp(db->tracks->name,".@qvs") != 0)
-        { EPRINTF(EPLACE,"%s: QV's are not loaded (Load_QVentry)\n",Prog_Name);
+        { EPRINTF(EPLACE,"%s: QV's have not been opened (Load_QVentry)\n",Prog_Name);
           EXIT(1);
         }
       Active_QV = (DAZZ_QV *) db->tracks;
       Active_DB = db;
     }
-  if (i >= db->nreads)
+
+  if (i < 0 || i >= db->nreads)
     { EPRINTF(EPLACE,"%s: Index out of bounds (Load_QVentry)\n",Prog_Name);
       EXIT(1);
     }
@@ -1823,187 +2401,33 @@ int Load_QVentry(DAZZ_DB *db, int i, char **entry, int ascii)
   return (0);
 }
 
+// Close the QV stream, free the QV pseudo track and all associated memory
 
-/*******************************************************************************************
- *
- *  BLOCK LOAD OF ALL READS (PRIMARILY FOR DALIGNER)
- *
- ********************************************************************************************/
+void Close_QVs(DAZZ_DB *db)
+{ DAZZ_TRACK *track;
+  DAZZ_QV    *qvtrk;
+  int         i;
 
-// Allocate a block big enough for all the uncompressed sequences, read them into it,
-//   reset the 'off' in each read record to be its in-memory offset, and set the
-//   bases pointer to point at the block after closing the bases file.  If ascii is
-//   non-zero then the reads are converted to ACGT ascii, otherwise the reads are left
-//   as numeric strings over 0(A), 1(C), 2(G), and 3(T).
+  Active_DB = NULL;
 
-int Read_All_Sequences(DAZZ_DB *db, int ascii)
-{ FILE      *bases;
-  int        nreads = db->nreads;
-  DAZZ_READ *reads = db->reads;
-  void     (*translate)(char *s);
-
-  char  *seq;
-  int64  o, off;
-  int    i, len, clen;
-
-  bases = Fopen(Catenate(db->path,"","",".bps"),"r");
-  if (bases == NULL)
-    EXIT(1);
-
-  seq = (char *) Malloc(db->totlen+nreads+4,"Allocating All Sequence Reads");
-  if (seq == NULL)
-    { fclose(bases);
-      EXIT(1);
+  track = db->tracks;
+  if (track != NULL && strcmp(track->name,".@qvs") == 0)
+    { qvtrk = (DAZZ_QV *) track;
+      for (i = 0; i < qvtrk->ncodes; i++)
+        Free_QVcoding(qvtrk->coding+i);
+      free(qvtrk->coding);
+      free(qvtrk->table);
+      fclose(qvtrk->quiva);
+      db->tracks = track->next;
+      free(track);
     }
-
-  *seq++ = 4;
-
-  if (ascii == 1)
-    translate = Lower_Read;
-  else
-    translate = Upper_Read;
-
-  o = 0;
-  for (i = 0; i < nreads; i++)
-    { len = reads[i].rlen;
-      off = reads[i].boff;
-      if (ftello(bases) != off)
-        fseeko(bases,off,SEEK_SET);
-      clen = COMPRESSED_LEN(len);
-      if (clen > 0)
-        { if (fread(seq+o,clen,1,bases) != 1)
-            { EPRINTF(EPLACE,"%s: Read of .bps file failed (Read_All_Sequences)\n",Prog_Name);
-              free(seq);
-              fclose(bases);
-              EXIT(1);
-            }
-        }
-      Uncompress_Read(len,seq+o);
-      if (ascii)
-        translate(seq+o);
-      reads[i].boff = o;
-      o += (len+1);
-    }
-  reads[nreads].boff = o;
-
-  fclose(bases);
-
-  db->bases  = (void *) seq;
-  db->loaded = 1;
-
-  return (0);
-}
-
-// For the DB or DAM "path" = "prefix/root.[db|dam]", find all the files for that DB, i.e. all
-//   those of the form "prefix/[.]root.part" and call actor with the complete path to each file
-//   pointed at by path, and the suffix of the path by extension.  The . proceeds the root
-//   name if the defined constant HIDE_FILES is set.  Always the first call is with the
-//   path "prefix/root.[db|dam]" and extension "db" or "dam".  There will always be calls for
-//   "prefix/[.]root.idx" and "prefix/[.]root.bps".  All other calls are for *tracks* and
-//   so this routine gives one a way to know all the tracks associated with a given DB.
-//   -1 is returned if the path could not be found, and 1 is returned if an error (reported
-//   to EPLACE) occured and INTERACTIVE is defined.  Otherwise a 0 is returned.
-
-int List_DB_Files(char *path, void actor(char *path, char *extension))
-{ int            status, plen, rlen, dlen;
-  char          *root, *pwd, *name;
-  int            isdam;
-  DIR           *dirp;
-  struct dirent *dp;
-
-  status = 0;
-  pwd    = PathTo(path);
-  plen   = strlen(path);
-  if (strcmp(path+(plen-4),".dam") == 0)
-    root = Root(path,".dam");
-  else
-    root = Root(path,".db");
-  rlen = strlen(root);
-
-  if (root == NULL || pwd == NULL)
-    { free(pwd);
-      free(root);
-      EXIT(1);
-    }
-
-  if ((dirp = opendir(pwd)) == NULL)
-    { EPRINTF(EPLACE,"%s: Cannot open directory %s (List_DB_Files)\n",Prog_Name,pwd);
-      status = -1;
-      goto error;
-    }
-
-  isdam = 0;
-  while ((dp = readdir(dirp)) != NULL)     //   Get case dependent root name (if necessary)
-    { name = dp->d_name;
-      if (strcmp(name,Catenate("","",root,".db")) == 0)
-        break;
-      if (strcmp(name,Catenate("","",root,".dam")) == 0)
-        { isdam = 1;
-          break;
-        }
-    }
-  if (dp == NULL)
-    { status = -1;
-      closedir(dirp);
-      goto error;
-    }
-
-  if (isdam)
-    actor(Catenate(pwd,"/",root,".dam"),"dam");
-  else
-    actor(Catenate(pwd,"/",root,".db"),"db");
-
-  rewinddir(dirp);                         //   Report each auxiliary file
-  while ((dp = readdir(dirp)) != NULL)
-    { name = dp->d_name;
-      dlen = strlen(name);
-#ifdef HIDE_FILES
-      if (name[0] != '.')
-        continue;
-      dlen -= 1;
-      name += 1;
-#endif
-      if (dlen < rlen+1)
-        continue;
-      if (name[rlen] != '.')
-        continue;
-      if (strncmp(name,root,rlen) != 0)
-        continue;
-      actor(Catenate(pwd,PATHSEP,name,""),name+(rlen+1));
-    }
-  closedir(dirp);
-
-error:
-  free(pwd);
-  free(root);
-  return (status);
-}
-
-void Print_Read(char *s, int width)
-{ int i;
-
-  if (s[0] < 4)
-    { for (i = 0; s[i] != 4; i++)
-        { if (i%width == 0 && i != 0)
-            printf("\n");
-          printf("%d",s[i]);
-        }
-      printf("\n");
-    }
-  else
-    { for (i = 0; s[i] != '\0'; i++)
-        { if (i%width == 0 && i != 0)
-            printf("\n");
-          printf("%c",s[i]);
-        }
-      printf("\n");
-    }
+  return;
 }
 
 
 /*******************************************************************************************
  *
- *  COMMAND LINE BLOCK PARSER
+ *  COMMAND LINE @-EXPANSION PARSER
  *    Take a command line argument and interpret the '@' block number ranges.
  *    Parse_Block_Arg produces an Block_Looper iterator object that can then
  *    be invoked multiple times to iterate through all the files implied by
@@ -2014,17 +2438,51 @@ void Print_Read(char *s, int width)
 typedef struct
   { int first, last, next;
     char *root, *pwd, *ppnt;
+    int   isDB;
     char *slice;
   } _Block_Looper;
 
-  //  Advance the iterator e_parse to the next file, open it, and return the file pointer
-  //   to it.  Return NULL if at the end of the list of files.
+//  Advance the iterator e_parse to the next file, open it, and return the file pointer
+//   to it.  Return NULL if at the end of the list of files.
+
+int Next_Block_Exists(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  char       *disp;
+  struct stat sts;
+
+  if (parse->isDB)
+    { if (parse->next+1 > parse->last)
+        return (0);
+      else
+        return (1);
+    }
+
+  if (parse->next+1 > parse->last)
+    return (0);
+
+  if (parse->next < 0)
+    disp = parse->root;
+  else
+    disp = MyNumbered_Suffix(parse->root,parse->next+1,parse->ppnt);
+
+  if (stat(MyCatenate(parse->pwd,"/",disp,".las"),&sts))
+    return (0);
+  else
+    return (1);
+}
+
 
 FILE *Next_Block_Arg(Block_Looper *e_parse)
 { _Block_Looper *parse = (_Block_Looper *) e_parse;
 
   char *disp;
   FILE *input;
+
+  if (parse->isDB)
+    { fprintf(stderr,"%s: Cannot open a DB block as a file (Next_Block_Arg)\n",Prog_Name);
+      exit (1);
+    }
 
   parse->next += 1;
   if (parse->next > parse->last)
@@ -2033,19 +2491,19 @@ FILE *Next_Block_Arg(Block_Looper *e_parse)
   if (parse->next < 0)
     disp  = parse->root;
   else
-    disp = Numbered_Suffix(parse->root,parse->next,parse->ppnt);
+    disp = MyNumbered_Suffix(parse->root,parse->next,parse->ppnt);
 
-  if ((input = fopen(Catenate(parse->pwd,"/",disp,".las"),"r")) == NULL)
+  if ((input = fopen(MyCatenate(parse->pwd,"/",disp,".las"),"r")) == NULL)
     { if (parse->last != INT_MAX)
         { fprintf(stderr,"%s: %s.las is not present\n",Prog_Name,disp);
-           exit (1);
+          exit (1);
         }
       return (NULL);
     }
   return (input);
 }
 
-  //  Reset the iterator e_parse to the first file
+//  Reset the iterator e_parse to the first file
 
 void Reset_Block_Arg(Block_Looper *e_parse)
 { _Block_Looper *parse = (_Block_Looper *) e_parse;
@@ -2053,26 +2511,41 @@ void Reset_Block_Arg(Block_Looper *e_parse)
   parse->next = parse->first - 1;
 }
 
-  //  Return a pointer to the path for the current file
+//  Advance the iterator e_parse to the next file
+
+int Advance_Block_Arg(Block_Looper *e_parse)
+{ _Block_Looper *parse = (_Block_Looper *) e_parse;
+
+  if (Next_Block_Exists(e_parse))
+    { parse->next += 1;
+      return (1);
+    }
+  else
+    return (0);
+}
+
+//  Return a pointer to the path for the current file
 
 char *Block_Arg_Path(Block_Looper *e_parse)
 { _Block_Looper *parse = (_Block_Looper *) e_parse;
 
-  return (parse->pwd);
+  return (Strdup(parse->pwd,"Allocating block path"));
 }
 
-  //  Return a pointer to the root name for the current file
+//  Return a pointer to the root name for the current file
 
 char *Block_Arg_Root(Block_Looper *e_parse)
 { _Block_Looper *parse = (_Block_Looper *) e_parse;
+  char *name;
 
   if (parse->next < 0)
-    return (parse->root);
+    name = parse->root;
   else
-    return (Numbered_Suffix(parse->root,parse->next,parse->ppnt));
+    name = MyNumbered_Suffix(parse->root,parse->next,parse->ppnt);
+  return (Strdup(name,"Allocating block root"));
 }
 
-  //  Free the iterator
+//  Free the iterator
 
 void Free_Block_Arg(Block_Looper *e_parse)
 { _Block_Looper *parse = (_Block_Looper *) e_parse;
@@ -2093,6 +2566,11 @@ char *Next_Block_Slice(Block_Looper *e_parse, int slice)
         exit (1);
     }
 
+  if (parse->next+1 > parse->last)
+    return (NULL);
+  if (parse->next+slice > parse->last)
+    slice = parse->last-parse->next;
+
   if (parse->first < 0)
     sprintf(parse->slice,"%s/%s",parse->pwd,parse->root);
   else
@@ -2102,10 +2580,10 @@ char *Next_Block_Slice(Block_Looper *e_parse, int slice)
   return (parse->slice);
 }
 
-  //  Parse the command line argument and return an iterator to move through the
-  //    file names, setting it up to report the first file.
+//  Parse the command line argument and return an iterator to move through the
+//    file names, setting it up to report the first file.
 
-Block_Looper *Parse_Block_Arg(char *arg)
+static Block_Looper *parse_block_arg(char *arg, int isDB)
 { _Block_Looper *parse;
   char *pwd, *root;
   char *ppnt, *cpnt;
@@ -2113,7 +2591,17 @@ Block_Looper *Parse_Block_Arg(char *arg)
 
   parse = (_Block_Looper *) Malloc(sizeof(_Block_Looper),"Allocating parse node");
   pwd   = PathTo(arg);
-  root  = Root(arg,".las");
+  if (isDB)
+    { int len = strlen(arg);
+      if (strcmp(arg+(len-4),".dam") == 0)
+        { root = Root(arg,".dam");
+          isDB = 2;
+        }
+      else
+        root = Root(arg,".db");
+    }
+  else
+    root  = Root(arg,".las");
   if (parse == NULL || pwd == NULL || root == NULL)
     exit (1);
 
@@ -2133,9 +2621,9 @@ Block_Looper *Parse_Block_Arg(char *arg)
           last  = INT_MAX;
         }
       else
-        { if (first < 0)
+        { if (first < 1)
             { fprintf(stderr,
-                      "%s: Integer following %c-sigan is less than 0 in source name '%s'\n",
+                      "%s: Integer following %c-sigan is less than 1 in source name '%s'\n",
                       Prog_Name,BLOCK_SYMBOL,root);
               exit (1);
             }
@@ -2169,5 +2657,42 @@ Block_Looper *Parse_Block_Arg(char *arg)
   parse->last  = last;
   parse->next  = first-1;
   parse->slice = NULL;
+  parse->isDB  = isDB;
+
+  if (isDB && first >= 0 && last == INT_MAX)
+    { char  buffer[2*MAX_NAME+100];
+      char *dbname;
+      FILE *dbfile;
+      int   i, nfiles, nblocks;
+
+      dbname = MyCatenate(pwd,"/",root,"db"); 
+      dbfile = fopen(dbname,"r");
+      if (dbfile == NULL)
+        { dbname = MyCatenate(pwd,"/",root,"dam"); 
+          dbfile = fopen(dbname,"r");
+          if (dbfile == NULL)
+            { fprintf(stderr,"%s: Cannot open database %s[db|dam]\n",Prog_Name,root);
+              exit (1);
+            }
+        }
+
+      if (fscanf(dbfile,DB_NFILE,&nfiles) != 1)
+        SYSTEM_READ_ERROR
+      for (i = 0; i < nfiles; i++)
+        if (fgets(buffer,2*MAX_NAME+100,dbfile) == NULL)
+          SYSTEM_READ_ERROR
+      if (fscanf(dbfile,DB_NBLOCK,&nblocks) != 1)
+        SYSTEM_READ_ERROR
+      fclose(dbfile);
+
+      parse->last = nblocks;
+    }
+
   return ((Block_Looper *) parse);
 }
+
+Block_Looper *Parse_Block_LAS_Arg(char *arg)
+{ return (parse_block_arg(arg, 0)); }
+
+Block_Looper *Parse_Block_DB_Arg(char *arg)
+{ return (parse_block_arg(arg, 1)); }

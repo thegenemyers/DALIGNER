@@ -24,17 +24,17 @@
 #undef  SLURM  //  define if want a directly executable SLURM script
 
 static char *Usage[] =
-  { "[-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)>] [-s<int(100)] [-M<int>]",
-    "        [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]",
-    "      ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)>] [-H<int>]",
-    "        [-k<int(20)>] [-h<int(50)>] [-e<double(.85)>] <ref:db|dam> )",
-    "        [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]"
+  { "[-vad] [-l<int(1500)>] [-s<int(100)] [-t<int>] [-M<int>]",
+    "       [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]",
+    "     ( [-k<int(16)>] [-h<int(50)>] [-w<int(6)>] [-e<double(.75)>] [-H<int>]",
+    "       [-k<int(20)>] [-h<int(50)>] [-w<int(6)>] [-e<double(.85)>] <ref:db|dam> )",
+    "       [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]"
   };
 
   //  Command Options
 
 static int    BUNIT;
-static int    VON, BON, CON, DON;
+static int    VON, CON, DON;
 static int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
 static int    NTHREADS;
 static double EREL;
@@ -247,15 +247,13 @@ void daligner_script(int argc, char *argv[])
             fprintf(out,"daligner");
             if (VON)
               fprintf(out," -v");
-            if (BON)
-              fprintf(out," -b");
             if (CON)
               fprintf(out," -a");
-            if (KINT != 14)
+            if (KINT != 16)
               fprintf(out," -k%d",KINT);
             if (WINT != 6)
               fprintf(out," -w%d",WINT);
-            if (HINT != 35)
+            if (HINT != 50)
               fprintf(out," -h%d",HINT);
             if (TINT > 0)
               fprintf(out," -t%d",TINT);
@@ -263,7 +261,7 @@ void daligner_script(int argc, char *argv[])
               fprintf(out," -H%d",HGAP);
             if (EREL > 0.)
               fprintf(out," -e%g",EREL);
-            if (LINT != 1000)
+            if (LINT != 1500)
               fprintf(out," -l%d",LINT);
             if (SINT != 100)
               fprintf(out," -s%d",SINT);
@@ -286,17 +284,17 @@ void daligner_script(int argc, char *argv[])
               else
                 fprintf(out," %s",root);
             hgh = (i*j)/bits + 1;
-            for (k = low; k < hgh; k++)
-              if (useblock)
-                if (usepath)
-                  fprintf(out," %s/%s.%d",pwd,root,k);
-                else
-                  fprintf(out," %s.%d",root,k);
+
+            if (useblock)
+              if (usepath)
+                fprintf(out," %s/%s.@%d-%d",pwd,root,low,hgh-1);
               else
-                if (usepath)
-                  fprintf(out," %s/%s",pwd,root);
-                else
-                  fprintf(out," %s",root);
+                fprintf(out," %s.@%d-%d",root,low,hgh-1);
+            else
+              if (usepath)
+                fprintf(out," %s/%s",pwd,root);
+              else
+                fprintf(out," %s",root);
 
             if (lblock == 1)   // ==> i = 1, [low,hgh) = [1,2)
               { fprintf(out," && mv");
@@ -495,8 +493,8 @@ void daligner_script(int argc, char *argv[])
 
         for (i = 1; i <= lblock; i++)
           { if (DON)
-              fprintf(out,"cd work%d; ",j);
-            printf("rm %s.%d.%s.*.las",root,i,root);
+              fprintf(out,"cd work%d; ",i);
+            fprintf(out,"rm %s.%d.%s.*.las",root,i,root);
             if (DON)
               fprintf(out,"; cd ..");
             fprintf(out,"\n");
@@ -766,8 +764,6 @@ void mapper_script(int argc, char *argv[])
             fprintf(out,"daligner -A");
             if (VON)
               fprintf(out," -v");
-            if (BON)
-              fprintf(out," -b");
             if (CON)
               fprintf(out," -a");
             fprintf(out," -k%d",KINT);
@@ -989,7 +985,7 @@ int main(int argc, char *argv[])
   BUNIT = 4;
   TINT  = 0;
   WINT  = 6;
-  LINT  = 1000;
+  LINT  = 1500;
   SINT  = 100;
   MINT  = -1;
   PDIR  = NULL;
@@ -1008,7 +1004,7 @@ int main(int argc, char *argv[])
     if (argv[i][0] == '-')
       switch (argv[i][1])
       { default:
-          ARG_FLAGS("vbadAI");
+          ARG_FLAGS("vadAI");
           break;
         case 'e':
           ARG_REAL(EREL)
@@ -1072,7 +1068,6 @@ int main(int argc, char *argv[])
   argc = j;
 
   VON = flags['v'];
-  BON = flags['b'];
   CON = flags['a'];
   DON = flags['d'];
 
@@ -1099,14 +1094,12 @@ int main(int argc, char *argv[])
       fprintf(stderr,"      -T: Use -T threads.\n");
       fprintf(stderr,"      -P: Do first level sort and merge in directory -P.\n");
       fprintf(stderr,"      -m: Soft mask the blocks with the specified mask.\n");
-      fprintf(stderr,"      -b: For AT/GC biased data, compensate k-mer counts (deprecated).\n");
       fprintf(stderr,"\n");
       fprintf(stderr,"     Script control.\n");
       fprintf(stderr,"      -v: Run all commands in script in verbose mode.\n");
       fprintf(stderr,"      -a: Instruct LAsort & LAmerge to sort only on (a,ab).\n");
       fprintf(stderr,"      -d: Put .las files for each target block in a sub-directory\n");
       fprintf(stderr,"      -B: # of block compares per daligner job\n");
-      fprintf(stderr,"      -D: # of .las's to merge per LAmerge job\n");
       fprintf(stderr,"      -f: Place script bundles in separate files with prefix <name>\n");
       exit (1);
     }
@@ -1137,9 +1130,9 @@ int main(int argc, char *argv[])
     }
   else
     { if (KINT <= 0)
-        KINT = 14;
+        KINT = 16;
       if (HINT <= 0)
-        HINT = 35;
+        HINT = 50;
     }
 
   for (j = 1; 2*j <= NTHREADS; j *= 2)

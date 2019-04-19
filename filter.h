@@ -25,13 +25,12 @@ extern char  *SORT_PATH;
 extern uint64 MEM_LIMIT;
 extern uint64 MEM_PHYSICAL;
 
-int Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nthreads); 
+void Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nthreads); 
 
 void *Sort_Kmers(DAZZ_DB *block, int *len);
 
 void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
-                  void *atable, int alen, void *btable, int blen,
-                  int comp, Align_Spec *asettings);
+                  void *atable, int alen, void *btable, int blen, Align_Spec *asettings);
 
 void Clean_Exit(int val);
 

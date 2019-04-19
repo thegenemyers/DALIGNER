@@ -5,6 +5,15 @@
 
 For typeset documentation, examples of use, and design philosophy please go to
 my [blog](https://dazzlerblog.wordpress.com/command-guides/daligner-command-reference-guide).
++
++
++### Version Numbers
++
++v1.0 has been released, but if you need to refer to a later revision
++from the stable master branch, please use ``v1.0.yyyymmdd`` where
++``yyyy-mm-dd`` is the date of the commit used. This is important for
++method details in scientific papers, and for software packaging
++(e.g. Conda, HomeBrew, or Linux distribution packages).
 
 The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
@@ -19,18 +28,19 @@ alignment but simply a set of trace points, typically every 100bp or so, that al
 efficient reconstruction of alignments on demand.
 
 All programs add suffixes (e.g. .db, .las) as needed.
-For the commands that take multiple .las files as arguments, i.e. LAsort, LAmerge, LAindex, LAcat,
+For the commands that take multiple .las file blocks as arguments, i.e. LAsort, LAmerge, LAcat,
 and LAcheck, one can place a @-sign in the name, which is then interpreted as the sequence of files
 obtained by replacing the @-sign by 1, 2, 3, ... in sequence until a number is reached for
 which no file matches.  One can also place a @-sign followed by an integer, say, i, in which
 case the sequence starts at i.  Lastly, one can also place @i-j where i and j are integers, in
-which case the sequence is from i to j, inclusive.
+which case the sequence is from i to j, inclusive.  The same is now also true of commands such
+as daligner that take multiple .db blocks.
 
 The formal UNIX command line
 descriptions and options for the DALIGNER module commands are as follows:
 
 ```
-1. daligner [-vabAI]
+1. daligner [-vaAI]
        [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
        [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
        [-m<track>]+ <subject:db|dam> <target:db|dam> ...
@@ -52,10 +62,6 @@ between reads.  Specifically, our search code looks for a pair of diagonal bands
 width 2<sup>w</sup> (default 2<sup>6</sup> = 64) that contain a collection of exact matching k-mers
 (default 14) between the two reads, such that the total number of bases covered by the
 k-mer hits is h (default 35). k cannot be larger than 32 in the current implementation.
-If the -b option is set, then the daligner assumes the data has a strong compositional
-bias (e.g. >65% AT rich), and at the cost of a bit more time, dynamically adjusts k-mer
-sizes depending on compositional bias, so that the mers used have an effective
-specificity of 4<sup>k</sup>.
 
 If there are one or more interval tracks specified with the -m option, then the reads
 of the DB or DB's to which the mask applies are soft masked with the union of the
@@ -291,19 +297,13 @@ LAs all with the same a-read (applies only to sorted .las files).  Finally @ T #
 gives the maximum # of trace point intervals in any trace within the file.
 
 ```
-6. LAindex -v <source:las> ...
+6a. LAa2b
+6b. LAb2a
 ```
 
-LAindex takes a series of one or more sorted .las files and produces a "pile
-index" for each one.  If the input file has name "X.las", then the name of its
-index file is ".X.las.idx".  For each A-read pile encoded in the .las file,
-the index contains the offset to the first local alignment with A in the file.
-The index starts with four 64-bit integers that encode the numbers % P, + T, % T,
-and @ T described for LAdump above, and then an offset for each pile beginning
-with the first A-read in the file (which may not be read 0). The index is meant
-to allow programs that process piles to more efficiently read just the piles
-they need at any momment int time, as opposed to having to sequentially scan
-through the .las file.
+Pipes (stdin to stdout) that convert an ASCII output produced by LAdump into a compressed
+binary representation (LAa2b) and vice verse (LAb2a).  The idea is to save disk space by
+keeping the dumps in a more compessed format.
 
 ```
 7. LAcat [-v] <source:las> ... > <target>.las

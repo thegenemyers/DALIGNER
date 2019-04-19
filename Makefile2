@@ -2,13 +2,22 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck \
-      LAindex LAa2b LAb2a
+ALL = daligner dahifi dakey HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck \
+      LAindex LAa2b LAb2a LA2sxs daligner2
 
 all: $(ALL)
 
 daligner: daligner.c filter.c filter.h radix.c radix.h align.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o daligner -DWORD_SIZE=16  daligner.c filter.c radix.c align.c DB.c QV.c -lpthread -lm
+
+daligner2: daligner.c filter2.c filter.h radix2.c radix2.h align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o daligner2 -DWORD_SIZE=16  daligner.c filter2.c radix2.c align.c DB.c QV.c -lpthread -lm
+
+dahifi: dahifi.c hifi.c hifi.h radix.c radix.h align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o dahifi -DWORD_SIZE=16  dahifi.c hifi.c radix.c align.c DB.c QV.c -lpthread -lm
+
+dakey: dakey.c key.c key.h radix.c radix.h align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o dakey -DWORD_SIZE=16  dakey.c key.c radix.c align.c DB.c QV.c -lpthread -lm
 
 HPC.daligner: HPC.daligner.c DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o HPC.daligner HPC.daligner.c DB.c QV.c -lm
@@ -42,6 +51,9 @@ LAa2b: LAa2b.c
 
 LAb2a: LAb2a.c
 	gcc $(CFLAGS) -o LAb2a LAb2a.c -lm
+
+LA2sxs: LA2sxs.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o LA2sxs LA2sxs.c align.c DB.c QV.c -lm -lz
 
 clean:
 	rm -f $(ALL)

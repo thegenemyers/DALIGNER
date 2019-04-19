@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
     { Block_Looper *parse;
       FILE *input;
 
-      parse = Parse_Block_Arg(argv[c]);
+      parse = Parse_Block_LAS_Arg(argv[c]);
 
       while ((input = Next_Block_Arg(parse)) != NULL)
         { int64 povl;
@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
     otop = oblock + bsize;
 
     for (c = 1; c < argc; c++)
-      { parse = Parse_Block_Arg(argv[c]);
+      { parse = Parse_Block_LAS_Arg(argv[c]);
 
         while ((input = Next_Block_Arg(parse)) != NULL)
           { if (fread(&povl,sizeof(int64),1,input) != 1)

@@ -148,7 +148,7 @@ int main(int argc, char *argv[])
       int64     novl, sov;
       Block_Looper *parse;
 
-      parse = Parse_Block_Arg(argv[i]);
+      parse = Parse_Block_LAS_Arg(argv[i]);
 
       while ((input = Next_Block_Arg(parse)) != NULL)
         {
@@ -275,10 +275,10 @@ int main(int argc, char *argv[])
                   SYSTEM_READ_ERROR
               }
           }
+
+          free(perm);
+          fclose(foutput);
         }
-    
-      free(perm);
-      fclose(foutput);
       Free_Block_Arg(parse);
     }
 

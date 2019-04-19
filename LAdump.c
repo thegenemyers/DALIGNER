@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
   FILE   *input;
   int64   novl;
   int     tspace, tbytes, small;
-  int     tmax;
+  int     trmax;
   int     reps, *pts;
   int     input_pts;
 
@@ -299,7 +299,7 @@ int main(int argc, char *argv[])
 
   { int   j, al, tlen;
     int   in, npt, idx, ar;
-    int64 novls, odeg, omax, sdeg, smax, ttot;
+    int64 novls, odeg, omax, sdeg, smax, tmax, ttot;
 
     in  = 0;
     npt = pts[0];
@@ -307,6 +307,7 @@ int main(int argc, char *argv[])
 
     //  For each record do
 
+    trmax = 0;
     novls = omax = smax = ttot = tmax = 0;
     sdeg  = odeg = 0;
 
@@ -318,6 +319,8 @@ int main(int argc, char *argv[])
       { Read_Overlap(input,ovl);
         tlen = ovl->path.tlen;
         fseeko(input,tlen*tbytes,SEEK_CUR);
+        if (tlen > trmax)
+          trmax = tlen;
 
         //  Determine if it should be displayed
 
@@ -382,7 +385,7 @@ int main(int argc, char *argv[])
     if (DOTRACE)
       { printf("+ T %lld\n",ttot);
         printf("%% T %lld\n",smax);
-        printf("@ T %d\n",tmax);
+        printf("@ T %lld\n",tmax);
       }
   }
 
@@ -397,7 +400,7 @@ int main(int argc, char *argv[])
     fread(&novl,sizeof(int64),1,input);
     fread(&tspace,sizeof(int),1,input);
 
-    trace = (uint16 *) Malloc(sizeof(uint16)*tmax,"Allocating trace vector");
+    trace = (uint16 *) Malloc(sizeof(uint16)*trmax,"Allocating trace vector");
     if (trace == NULL)
       exit (1);
 

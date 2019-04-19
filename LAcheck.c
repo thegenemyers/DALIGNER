@@ -69,7 +69,6 @@ int main(int argc, char *argv[])
 
   { Block_Looper *parse;
     int   status;
-    FILE *input;
 
     ISTWO  = 0;
     status = Open_DB(argv[1],db1);
@@ -83,8 +82,8 @@ int main(int argc, char *argv[])
     if (argc <= 3)
       db2 = db1;
     else
-      { parse = Parse_Block_Arg(argv[2]);
-        if ((input = Next_Block_Arg(parse)) == NULL)
+      { parse = Parse_Block_LAS_Arg(argv[2]);
+        if (! Next_Block_Exists(parse))
           { ISTWO = 1;
             status = Open_DB(argv[2],db2);
             if (status < 0)
@@ -96,9 +95,7 @@ int main(int argc, char *argv[])
             Trim_DB(db2);
           }
         else
-          { db2 = db1;
-            fclose(input);
-          }
+          db2 = db1;
         Free_Block_Arg(parse);
       }
     Trim_DB(db1);
@@ -137,7 +134,7 @@ int main(int argc, char *argv[])
 
         //  Establish IO and (novl,tspace) header
 
-        parse = Parse_Block_Arg(argv[i]);
+        parse = Parse_Block_LAS_Arg(argv[i]);
 
         while ((input = Next_Block_Arg(parse)) != NULL)
           { disp = Block_Arg_Root(parse);

@@ -58,6 +58,8 @@ typedef struct            //  Hidden from the user, working space for each threa
     void   *points;
     int     tramax;
     void   *trace;
+    int     alnmax;
+    void   *alnpts;
   } _Work_Data;
 
 Work_Data *New_Work_Data()
@@ -72,6 +74,8 @@ Work_Data *New_Work_Data()
   work->points = NULL;
   work->tramax = 0;
   work->trace  = NULL;
+  work->alnmax = 0;
+  work->alnpts = NULL;
   work->celmax = 0;
   work->cells  = NULL;
   return ((Work_Data *) work);
@@ -100,6 +104,19 @@ static int enlarge_points(_Work_Data *work, int newmax)
     EXIT(1);
   work->pntmax = max;
   work->points = vec;
+  return (0);
+}
+
+static int enlarge_alnpts(_Work_Data *work, int newmax)
+{ void *vec;
+  int   max;
+
+  max = ((int) (newmax*1.2)) + 10000;
+  vec = Realloc(work->alnpts,max,"Enlarging point vector");
+  if (vec == NULL)
+    EXIT(1);
+  work->alnmax = max;
+  work->alnpts = vec;
   return (0);
 }
 
@@ -4327,6 +4344,7 @@ int Compute_Alignment(Alignment *align, Work_Data *ework, int task, int tspace)
   aseq = align->aseq+path->abpos;
   bseq = align->bseq+path->bbpos;
 
+  L = 0;
   if (task != DIFF_ONLY)
     { if (task == DIFF_TRACE || task == PLUS_TRACE)
         L = 2*(((path->aepos + (tspace-1))/tspace - path->abpos/tspace) + 1)*sizeof(uint16);
@@ -4334,13 +4352,13 @@ int Compute_Alignment(Alignment *align, Work_Data *ework, int task, int tspace)
         L = bsub*sizeof(int);
       else
         L = asub*sizeof(int);
-      if (L > work->tramax)
-        if (enlarge_trace(work,L))
+      if (L > work->alnmax)
+        if (enlarge_alnpts(work,L))
           EXIT(1);
     }
 
-  trace  = ((int *) work->trace);
-  strace = ((uint16 *) work->trace);
+  trace  = ((int *) work->alnpts);
+  strace = ((uint16 *) work->alnpts);
 
   if (asub > bsub)
     D = (4*asub+6)*sizeof(int);
