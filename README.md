@@ -2,6 +2,7 @@
 
 ## _Author:  Gene Myers_
 ## _First:   April 10, 2016_
+## _Current: April 19, 2019_
 
 For typeset documentation, examples of use, and design philosophy please go to
 my [blog](https://dazzlerblog.wordpress.com/command-guides/daligner-command-reference-guide).
@@ -303,7 +304,7 @@ gives the maximum # of trace point intervals in any trace within the file.
 
 Pipes (stdin to stdout) that convert an ASCII output produced by LAdump into a compressed
 binary representation (LAa2b) and vice verse (LAb2a).  The idea is to save disk space by
-keeping the dumps in a more compessed format.
+keeping the dumps in a more compressed format.
 
 ```
 7. LAcat [-v] <source:las> ... > <target>.las
