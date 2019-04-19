@@ -42,8 +42,8 @@ descriptions and options for the DALIGNER module commands are as follows:
 
 ```
 1. daligner [-vaAI]
-       [-k<int(14)>] [-w<int(6)>] [-h<int(35)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
-       [-e<double(.70)] [-l<int(1000)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
+       [-k<int(16)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
+       [-e<double(.75)] [-l<int(1500)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
        [-m<track>]+ <subject:db|dam> <target:db|dam> ...
 ```
 
@@ -352,9 +352,9 @@ information, and if it does, then it checks the validity of chains and checks th
 sorting order of chains as a unit according to the -a option.
 
 ```
-10. HPC.daligner [-vbad] [-t<int>] [-w<int(6)>] [-l<int(1000)] [-s<int(100)] [-M<int>]
+10. HPC.daligner [-vad] [-t<int>] [-w<int(6)>] [-l<int(1500)] [-s<int(100)] [-M<int>]
                     [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]
-                  ( [-k<int(14)>] [-h<int(35)>] [-e<double(.70)] [-H<int>]
+                  ( [-k<int(16)>] [-h<int(50)>] [-e<double(.75)] [-H<int>]
                     [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
                     [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]
 ```
