@@ -1,4 +1,4 @@
-
+ /********************************************************************************************
  *
  *  Find all local alignment between long, noisy DNA reads:
  *    Compare sequences in 'subject' database against those in the list of 'target' databases
