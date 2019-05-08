@@ -269,6 +269,7 @@ static DAZZ_TRACK *merge_tracks(DAZZ_DB *block, int mtop, int64 nsize)
   ntrack->data = data = (int *) Malloc(sizeof(int)*nsize,"Allocating merged track");
   ntrack->size = sizeof(int);
   ntrack->next = NULL;
+  ntrack->loaded = 1;
   if (anno == NULL || data == NULL || ntrack->name == NULL)
     Clean_Exit(1);
 
