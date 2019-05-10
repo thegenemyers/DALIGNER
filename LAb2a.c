@@ -10,7 +10,7 @@ int main(int argc, char *argv[])
   int    ab, ae, bb, be;
   int    diffs;
   int    len;
-  unsigned char *tbuffer;
+  unsigned char *tbuffer = NULL;
 
   (void) argv;
 

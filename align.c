@@ -143,6 +143,8 @@ void Free_Work_Data(Work_Data *ework)
     free(work->trace);
   if (work->points != NULL)
     free(work->points);
+  if (work->alnpts != NULL)
+    free(work->alnpts);
   free(work);
 }
 

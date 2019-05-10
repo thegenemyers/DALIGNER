@@ -446,7 +446,7 @@ int main(int argc, char *argv[])
 { DAZZ_DB    _ablock, _bblock;
   DAZZ_DB    *ablock = &_ablock, *bblock = &_bblock;
   char       *afile,  *bfile;
-  char       *apath;
+  char       *apath,  *bpath;
   char       *aroot,  *broot;
   void       *aindex, *bindex;
   int         alen,    blen;
@@ -651,10 +651,11 @@ int main(int argc, char *argv[])
       { parse = Parse_Block_DB_Arg(argv[i]);
 
         while (Advance_Block_Arg(parse))
-          { broot = Strdup(Block_Arg_Root(parse),"Allocating root name");
+          { broot = Block_Arg_Root(parse);
+            bpath = Block_Arg_Path(parse);
 
-            if (strcmp(Block_Arg_Path(parse),apath) != 0 || strcmp(broot,aroot) != 0)
-              { bfile = Strdup(Catenate(Block_Arg_Path(parse),"/",broot,""),"Allocating path");
+            if (strcmp(bpath,apath) != 0 || strcmp(broot,aroot) != 0)
+              { bfile = Strdup(Catenate(bpath,"/",broot,""),"Allocating path");
                 read_DB(bblock,bfile,MASK,MSTAT,MTOP,KMER_LEN);
                 free(bfile);
               }
@@ -662,13 +663,16 @@ int main(int argc, char *argv[])
               { free(broot);
                 broot = aroot;
               }
+            free(bpath);
 
             if (i == 2)
               { for (j = 0; j < MTOP; j++)
                   { if (MSTAT[j] == -2)
-                      printf("%s: Warning: -m%s option given but no track found.\n",Prog_Name,MASK[j]);
+                      printf("%s: Warning: -m%s option given but no track found.\n",
+                              Prog_Name,MASK[j]);
                     else if (MSTAT[j] == -1)
-                      printf("%s: Warning: %s track not sync'd with relevant db.\n",Prog_Name,MASK[j]);
+                      printf("%s: Warning: %s track not sync'd with relevant db.\n",
+                             Prog_Name,MASK[j]);
                     else if (MSTAT[j] == -3)
                       printf("%s: Warning: %s track is not a mask track.\n",Prog_Name,MASK[j]);
                   }
@@ -724,6 +728,7 @@ int main(int argc, char *argv[])
       }
   }
 
+  free(aindex);
   free(apath);
   free(aroot);
   Clean_Exit(0);
