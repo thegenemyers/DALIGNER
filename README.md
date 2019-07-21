@@ -252,8 +252,10 @@ scoring chain and + indicates an alternate near optimal chain (controlled by the
 -n parameter to damapper).  Each additional LA of a chain is marked with a - character.
 
 ```
-5. LAdump [-cdtlo] <src1:db|dam> [ <src2:db|dam> ]
+5a. LAdump [-cdtlo] <src1:db|dam> [ <src2:db|dam> ]
                    <align:las> [ <reads:FILE> | <reads:range> ... ]
+
+5b. dumpLA <align.las>
 ```
 
 Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
@@ -294,8 +296,16 @@ They give size information about what is contained in the output.  Specifically,
 '+ X #' gives the total number of LAs (X=P), or the total number of trace point
 intervals (X=T) in the file .  '% X #' gives the maximum number of LAs (X=P) or
 the maximum number of trace point intervals (X=T) in a given *pile* (collection of
-LAs all with the same a-read (applies only to sorted .las files).  Finally @ T #
+LAs all with the same a-read (applies only to sorted .las files).  A final line: '@ T #',
 gives the maximum # of trace point intervals in any trace within the file.
+After these lines and before the start of the lines describing alignment records is a
+single line of the form 'X #' where the number is the trace point spacing for all
+alignments.
+
+The command dumpLA takes a 1-code file produced by LAdump or by a customized program,
+and if possible producess a .las file for it.  The 1-code file must contain the P-,
+C-, and T-lines as well as the X-line and the header lines beginning with +, %, or @.
+So for example, a 1-code file produced by LAdump with the -c and -t options is invertible.
 
 ```
 6a. LAa2b

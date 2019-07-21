@@ -1,16 +1,21 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "DB.h"
+#include "align.h"
+
 int main(int argc, char *argv[])
 { char   code, which;
-  long long int total;
+  int64  total;
   int    aread, bread;
   char   orient, chain;
   int    alen, blen;
   int    ab, ae, bb, be;
   int    diffs;
   int    len;
-  unsigned char *tbuffer = NULL;
+  int    tspace, small;
+  uint8 *tbuffer = NULL;
+  uint16 *sbuffer;
 
   (void) argv;
 
@@ -26,14 +31,26 @@ int main(int argc, char *argv[])
       { scanf(" %c %lld",&which,&total);
         fwrite(&code,sizeof(char),1,stdout);
         fwrite(&which,sizeof(char),1,stdout);
-        fwrite(&total,sizeof(long long int),1,stdout);
+        fwrite(&total,sizeof(int64),1,stdout);
         if (code == '@')
-          tbuffer = malloc(2*total*sizeof(unsigned char));
+          { tbuffer = (uint8 *) malloc(2*total*sizeof(uint16));
+            sbuffer = (uint16 *) tbuffer;
+          }
       }
     else
       { ungetc(code,stdin);
         break;
       }
+  if (tbuffer != NULL)
+    { if (code != 'X')
+        { fprintf(stderr,"LAa2b: .las dump has traces but no X-line\n");
+          exit (1);
+        }
+      scanf(" X %d",&tspace);
+      small = (tspace <= TRACE_XOVR && tspace != 0);
+      fwrite(&code,sizeof(char),1,stdout);
+      fwrite(&tspace,sizeof(int),1,stdout);
+    }
 
   while (scanf(" %c",&code) == 1)       //  For each data line do
     { fwrite(&code,sizeof(char),1,stdout);
@@ -62,12 +79,23 @@ int main(int argc, char *argv[])
           fwrite(&diffs,sizeof(int),1,stdout);
           break;
         case 'T':                         //  Mask
+          if (tbuffer == NULL)
+            { fprintf(stderr,"LAa2b: .las dump has traces but no @ T-line\n");
+              exit (1);
+            }
           scanf(" %d",&len);
           fwrite(&len,sizeof(int),1,stdout);
           len *= 2;
-          for (int i = 0; i < len; i += 2)
-            scanf(" %hhd %hhd",tbuffer+i,tbuffer+(i+1));
-          fwrite(tbuffer,sizeof(unsigned char),len,stdout);
+          if (small)
+            { for (int i = 0; i < len; i += 2)
+                scanf(" %hhd %hhd",tbuffer+i,tbuffer+(i+1));
+              fwrite(tbuffer,sizeof(uint8),len,stdout);
+            }
+          else
+            { for (int i = 0; i < len; i += 2)
+                scanf(" %hd %hd",sbuffer+i,sbuffer+(i+1));
+              fwrite(sbuffer,sizeof(uint16),len,stdout);
+            }
       }
     }
 

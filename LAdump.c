@@ -386,6 +386,7 @@ int main(int argc, char *argv[])
       { printf("+ T %lld\n",ttot);
         printf("%% T %lld\n",smax);
         printf("@ T %lld\n",tmax);
+        printf("X %d\n",tspace);
       }
   }
 
@@ -491,7 +492,7 @@ int main(int argc, char *argv[])
               Decompress_TraceTo16(ovl);
             printf("T %d\n",tlen>>1);
             for (k = 0; k < tlen; k += 2)
-              printf(" %3d %3d\n",trace[k],trace[k+1]);
+              printf(" %d %d\n",trace[k],trace[k+1]);
           }
       }
 

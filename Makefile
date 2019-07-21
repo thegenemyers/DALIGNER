@@ -2,7 +2,7 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAa2b LAb2a
+ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAa2b LAb2a dumpLA
 
 all: $(ALL)
 
@@ -33,11 +33,14 @@ LAsplit: LAsplit.c align.h DB.c DB.h QV.c QV.h
 LAcheck: LAcheck.c align.c align.h DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o LAcheck LAcheck.c align.c DB.c QV.c -lm
 
-LAa2b: LAa2b.c
-	gcc $(CFLAGS) -o LAa2b LAa2b.c -lm
+LAa2b: LAa2b.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o LAa2b LAa2b.c align.c DB.c QV.c -lm
 
-LAb2a: LAb2a.c
-	gcc $(CFLAGS) -o LAb2a LAb2a.c -lm
+LAb2a: LAb2a.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o LAb2a LAb2a.c align.c DB.c QV.c -lm
+
+dumpLA: dumpLA.c align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o dumpLA dumpLA.c align.c DB.c QV.c -lm
 
 clean:
 	rm -f $(ALL)
