@@ -302,7 +302,8 @@ After these lines and before the start of the lines describing alignment records
 single line of the form 'X #' where the number is the trace point spacing for all
 alignments.
 
-The command dumpLA reads a 1-code file from the standard input and if possible produces a .las file for it.  The 1-code file is any legitimate coding of alignmest as might be produced by LAdump.
+The command dumpLA reads a 1-code file from the standard input and if possible produces a .las
+file for it.  The 1-code file is any legitimate coding of alignments as might be produced by LAdump.
 The 1-code file must contain the P-, C-, and T-lines as well as the X-line and the header lines
 beginning with +, %, or @.  So for example, a 1-code file produced by LAdump with the -c and -t
 options is invertible.
