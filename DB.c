@@ -2076,6 +2076,7 @@ void Close_Track(DAZZ_DB *db, DAZZ_TRACK *track)
   for (record = db->tracks; record != NULL; record = record->next)
     { if (track == record)
         { free(record->anno);
+          free(record->alen);
           if (record->loaded)
             free(record->data);
           else

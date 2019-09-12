@@ -250,10 +250,17 @@ int main(int argc, char *argv[])
   for (c = 2; c < argc; c++)
     { Block_Looper *parse;
       FILE *input;
+      char *root, *path;
 
       parse = Parse_Block_LAS_Arg(argv[c]);
 
-      clen += strlen(Block_Arg_Path(parse)) + strlen(Block_Arg_Root(parse)) + 30;
+      path = Block_Arg_Path(parse);
+      root = Block_Arg_Root(parse);
+
+      clen += strlen(path) + strlen(root) + 30;
+
+      free(root);
+      free(path);
 
       nfile[c] = 0;
       while ((input = Next_Block_Arg(parse)) != NULL)

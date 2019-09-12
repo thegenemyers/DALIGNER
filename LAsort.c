@@ -156,8 +156,12 @@ int main(int argc, char *argv[])
 
           { int64  size;
             struct stat info;
+            char  *root, *path;
 
-            stat(Catenate(Block_Arg_Path(parse),"/",Block_Arg_Root(parse),".las"),&info);
+            path = Block_Arg_Path(parse);
+            root = Block_Arg_Root(parse);
+
+            stat(Catenate(path,"/",root,".las"),&info);
             size = info.st_size;
 
             if (fread(&novl,sizeof(int64),1,input) != 1)
@@ -171,7 +175,7 @@ int main(int argc, char *argv[])
               tbytes = sizeof(uint16);
 
             if (VERBOSE)
-              { printf("  %s: ",Block_Arg_Root(parse));
+              { printf("  %s: ",root);
                 Print_Number(novl,0,stdout);
                 printf(" records ");
                 Print_Number(size-novl*ovlsize,0,stdout);
@@ -179,7 +183,7 @@ int main(int argc, char *argv[])
                 fflush(stdout);
               }
 
-            foutput = Fopen(Catenate(Block_Arg_Path(parse),"/",Block_Arg_Root(parse),".S.las"),"w");
+            foutput = Fopen(Catenate(path,"/",root,".S.las"),"w");
             if (foutput == NULL)
               exit (1);
 
@@ -205,6 +209,9 @@ int main(int argc, char *argv[])
               }
             fclose(input);
             iend = iblock + (size - ptrsize);
+
+            free(root);
+            free(path);
           }
     
           //  Set up unsorted permutation array

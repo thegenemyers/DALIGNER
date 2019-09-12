@@ -352,18 +352,18 @@ static int read_DB(DAZZ_DB *block, char *name, char **mask, int *mstat, int mtop
   for (i = 0; i < mtop; i++)
     { status = Check_Track(block,mask[i],&kind);
       if (status >= 0)
-        if (kind == MASK_TRACK)
-          mstat[i] = 0;
-        else
-          { if (mstat[i] != 0)
-              mstat[i] = -3;
-          }
-      else
-        { if (mstat[i] == -2)
-            mstat[i] = status;
+        { if (kind != MASK_TRACK)
+            { fprintf(stderr,"%s: Warning: %s track is not a mask track.\n",Prog_Name,mask[i]);
+              exit (1);
+            }
+          if (status == 0)
+            Open_Track(block,mask[i]);
+          mstat[i] = 1;
         }
-      if (status == 0 && kind == MASK_TRACK)
-        Open_Track(block,mask[i]);
+      else if (status == -1)
+        { printf("%s: Warning: %s track not sync'd with db %s, ignored.\n",
+                      Prog_Name,mask[i],name);
+        }
     }
 
   Trim_DB(block);
@@ -375,8 +375,9 @@ static int read_DB(DAZZ_DB *block, char *name, char **mask, int *mstat, int mtop
       int         j;
 
       status = Check_Track(block,mask[i],&kind);
-      if (status < 0 || kind != MASK_TRACK)
+      if (status < 0)
         continue;
+
       stop += 1;
       track = Open_Track(block,mask[i]);
       Load_All_Track_Data(track);
@@ -402,8 +403,8 @@ static int read_DB(DAZZ_DB *block, char *name, char **mask, int *mstat, int mtop
   if (block->cutoff < kmer)
     { for (i = 0; i < block->nreads; i++)
         if (block->reads[i].rlen < kmer)
-          { fprintf(stderr,"%s: Block %s contains reads < %dbp long !  Run DBsplit.\n",
-                           Prog_Name,name,kmer);
+          { fprintf(stderr,"%s: Block %s contains reads < %dbp long !  Run DBsplit -x%d\n",
+                           Prog_Name,name,kmer,kmer);
             Clean_Exit(1);
           }
     }
@@ -496,7 +497,7 @@ int main(int argc, char *argv[])
     if (MASK == NULL || MSTAT == NULL)
       exit (1);
 
-    j    = 1;
+    j  = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
@@ -603,9 +604,6 @@ int main(int argc, char *argv[])
         fprintf(stderr,"      -I: Compare reads to themselves\n");
         exit (1);
       }
-
-    for (j = 0; j < MTOP; j++)
-      MSTAT[j] = -2;
   }
 
   MINOVER *= 2;
@@ -637,6 +635,10 @@ int main(int argc, char *argv[])
     aroot = Root(afile,".db");
   apath = PathTo(afile);
 
+  if (VERBOSE)
+    printf("\nBuilding index for %s\n",aroot);
+  aindex = Sort_Kmers(ablock,&alen);
+
   asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq, 1);
 
   // Compare against reads in B in both orientations
@@ -645,8 +647,9 @@ int main(int argc, char *argv[])
     Block_Looper *parse;
     char         *command;
 
-    aindex = NULL;
-    broot  = NULL;
+    for (j = 0; j < MTOP; j++)
+      MSTAT[j] = 0;
+
     for (i = 2; i < argc; i++)
       { parse = Parse_Block_DB_Arg(argv[i]);
 
@@ -654,36 +657,12 @@ int main(int argc, char *argv[])
           { broot = Block_Arg_Root(parse);
             bpath = Block_Arg_Path(parse);
 
-            if (strcmp(bpath,apath) != 0 || strcmp(broot,aroot) != 0)
+            if (strcmp(broot,aroot) != 0 || strcmp(bpath,apath) != 0)
               { bfile = Strdup(Catenate(bpath,"/",broot,""),"Allocating path");
                 read_DB(bblock,bfile,MASK,MSTAT,MTOP,KMER_LEN);
                 free(bfile);
-              }
-            else
-              { free(broot);
-                broot = aroot;
-              }
-            free(bpath);
 
-            if (i == 2)
-              { for (j = 0; j < MTOP; j++)
-                  { if (MSTAT[j] == -2)
-                      printf("%s: Warning: -m%s option given but no track found.\n",
-                              Prog_Name,MASK[j]);
-                    else if (MSTAT[j] == -1)
-                      printf("%s: Warning: %s track not sync'd with relevant db.\n",
-                             Prog_Name,MASK[j]);
-                    else if (MSTAT[j] == -3)
-                      printf("%s: Warning: %s track is not a mask track.\n",Prog_Name,MASK[j]);
-                  }
-  
                 if (VERBOSE)
-                  printf("\nBuilding index for %s\n",aroot);
-                aindex = Sort_Kmers(ablock,&alen);
-              }
-  
-            if (aroot != broot)
-              { if (VERBOSE)
                   printf("\nBuilding index for %s\n",broot);
                 bindex = Sort_Kmers(bblock,&blen);
                 Match_Filter(aroot,ablock,broot,bblock,aindex,alen,bindex,blen,asettings);
@@ -691,7 +670,6 @@ int main(int argc, char *argv[])
               }
             else
               Match_Filter(aroot,ablock,aroot,ablock,aindex,alen,aindex,alen,asettings);
-            command = CommandBuffer(aroot,broot,SORT_PATH);
 
 #define SYSTEM_CHECK(command)						\
  if (VERBOSE)								\
@@ -702,6 +680,8 @@ int main(int argc, char *argv[])
      Clean_Exit(1);							\
    }
 
+            command = CommandBuffer(aroot,broot,SORT_PATH);
+
             sprintf(command,"LAsort %s %s %s/%s.%s.N%c",VERBOSE?"-v":"",
                             MAP_ORDER?"-a":"",SORT_PATH,aroot,broot,BLOCK_SYMBOL);
             SYSTEM_CHECK(command)
@@ -710,26 +690,35 @@ int main(int argc, char *argv[])
                             MAP_ORDER?"-a":"",aroot,broot,SORT_PATH,aroot,broot,BLOCK_SYMBOL);
             SYSTEM_CHECK(command)
 
-            if (aroot != broot && SYMMETRIC)
-              { sprintf(command,"LAsort %s %s %s/%s.%s.N%c",VERBOSE?"-v":"",
+            if (strcmp(broot,aroot) != 0 || strcmp(bpath,apath) != 0)
+              { if (SYMMETRIC)
+                  { sprintf(command,"LAsort %s %s %s/%s.%s.N%c",VERBOSE?"-v":"",
                                 MAP_ORDER?"-a":"",SORT_PATH,broot,aroot,BLOCK_SYMBOL);
-                SYSTEM_CHECK(command)
+                    SYSTEM_CHECK(command)
 
-                sprintf(command,"LAmerge %s %s %s.%s.las %s/%s.%s.N%c.S",VERBOSE?"-v":"",
-                                MAP_ORDER?"-a":"",broot,aroot,SORT_PATH,broot,aroot,BLOCK_SYMBOL);
-                SYSTEM_CHECK(command)
+                    sprintf(command,"LAmerge %s %s %s.%s.las %s/%s.%s.N%c.S",VERBOSE?"-v":"",
+                                 MAP_ORDER?"-a":"",broot,aroot,SORT_PATH,broot,aroot,BLOCK_SYMBOL);
+                    SYSTEM_CHECK(command)
+                  }
               }
 
-            if (aroot != broot)
-              free(broot);
+            free(bpath);
+            free(broot);
           }
 
         Free_Block_Arg(parse);
       }
+
+    for (j = 0; j < MTOP; j++)
+      if (MSTAT[j] == 0)
+        printf("%s: Warning: Track %s given but never used.\n", Prog_Name,MASK[j]);
   }
 
   free(aindex);
+  Close_DB(ablock);
   free(apath);
   free(aroot);
   Clean_Exit(0);
+
+  exit (0);
 }

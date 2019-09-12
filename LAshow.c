@@ -542,16 +542,9 @@ int main(int argc, char *argv[])
           printf("  ~  %5.2f%% ",(200.*ovl->path.diffs) /
                  ((ovl->path.aepos - ovl->path.abpos) + (ovl->path.bepos - ovl->path.bbpos)) );
         printf("  (");
-        if (FLIP)
-          { Print_Number(aln->blen,bi_wide,stdout);
-            printf(" x ");
-            Print_Number(aln->alen,ai_wide,stdout);
-          }
-        else
-          { Print_Number(aln->alen,ai_wide,stdout);
-            printf(" x ");
-            Print_Number(aln->blen,bi_wide,stdout);
-          }
+        Print_Number(aln->alen,ai_wide,stdout);
+        printf(" x ");
+        Print_Number(aln->blen,bi_wide,stdout);
         printf(" bps,");
         if (CARTOON)
           { Print_Number(tps,tp_wide,stdout);

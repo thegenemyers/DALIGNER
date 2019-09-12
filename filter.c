@@ -82,6 +82,8 @@
 #define MAX_CODE_64  0xffffffffffffffffllu
 
 #define SIGN_BIT     0x1u
+#define LONG_BIT     0x80000000u
+#define POST_MASK    0x7fffffffu
 
 #define MAXGRAM 10000  //  Cap on k-mer count histogram (in count_thread, merge_thread)
 
@@ -111,7 +113,7 @@ typedef struct
  ********************************************************************************************/
 
 static int    Kmer;
-static int    Koff;           //  Kmer-2
+static int    Koff;           //  Kmer + 1;
 static int    Kshift;         //  2*Kmer
 static uint64 Kmask;          //  2^Kshift - 1
 
@@ -134,7 +136,7 @@ void Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nth
     }
 
   Kmer     = kmer;
-  Koff     = kmer-2;
+  Koff     = kmer+1;
   Binshift = binshift;
   Suppress = suppress;
   Hitmin   = hitmin;
@@ -472,7 +474,7 @@ static void *tuple_thread(void *arg)
                   w  = 0;
 #endif
                   while (p < q)
-                    { x = s[p];
+                    { x = s[p++];
 
                       d = (c & HFmask);
                       c = ((c << 2) | x) & Kmask;
@@ -503,7 +505,7 @@ static void *tuple_thread(void *arg)
                         { if (v % MODULUS < MODTHR)
                             { list[idx].code = v;
                               list[idx].read = r | SIGN_BIT;
-                              list[idx].rpos = p;
+                              list[idx].rpos = p | LONG_BIT;
                               idx += 1;
                             }
                         }
@@ -511,7 +513,7 @@ static void *tuple_thread(void *arg)
                         { if (d % MODULUS < MODTHR)
                             { list[idx].code = d;
                               list[idx].read = r;
-                              list[idx].rpos = p;
+                              list[idx].rpos = p | LONG_BIT;
                               idx += 1;
                             }
                         }
@@ -567,14 +569,14 @@ static void *tuple_thread(void *arg)
                               m2 = x;
                           list[idx].read = r | sgn2[m2];
                           list[idx].code = min2[m2];
-                          list[idx].rpos = pos[m2];
+                          list[idx].rpos = pos[m2] | LONG_BIT;
                           idx += 1;
                         }
                       else if (min2[w] < min2[m2])
                         { m2 = w;
                           list[idx].read = r | sgn2[m2];
                           list[idx].code = min2[m2];
-                          list[idx].rpos = pos[m2];
+                          list[idx].rpos = pos[m2] | LONG_BIT;
                           idx += 1;
                         }
 
@@ -582,7 +584,6 @@ static void *tuple_thread(void *arg)
                       if (w == WINDOW)
                         w = 0;
 #endif
-                      p += 1;
                     }
                 }
             }
@@ -605,8 +606,8 @@ static void *tuple_thread(void *arg)
         ny = 1;
         w  = 0;
 #endif
-        for (p = km1; p < q; p++)
-          { x = s[p];
+        while (p < q)
+          { x = s[p++];
 
             d = (c & HFmask);
             c = ((c << 2) | x) & Kmask;
@@ -638,7 +639,7 @@ static void *tuple_thread(void *arg)
               { if (v % MODULUS < MODTHR)
                   { list[idx].code = v;
                     list[idx].read = r | SIGN_BIT;
-                    list[idx].rpos = p;
+                    list[idx].rpos = p | LONG_BIT;
                     idx += 1;
                   }
               }
@@ -646,7 +647,7 @@ static void *tuple_thread(void *arg)
               { if (d % MODULUS < MODTHR)
                   { list[idx].code = d;
                     list[idx].read = r;
-                    list[idx].rpos = p;
+                    list[idx].rpos = p | LONG_BIT;
                     idx += 1;
                   }
               }
@@ -702,14 +703,14 @@ static void *tuple_thread(void *arg)
                     m2 = x;
                 list[idx].read = r | sgn2[m2];
                 list[idx].code = min2[m2];
-                list[idx].rpos = pos[m2];
+                list[idx].rpos = pos[m2] | LONG_BIT;
                 idx += 1;
               }
             else if (min2[w] < min2[m2])
               { m2 = w;
                 list[idx].read = r | sgn2[m2];
                 list[idx].code = min2[m2];
-                list[idx].rpos = pos[m2];
+                list[idx].rpos = pos[m2] | LONG_BIT;
                 idx += 1;
               }
 
@@ -946,7 +947,8 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
     printf("\nKMER SORT:\n");
     for (i = 0 /*100000000*/; i < 100000000+HOW_MANY && i < kmers; i++)
       { KmerPos *c = rez+i;
-        printf(" %9d:  %6d%c / %6d / %016llx\n",i,c->read>>1,(c->read&0x1)?'c':'n',c->rpos,c->code);
+        printf(" %9d:  %6d%c / %6d / %016llx\n",i,c->read>>1,
+                                               (c->read&0x1)?'c':'n',(c->rpos & POST_MASK),c->code);
       }
     fflush(stdout);
   }
@@ -1223,16 +1225,21 @@ static void *merge_thread(void *arg)
               { ar = asort[ka].read;
                 as = (ar & SIGN_BIT);
                 ar >>= 1;
-                ap = asort[ka].rpos;
+                ap = (asort[ka].rpos & POST_MASK);
                 for (a = ja; a < ka; a++)
                   { br = asort[a].read;
                     bs = (br & SIGN_BIT);
                     br >>= 1;
                     bp = asort[a].rpos;
                     if (bs == as)
-                      hits[nhits].aread = ar;
+                      { bp = (bp & POST_MASK);
+                        hits[nhits].aread = ar;
+                      }
                     else
-                      { bp = (reads[br].rlen - bp) + Koff;
+                      { if ((bp & LONG_BIT) != 0)
+                          bp = (reads[br].rlen - (bp & POST_MASK)) + Koff;
+                        else
+                          bp = (reads[br].rlen - (bp & POST_MASK)) + Kmer;
                         hits[nhits].aread = ar + nread;
                       }
                     hits[nhits].bread = br;
@@ -1246,7 +1253,7 @@ static void *merge_thread(void *arg)
               { ar = asort[ka].read;
                 as = (ar & SIGN_BIT);
                 ar >>= 1;
-                ap = asort[ka].rpos;
+                ap = (asort[ka].rpos & POST_MASK);
                 for (a = ja; a < ka; a++)
                   { br = asort[a].read;
                     bs = (br & SIGN_BIT);
@@ -1255,9 +1262,14 @@ static void *merge_thread(void *arg)
                       break;
                     bp = asort[a].rpos;
                     if (bs == as)
-                      hits[nhits].aread = ar;
+                      { bp = (bp & POST_MASK);
+                        hits[nhits].aread = ar;
+                      }
                     else
-                      { bp = (reads[br].rlen - bp) + Koff;
+                      { if ((bp & LONG_BIT) != 0)
+                          bp = (reads[br].rlen - (bp & POST_MASK)) + Koff;
+                        else
+                          bp = (reads[br].rlen - (bp & POST_MASK)) + Kmer;
                         hits[nhits].aread = ar + nread;
                       }
                     hits[nhits].bread = br;
@@ -1319,16 +1331,21 @@ static void *merge_thread(void *arg)
             { ar = asort[a].read;
               as = (ar & SIGN_BIT);
               ar >>= 1;
-              ap = asort[a].rpos;
+              ap = (asort[a].rpos & POST_MASK);
               for (b = jb; b < ib; b++)
                 { br = bsort[b].read;
                   bs = (br & SIGN_BIT);
                   br >>= 1;
                   bp = bsort[b].rpos;
                   if (bs == as)
-                    hits[nhits].aread = ar;
+                    { bp = (bp & POST_MASK);
+                      hits[nhits].aread = ar;
+                    }
                   else
-                    { bp = (reads[br].rlen - bp) + Koff;
+                    { if ((bp & LONG_BIT) != 0)
+                        bp = (reads[br].rlen - (bp & POST_MASK)) + Koff;
+                      else
+                        bp = (reads[br].rlen - (bp & POST_MASK)) + Kmer;
                       hits[nhits].aread = ar + nread;
                     }
                   hits[nhits].bread = br;
@@ -2605,7 +2622,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
     MG_blist  = bsort;
     MG_ablock = ablock;
     MG_bblock = bblock;
-    MG_self   = (aname == bname);
+    MG_self   = (ablock == bblock);
 
     parmm[0].abeg = parmm[0].bbeg = 0;
     for (i = 1; i < NTHREADS; i++)
