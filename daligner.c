@@ -353,7 +353,7 @@ static int read_DB(DAZZ_DB *block, char *name, char **mask, int *mstat, int mtop
     { status = Check_Track(block,mask[i],&kind);
       if (status >= 0)
         { if (kind != MASK_TRACK)
-            { fprintf(stderr,"%s: Warning: %s track is not a mask track.\n",Prog_Name,mask[i]);
+            { fprintf(stderr,"%s: %s track is not a mask track.\n",Prog_Name,mask[i]);
               exit (1);
             }
           if (status == 0)
