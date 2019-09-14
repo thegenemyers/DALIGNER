@@ -24,7 +24,7 @@
 #include <pthread.h>
 
 #include "DB.h"
-#include "radix.h"
+#include "lsd.sort.h"
 #include "filter.h"
 #include "align.h"
 
@@ -428,6 +428,7 @@ static void *tuple_thread(void *arg)
   int       i, p, q, x, r;
   uint64    c, u;
   uint64    d, v;
+  uint32    lbit;
   char     *s;
 
 #ifndef MODIFER
@@ -473,6 +474,8 @@ static void *tuple_thread(void *arg)
                   ny = 1;
                   w  = 0;
 #endif
+
+                  lbit = 0;
                   while (p < q)
                     { x = s[p++];
 
@@ -505,7 +508,7 @@ static void *tuple_thread(void *arg)
                         { if (v % MODULUS < MODTHR)
                             { list[idx].code = v;
                               list[idx].read = r | SIGN_BIT;
-                              list[idx].rpos = p | LONG_BIT;
+                              list[idx].rpos = p | lbit;
                               idx += 1;
                             }
                         }
@@ -513,7 +516,7 @@ static void *tuple_thread(void *arg)
                         { if (d % MODULUS < MODTHR)
                             { list[idx].code = d;
                               list[idx].read = r;
-                              list[idx].rpos = p | LONG_BIT;
+                              list[idx].rpos = p | lbit;
                               idx += 1;
                             }
                         }
@@ -569,14 +572,14 @@ static void *tuple_thread(void *arg)
                               m2 = x;
                           list[idx].read = r | sgn2[m2];
                           list[idx].code = min2[m2];
-                          list[idx].rpos = pos[m2] | LONG_BIT;
+                          list[idx].rpos = pos[m2] | lbit;
                           idx += 1;
                         }
                       else if (min2[w] < min2[m2])
                         { m2 = w;
                           list[idx].read = r | sgn2[m2];
                           list[idx].code = min2[m2];
-                          list[idx].rpos = pos[m2] | LONG_BIT;
+                          list[idx].rpos = pos[m2] | lbit;
                           idx += 1;
                         }
 
@@ -584,6 +587,7 @@ static void *tuple_thread(void *arg)
                       if (w == WINDOW)
                         w = 0;
 #endif
+                      lbit = LONG_BIT;
                     }
                 }
             }
@@ -606,6 +610,7 @@ static void *tuple_thread(void *arg)
         ny = 1;
         w  = 0;
 #endif
+        lbit = 0;
         while (p < q)
           { x = s[p++];
 
@@ -639,7 +644,7 @@ static void *tuple_thread(void *arg)
               { if (v % MODULUS < MODTHR)
                   { list[idx].code = v;
                     list[idx].read = r | SIGN_BIT;
-                    list[idx].rpos = p | LONG_BIT;
+                    list[idx].rpos = p | lbit;
                     idx += 1;
                   }
               }
@@ -647,7 +652,7 @@ static void *tuple_thread(void *arg)
               { if (d % MODULUS < MODTHR)
                   { list[idx].code = d;
                     list[idx].read = r;
-                    list[idx].rpos = p | LONG_BIT;
+                    list[idx].rpos = p | lbit;
                     idx += 1;
                   }
               }
@@ -703,14 +708,14 @@ static void *tuple_thread(void *arg)
                     m2 = x;
                 list[idx].read = r | sgn2[m2];
                 list[idx].code = min2[m2];
-                list[idx].rpos = pos[m2] | LONG_BIT;
+                list[idx].rpos = pos[m2] | lbit;
                 idx += 1;
               }
             else if (min2[w] < min2[m2])
               { m2 = w;
                 list[idx].read = r | sgn2[m2];
                 list[idx].code = min2[m2];
-                list[idx].rpos = pos[m2] | LONG_BIT;
+                list[idx].rpos = pos[m2] | lbit;
                 idx += 1;
               }
 
@@ -718,6 +723,7 @@ static void *tuple_thread(void *arg)
             if (w == WINDOW)
               w = 0;
 #endif
+            lbit = LONG_BIT;
           }
         s += (q+1);
       }
@@ -879,7 +885,7 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
 #endif
     mersort[i] = -1;
 
-    rez = (KmerPos *) Radix_Sort(kmers,src,trg,mersort);
+    rez = (KmerPos *) LSD_Sort(kmers,src,trg,16,16,mersort);
   }
 
   //  Compress frequent tuples if requested
@@ -2814,7 +2820,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
 #endif
     pairsort[j+i] = -1;
 
-    khit = (SeedPair *) Radix_Sort(nhits,khit,hhit,pairsort);
+    khit = (SeedPair *) LSD_Sort(nhits,khit,hhit,16,16,pairsort);
 
     khit[nhits].aread = 0x7fffffff;
     khit[nhits].bread = 0x7fffffff;

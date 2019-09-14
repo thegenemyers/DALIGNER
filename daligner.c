@@ -47,7 +47,7 @@
 #endif
 
 #include "DB.h"
-#include "radix.h"
+#include "lsd.sort.h"
 #include "filter.h"
 
 static char *Usage[] =

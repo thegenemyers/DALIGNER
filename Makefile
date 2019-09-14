@@ -6,8 +6,8 @@ ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck L
 
 all: $(ALL)
 
-daligner: daligner.c filter.c filter.h radix.c radix.h align.c align.h DB.c DB.h QV.c QV.h
-	gcc $(CFLAGS) -o daligner -DWORD_SIZE=16  daligner.c filter.c radix.c align.c DB.c QV.c -lpthread -lm
+daligner: daligner.c filter.c filter.h lsd.sort.c lsd.sort.h align.c align.h DB.c DB.h QV.c QV.h
+	gcc $(CFLAGS) -o daligner daligner.c filter.c lsd.sort.c align.c DB.c QV.c -lpthread -lm
 
 HPC.daligner: HPC.daligner.c DB.c DB.h QV.c QV.h
 	gcc $(CFLAGS) -o HPC.daligner HPC.daligner.c DB.c QV.c -lm
