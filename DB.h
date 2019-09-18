@@ -300,8 +300,8 @@ typedef struct
 //                                    contains the variable length data
 //    data != NULL && size == 8: anno is an array of nreads+1 int64's and data[anno[i]..anno[i+1])
 //                                    contains the variable length data
-//    if open is set then the data is not loaded if present, rather data is an open file pointer
-//        set for reading.
+//    if loaded is not set then the data is not loaded if present, rather data is an open file
+//        pointer set for reading.
 
 typedef struct _track
   { struct _track *next;   //  Link to next track

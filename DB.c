@@ -770,6 +770,7 @@ void Trim_DB(DAZZ_DB *db)
                 { memmove(anno+j,anno+r,size);
                   j += size;
                 }
+            record->anno = Realloc(record->anno,record->size*j,NULL);
           }
         else if (size == 4)
           { int *anno4 = (int *) (record->anno);
@@ -783,6 +784,7 @@ void Trim_DB(DAZZ_DB *db)
                   j += 1;
                 }
             record->alen = Realloc(record->alen,sizeof(int)*j,NULL);
+            record->anno = Realloc(record->anno,record->size*(j+1),NULL);
           }
         else // size == 8
           { int64 *anno8 = (int64 *) (record->anno);
@@ -796,8 +798,8 @@ void Trim_DB(DAZZ_DB *db)
                   j += 1;
                 }
             record->alen = Realloc(record->alen,sizeof(int)*j,NULL);
+            record->anno = Realloc(record->anno,record->size*(j+1),NULL);
           }
-        record->anno = Realloc(record->anno,record->size*(j+1),NULL);
         record->nreads = j;
       }
 
@@ -1538,7 +1540,7 @@ static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
               }
             r += size;
           }
-        memmove(anno+j,anno+r,size);
+        track->anno = Realloc(track->anno,track->size*j,NULL);
       }
     else if (size == 4)
       { int *anno4 = (int *) (track->anno);
@@ -1558,6 +1560,8 @@ static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
               }
           }
         track->data = Realloc(track->data,anno4[j],NULL);
+        track->alen = Realloc(track->alen,sizeof(int)*j,NULL);
+        track->anno = Realloc(track->anno,track->size*(j+1),NULL);
       }
     else // size == 8
       { int64 *anno8 = (int64 *) (track->anno);
@@ -1577,8 +1581,9 @@ static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
               }
           }
         track->data = Realloc(track->data,anno8[j],NULL);
+        track->alen = Realloc(track->alen,sizeof(int)*j,NULL);
+        track->anno = Realloc(track->anno,track->size*(j+1),NULL);
       }
-    track->anno = Realloc(track->anno,track->size*(j+1),NULL);
   }
 
   fclose(indx);
@@ -2076,11 +2081,13 @@ void Close_Track(DAZZ_DB *db, DAZZ_TRACK *track)
   for (record = db->tracks; record != NULL; record = record->next)
     { if (track == record)
         { free(record->anno);
-          free(record->alen);
-          if (record->loaded)
-            free(record->data);
-          else
-            fclose((FILE *) record->data);
+          if (track->data != NULL)
+            { free(record->alen);
+              if (record->loaded)
+                free(record->data);
+              else
+                fclose((FILE *) record->data);
+            }
           free(record->name);
           if (prev == NULL)
             db->tracks = record->next;

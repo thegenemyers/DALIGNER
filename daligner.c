@@ -259,6 +259,7 @@ static DAZZ_TRACK *merge_tracks(DAZZ_DB *block, int mtop, int64 nsize)
   Event      *heap[mtop+2];
   int         r, mhalf;
   int64      *anno;
+  int        *alen;
   int        *data;
 
   ntrack = (DAZZ_TRACK *) Malloc(sizeof(DAZZ_TRACK),"Allocating merged track");
@@ -266,11 +267,12 @@ static DAZZ_TRACK *merge_tracks(DAZZ_DB *block, int mtop, int64 nsize)
     Clean_Exit(1);
   ntrack->name = Strdup("merge","Allocating merged track");
   ntrack->anno = anno = (int64 *) Malloc(sizeof(int64)*(block->nreads+1),"Allocating merged track");
+  ntrack->alen = alen = (int *) Malloc(sizeof(int)*block->nreads,"Allocating merged track");
   ntrack->data = data = (int *) Malloc(sizeof(int)*nsize,"Allocating merged track");
   ntrack->size = sizeof(int);
   ntrack->next = NULL;
   ntrack->loaded = 1;
-  if (anno == NULL || data == NULL || ntrack->name == NULL)
+  if (anno == NULL || alen == NULL || data == NULL || ntrack->name == NULL)
     Clean_Exit(1);
 
   { DAZZ_TRACK *track;
@@ -336,6 +338,7 @@ static DAZZ_TRACK *merge_tracks(DAZZ_DB *block, int mtop, int64 nsize)
           else
             p->idx = *(p->ano);
         }
+      alen[r] = (int) (nsize - anno[r]);
     }
   anno[r] = nsize;
 
