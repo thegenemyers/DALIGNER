@@ -32,11 +32,10 @@ static int    DSIZE;    //  Size of record
 static int    NTHREADS;       //  # of threads to use
 static int    VERBOSE;        //  Print each byte as it is sorted
 
-void Set_Radix_Params(int nthread, int verbose)
+void Set_LSD_Params(int nthread, int verbose)
 { NTHREADS = nthread;
   VERBOSE  = verbose;
 }
-
 
 //  Global variables for every "lex_thread"
 
@@ -266,12 +265,4 @@ void *LSD_Sort(int64 nelem, void *src, void *trg, int rsize, int dsize, int *byt
     }
 
   return ((void *) LEX_src);
-}
-
-void *Radix_Sort(int64 nelem, void *src, void *trg, int *bytes)
-{ (void) nelem;
-  (void) src;
-  (void) trg;
-  (void) bytes;
-  return (NULL);
 }

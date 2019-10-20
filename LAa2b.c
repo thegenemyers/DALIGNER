@@ -5,17 +5,17 @@
 #include "align.h"
 
 int main(int argc, char *argv[])
-{ char   code, which;
-  int64  total;
-  int    aread, bread;
-  char   orient, chain;
-  int    alen, blen;
-  int    ab, ae, bb, be;
-  int    diffs;
-  int    len;
-  int    tspace, small;
-  uint8 *tbuffer = NULL;
-  uint16 *sbuffer;
+{ char    code, which;
+  int64   total;
+  int     aread, bread;
+  char    orient, chain;
+  int     alen, blen;
+  int     ab, ae, bb, be;
+  int     diffs;
+  int     len;
+  int     tspace, small;
+  uint8  *tbuffer = NULL;
+  uint16 *sbuffer = NULL;
 
   (void) argv;
 
@@ -41,6 +41,7 @@ int main(int argc, char *argv[])
       { ungetc(code,stdin);
         break;
       }
+  small = 0;
   if (tbuffer != NULL)
     { if (code != 'X')
         { fprintf(stderr,"LAa2b: .las dump has traces but no X-line\n");

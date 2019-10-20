@@ -1,5 +1,8 @@
 DEST_DIR = ~/bin
 
+# CFLAGS = -O0 -g -Wall -Wextra -Wno-unused-result -fno-strict-aliasing -fsanitize=address -fsanitize=undefined
+# Above is for debug out of bound addresses, must compile with -lASAN -lUBSAN if gcc instead of clang
+
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
 ALL = daligner HPC.daligner LAsort LAmerge LAsplit LAcat LAshow LAdump LAcheck LAa2b LAb2a dumpLA

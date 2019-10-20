@@ -555,6 +555,7 @@ int main(int argc, char *argv[])
                 if (MASK == NULL || MSTAT == NULL)
                   exit (1);
               }
+            MASK[MTOP]   = 0;
             MASK[MTOP++] = argv[i]+2;
             break;
           case 'P':
@@ -611,7 +612,7 @@ int main(int argc, char *argv[])
 
   MINOVER *= 2;
   Set_Filter_Params(KMER_LEN,BIN_SHIFT,MAX_REPS,HIT_MIN,NTHREADS);
-  Set_Radix_Params(NTHREADS,VERBOSE);
+  Set_LSD_Params(NTHREADS,VERBOSE);
 
   // Create directory in SORT_PATH for file operations
 
@@ -638,20 +639,17 @@ int main(int argc, char *argv[])
     aroot = Root(afile,".db");
   apath = PathTo(afile);
 
+  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq, 1);
+
   if (VERBOSE)
     printf("\nBuilding index for %s\n",aroot);
   aindex = Sort_Kmers(ablock,&alen);
-
-  asettings = New_Align_Spec( AVE_ERROR, SPACING, ablock->freq, 1);
 
   // Compare against reads in B in both orientations
 
   { int           i, j;
     Block_Looper *parse;
     char         *command;
-
-    for (j = 0; j < MTOP; j++)
-      MSTAT[j] = 0;
 
     for (i = 2; i < argc; i++)
       { parse = Parse_Block_DB_Arg(argv[i]);
@@ -696,7 +694,7 @@ int main(int argc, char *argv[])
             if (strcmp(broot,aroot) != 0 || strcmp(bpath,apath) != 0)
               { if (SYMMETRIC)
                   { sprintf(command,"LAsort %s %s %s/%s.%s.N%c",VERBOSE?"-v":"",
-                                MAP_ORDER?"-a":"",SORT_PATH,broot,aroot,BLOCK_SYMBOL);
+                                 MAP_ORDER?"-a":"",SORT_PATH,broot,aroot,BLOCK_SYMBOL);
                     SYSTEM_CHECK(command)
 
                     sprintf(command,"LAmerge %s %s %s.%s.las %s/%s.%s.N%c.S",VERBOSE?"-v":"",

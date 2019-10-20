@@ -1135,10 +1135,6 @@ int main(int argc, char *argv[])
         HINT = 50;
     }
 
-  for (j = 1; 2*j <= NTHREADS; j *= 2)
-    ;
-  NTHREADS = j;
-
   if (mapper)
     mapper_script(argc,argv);
   else

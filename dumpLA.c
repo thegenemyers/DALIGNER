@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
   int     len;
   int     tspace, small, tbytes;
   uint8  *tbuffer = NULL;
-  uint16 *sbuffer;
+  uint16 *sbuffer = NULL;
   int     hasNext, haveC, haveT, haveD;
   int     i;
   int64   novls;
@@ -40,6 +40,8 @@ int main(int argc, char *argv[])
   free(root);
   free(pwd);
 
+  small   = 0;
+  tbytes  = 2;
   hasNext = 0;
   while (scanf(" %c",&code) == 1)       //  Header lines
     if (code == '@' || code == '+' || code == '%')
@@ -60,11 +62,11 @@ int main(int argc, char *argv[])
           }
         scanf(" %d",&tspace);
         if (tspace <= TRACE_XOVR && tspace != 0)
-          { small = 1;
+          { small  = 1;
             tbytes = 1;
           }
         else
-          { small = 0;
+          { small  = 0;
             tbytes = 2;
           }
         if (scanf(" %c",&code) == 1)

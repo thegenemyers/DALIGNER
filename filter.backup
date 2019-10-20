@@ -1558,7 +1558,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
   int   j, k, no;
   int   dist;
   int   awhen = 0, bwhen = 0;
-  int   has2, bonly, comp;
+  int   hasB, comp;
 
 #if defined(TEST_CONTAIN) || defined(TEST_BRIDGE)
   for (j = 0; j < novls; j++)
@@ -1573,19 +1573,16 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
   apath = align->path;
   comp  = COMP(align->flags);
 
-  if (novls < 0)
-    { bonly = 1;
-      novls = -novls;
-    }
-  else
-    bonly = 0;
-  has2 = (bmatch != NULL);
-
-  if (has2 || bonly)
+  hasB = (bmatch != NULL);
+  if (hasB)
     { blign->aseq = align->bseq;
       blign->bseq = align->aseq;
       blign->alen = align->blen;
       blign->blen = align->alen;
+      if (comp)
+        blign->flags = ACOMP_FLAG;
+      else
+        blign->flags = ACOMP_FLAG;
       blign->path = bpath;
     }
 
@@ -1605,7 +1602,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                 { dist = Entwine(jpath,kpath,tbuf,&awhen);
                   if (dist == 0)
                     { if (kpath->aepos > jpath->aepos)
-                        { if (has2)
+                        { if (hasB)
                             { if (comp)
                                 { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
                                   if (dist != 0)
@@ -1652,12 +1649,12 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                     { if (kpath->abpos == jpath->abpos)
                         { if (kpath->aepos > jpath->aepos)
                             { *jpath = *kpath;
-                              if (has2)
+                              if (hasB)
                                 bmatch[j] = bmatch[k];
                             }
                         }
                       else if (jpath->aepos > kpath->aepos)
-                        { if (has2)
+                        { if (hasB)
                             { if (comp)
                                 { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
                                   if (dist != 0)
@@ -1693,7 +1690,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                         }
                       else
                         { *jpath = *kpath;
-                          if (has2)
+                          if (hasB)
                             bmatch[j] = bmatch[k];
                         }
                       kpath->abpos = -1;
@@ -1743,7 +1740,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
           if (abs(aovl-bovl) > .2 * (aovl+bovl))
             continue;
 
-          if (has2)
+          if (hasB)
             { if (comp == (jpath->abpos < kpath->abpos))
                 { bath1 = bmatch+k;
                   bath2 = bmatch+j;
@@ -1758,12 +1755,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                 }
             }
 
-          if (bonly)
-            { Compute_Bridge_Path(path1,path2,blign,comp,aovl,bovl,work,tbuf);
-              apath = bpath;
-            }
-          else
-            Compute_Bridge_Path(path1,path2,align,0,aovl,bovl,work,tbuf);
+          Compute_Bridge_Path(path1,path2,align,0,aovl,bovl,work,tbuf);
 
           if (Check_Bridge(apath))
             continue;
@@ -1789,7 +1781,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
           }
 #endif
 
-          if (has2)
+          if (hasB)
             { Compute_Bridge_Path(bath1,bath2,blign,comp,bovl,aovl,work,tbuf);
 
               if (Check_Bridge(bpath))
@@ -1831,7 +1823,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
   no = 0;
   for (j = 0; j < novls; j++)
     if (amatch[j].abpos >= 0)
-      { if (has2)
+      { if (hasB)
           bmatch[no] = bmatch[j];
         amatch[no++] = amatch[j];
       }
@@ -2107,6 +2099,13 @@ static void *report_thread(void *arg)
                         ovlb->aread = ovla->bread = br + bfirst;
                         doA = (alen >= HGAP_MIN);
                         doB = (SYMMETRIC && blen >= HGAP_MIN && ! (ar == br && MG_self));
+                        if (doB && !doA)
+                          { blign->aseq = align->bseq;
+                            blign->bseq = align->aseq;
+                            blign->alen = blen;
+                            blign->blen = qlen;
+                            blign->flags = bc;
+                          }
                       }
 #ifdef TEST_GATHER
                     else
@@ -2193,7 +2192,7 @@ static void *report_thread(void *arg)
 #endif
 #ifdef SHOW_OVERLAP
                         printf("\n\n                    %d(%d) vs %d(%d)\n\n",
-                               ovla->aread,ovla->alen,ovla->bread,ovla->blen);
+                               o vla->aread,ovla->alen,ovla->bread,ovla->blen);
                         Print_ACartoon(stdout,align,ALIGN_INDENT);
 #ifdef SHOW_ALIGNMENT
                         Compute_Trace_ALL(align,work);
@@ -2255,7 +2254,7 @@ static void *report_thread(void *arg)
                  novla = Handle_Redundancies(amatch,novla,NULL,align,work,tbuf);
              }
            else if (novlb > 1)
-             novlb = Handle_Redundancies(bmatch,-novlb,NULL,align,work,tbuf);
+             novlb = Handle_Redundancies(bmatch,novlb,NULL,align,work,tbuf);
 
            for (i = 0; i < novla; i++)
              { ovla->path = amatch[i];

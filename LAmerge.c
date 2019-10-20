@@ -290,7 +290,7 @@ int main(int argc, char *argv[])
     }
 
   if (VERBOSE)
-    { printf("  Merging %d files totalling ",fway);
+    { printf("  Merging %d files totaling ",fway);
       Print_Number(totl,0,stdout);
       printf(" records\n");
       fflush(stdout);
