@@ -1780,12 +1780,23 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
             Path      pcopy;
 
             pcopy  = *jpath;
-            extra  = *align;
+            if (bonly)
+              extra  = *blign;
+            else
+              extra  = *align;
             pcopy.trace = tbuf->trace + (uint64) jpath->trace;
             extra.path = &pcopy;
+            if (bonly && comp)
+              { Complement_Seq(extra.aseq,extra.alen);
+                Complement_Seq(extra.bseq,extra.blen);
+              }
             Compute_Trace_PTS(&extra,work,MR_tspace,GREEDIEST);
             Print_Reference(stdout,&extra,work,8,100,10,0,6);
             fflush(stdout);
+            if (bonly && comp)
+              { Complement_Seq(extra.aseq,extra.alen);
+                Complement_Seq(extra.bseq,extra.blen);
+              }
           }
 #endif
 
