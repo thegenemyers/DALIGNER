@@ -6,15 +6,14 @@
 
 For typeset documentation, examples of use, and design philosophy please go to
 my [blog](https://dazzlerblog.wordpress.com/command-guides/daligner-command-reference-guide).
-+
-+
-+### Version Numbers
-+
-+v1.0 has been released, but if you need to refer to a later revision
-+from the stable master branch, please use ``v1.0.yyyymmdd`` where
-+``yyyy-mm-dd`` is the date of the commit used. This is important for
-+method details in scientific papers, and for software packaging
-+(e.g. Conda, HomeBrew, or Linux distribution packages).
+ 
+### Version Numbers
+
+v1.0 has been released, but if you need to refer to a later revision
+from the stable master branch, please use ``v1.0.yyyymmdd`` where
+``yyyy-mm-dd`` is the date of the commit used. This is important for
+method details in scientific papers, and for software packaging
+(e.g. Conda, HomeBrew, or Linux distribution packages).
 
 The commands below permit one to find all significant local alignments between reads
 encoded in Dazzler database.  The assumption is that the reads are from a PACBIO RS II
