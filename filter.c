@@ -31,12 +31,6 @@
 #undef  PROFILE        //  WHen running sensitivity trials, compute histogram of
 #define MAXHIT   1000  //    false & true positive hit scores
 
-  //  K-mer selection strategy control:
-  //    Select modimizers mod MODULUS < MODTHR (best)
-
-#define MODULUS  101
-#define MODTHR    28
-
   //  Debug Controls
 
 #undef    TEST_KSORT
@@ -108,7 +102,13 @@ typedef struct
  *
  ********************************************************************************************/
 
+  //  K-mer selection strategy control:
+  //    Select modimizers mod MODULUS < ModThr (best)
+
+#define MODULUS  101
+
 static int    Kmer;
+static uint64 ModThr;
 static int    Koff;           //  Kmer + 1;
 static int    Kshift;         //  2*Kmer
 static uint64 Kmask;          //  2^Kshift - 1
@@ -125,7 +125,7 @@ static int TooFrequent;       //  (Suppress != 0) ? Suppress : INT32_MAX
 
 static int NTHREADS;          //  # of threads to use
 
-void Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nthread)
+void Set_Filter_Params(int kmer, int mod, int binshift, int suppress, int hitmin, int nthread)
 { if (kmer > 32)
     { fprintf(stderr,"%s: Kmer length must be <= 32\n",Prog_Name);
       exit (1);
@@ -133,6 +133,7 @@ void Set_Filter_Params(int kmer, int binshift, int suppress, int hitmin, int nth
 
   Kmer     = kmer;
   Koff     = kmer+1;
+  ModThr   = mod;
   Binshift = binshift;
   Suppress = suppress;
   Hitmin   = hitmin;
@@ -238,20 +239,20 @@ static void *mask_thread(void *arg)
                       v = v | (u & HRmask);
 
                       if (u < c)
-                        { if (u % MODULUS < MODTHR)
+                        { if (u % MODULUS < ModThr)
                             idx += 1;
                         }
                       else
-                        { if (c % MODULUS < MODTHR)
+                        { if (c % MODULUS < ModThr)
                             idx += 1;
                         }
 
                       if (v < d)
-                        { if (v % MODULUS < MODTHR)
+                        { if (v % MODULUS < ModThr)
                             idx += 1;
                         }
                       else
-                        { if (d % MODULUS < MODTHR)
+                        { if (d % MODULUS < ModThr)
                             idx += 1;
                         }
                       p += 1;
@@ -282,20 +283,20 @@ static void *mask_thread(void *arg)
             v = v | (u & HRmask);
 
             if (u < c)
-              { if (u % MODULUS < MODTHR)
+              { if (u % MODULUS < ModThr)
                   idx += 1;
               }
             else
-              { if (c % MODULUS < MODTHR)
+              { if (c % MODULUS < ModThr)
                   idx += 1;
               }
 
             if (v < d)
-              { if (v % MODULUS < MODTHR)
+              { if (v % MODULUS < ModThr)
                   idx += 1;
               }
             else
-              { if (d % MODULUS < MODTHR)
+              { if (d % MODULUS < ModThr)
                   idx += 1;
               }
           }    
@@ -367,7 +368,7 @@ static void *tuple_thread(void *arg)
                       v = v | (u & HRmask);
 
                       if (u < c)
-                        { if (u % MODULUS < MODTHR)
+                        { if (u % MODULUS < ModThr)
                             { list[idx].code = u;
                               list[idx].read = r | SIGN_BIT;
                               list[idx].rpos = p;
@@ -375,7 +376,7 @@ static void *tuple_thread(void *arg)
                             }
                         }
                       else
-                        { if (c % MODULUS < MODTHR)
+                        { if (c % MODULUS < ModThr)
                             { list[idx].code = c;
                               list[idx].read = r;
                               list[idx].rpos = p;
@@ -384,7 +385,7 @@ static void *tuple_thread(void *arg)
                         }
 
                       if (v < d)
-                        { if (v % MODULUS < MODTHR)
+                        { if (v % MODULUS < ModThr)
                             { list[idx].code = v;
                               list[idx].read = r | SIGN_BIT;
                               list[idx].rpos = p | lbit;
@@ -392,7 +393,7 @@ static void *tuple_thread(void *arg)
                             }
                         }
                       else
-                        { if (d % MODULUS < MODTHR)
+                        { if (d % MODULUS < ModThr)
                             { list[idx].code = d;
                               list[idx].read = r;
                               list[idx].rpos = p | lbit;
@@ -431,7 +432,7 @@ static void *tuple_thread(void *arg)
             v = v | (u & HRmask);
 
             if (u < c)
-              { if (u % MODULUS < MODTHR)
+              { if (u % MODULUS < ModThr)
                   { list[idx].code = u;
                     list[idx].read = r | SIGN_BIT;
                     list[idx].rpos = p;
@@ -439,7 +440,7 @@ static void *tuple_thread(void *arg)
                   }
               }
             else
-              { if (c % MODULUS < MODTHR)
+              { if (c % MODULUS < ModThr)
                   { list[idx].code = c;
                     list[idx].read = r;
                     list[idx].rpos = p;
@@ -448,7 +449,7 @@ static void *tuple_thread(void *arg)
               }
 
             if (v < d)
-              { if (v % MODULUS < MODTHR)
+              { if (v % MODULUS < ModThr)
                   { list[idx].code = v;
                     list[idx].read = r | SIGN_BIT;
                     list[idx].rpos = p | lbit;
@@ -456,7 +457,7 @@ static void *tuple_thread(void *arg)
                   }
               }
             else
-              { if (d % MODULUS < MODTHR)
+              { if (d % MODULUS < ModThr)
                   { list[idx].code = d;
                     list[idx].read = r;
                     list[idx].rpos = p | lbit;
@@ -591,6 +592,10 @@ void *Sort_Kmers(DAZZ_DB *block, int *len)
     }
   if (src == NULL || trg == NULL)
     Clean_Exit(1);
+
+#ifdef PROFILE
+  printf("K %d\n",kmers);
+#endif
 
   if (VERBOSE)
     { printf("\n   Kmer count = ");
@@ -1944,7 +1949,7 @@ static void *report_thread(void *arg)
 #ifdef PROFILE
   int         *profyes = data->profyes;
   int         *profno  = data->profno;
-  int          maxhit, isyes;
+  int          maxhit;
 #endif
 
   Overlap     _ovlb, *ovlb = &_ovlb;
@@ -2046,10 +2051,6 @@ static void *report_thread(void *arg)
               nidx += 1;
             continue;
           }
-#ifdef PROFILE
-        maxhit = 0;
-        isyes  = 0;
-#endif
 
 #ifdef TEST_GATHER
         printf("%5d vs %5d%c : %5d x %5d\n",ar+afirst,br+bfirst,bc?'c':'n',alen,blen);
@@ -2095,12 +2096,6 @@ static void *report_thread(void *arg)
                 diag = hits[f].diag;
                 bpos = apos - diag;
                 diag = diag >> Binshift;
-#ifdef PROFILE
-                if (score[diag] + scorp[diag] > maxhit)
-                  maxhit = score[diag] + scorp[diag];
-                if (score[diag] + scorm[diag] > maxhit)
-                  maxhit = score[diag] + scorm[diag];
-#endif
                 if (apos > lasta[diag] &&
                      (score[diag] + scorp[diag] >= Hitmin || score[diag] + scorm[diag] >= Hitmin))
                   { if (setaln)
@@ -2132,6 +2127,14 @@ static void *report_thread(void *arg)
                     fflush(stdout);
 #endif
                     nfilt += 1;
+#ifdef PROFILE
+                    if (scorm[diag] > scorp[diag])
+                      maxhit = score[diag] + scorm[diag];
+                    else
+                      maxhit = score[diag] + scorp[diag];
+                    if (maxhit > MAXHIT)
+                      maxhit = MAXHIT;
+#endif
 
 #ifdef DO_ALIGNMENT
                     bpath = Local_Alignment(align,work,MR_spec,apos-bpos,apos-bpos,apos+bpos,-1,-1);
@@ -2196,6 +2199,9 @@ static void *report_thread(void *arg)
                             novlb += 1;
                             tbuf->top += bpath->tlen;
                           }
+#ifdef PROFILE
+                        profyes[maxhit] += 1;
+#endif
 
 #ifdef TEST_GATHER
                         printf("  [%5d,%5d] x [%5d,%5d] = %4d",
@@ -2215,12 +2221,21 @@ static void *report_thread(void *arg)
 #endif // SHOW_OVERLAP
 
                       }
-#ifdef TEST_GATHER
                     else
+#ifdef TEST_GATHER
                       printf("  No alignment %d",
                               ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos))/2);
                     fflush(stdout);
+#else
+#ifdef PROFILE
+                      { if (ar != br)
+                          profno[maxhit] += 1;
+                      }
+#else
+                      ;
 #endif
+#endif
+
 #endif // DO_ALIGNMENT
                   }
               }
@@ -2288,25 +2303,14 @@ static void *report_thread(void *arg)
                    Clean_Exit(1);
                  }
              }
-          if (doA)
-            nlas += novla;
-          else
-            nlas += novlb;
+
+           if (doA)
+             nlas += novla;
+           else
+             nlas += novlb;
            ahits += novla;
            bhits += novlb;
-#ifdef PROFILE
-           isyes = (novla+novlb > 0);
-#endif
          }
-
-#ifdef PROFILE
-        if (maxhit > MAXHIT)
-          maxhit = MAXHIT;
-        if (isyes)
-          profyes[maxhit] += 1;
-        else
-          profno[maxhit] += 1;
-#endif
       }
 
   free(tbuf->trace);
@@ -2459,7 +2463,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
             fflush(stderr);
             Clean_Exit(1);
           }
-        if (limit < 10)
+        if (limit < 30)
           { fprintf(stderr,"\nWarning: Sensitivity hampered by low ");
             if (MEM_LIMIT == MEM_PHYSICAL)
               fprintf(stderr," physical memory (%.1fGb), reduce block size\n",
@@ -2620,7 +2624,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
         { p = (nhits * i) / NTHREADS;
           if (p > 0)
             { r = khit[p-1].bread;
-              while (khit[p].bread <= r)
+              while (khit[p].bread == r)
                 p += 1;
             }
           parmr[i].beg = parmr[i-1].end = p;
@@ -2675,32 +2679,38 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
 
 #endif
 
-#ifdef PROFILE
-    printf("\n Hit Score distribution:\n");
-    for (i = MAXHIT; i >= 0; i--)
-      { int   j;
-        int64 nyes, nno;
-
-        nyes = 0;
-        nno  = 0;
-        for (j = 0; j < NTHREADS; j++)
-          { nyes += parmr[j].profyes[i];
-            nno  += parmr[j].profno[i];
-          }
-        if (nyes+nno > 0)
-          printf(" %4d: %6lld %6lld\n",i,nyes,nno);
-      }
-#endif
-
-    if (VERBOSE)
-      for (i = 0; i < NTHREADS; i++)
-        { nfilt += parmr[i].nfilt;
-          nlas  += parmr[i].nlas;
-        }
-
     for (i = 0; i < NTHREADS; i++)
-      Free_Work_Data(parmr[i].work);
+      { nfilt += parmr[i].nfilt;
+        nlas  += parmr[i].nlas;
+        Free_Work_Data(parmr[i].work);
+      }
     free(space);
+
+#ifdef PROFILE
+    { int64 nyes, nno;
+
+      printf("H %lld\n",nhits);
+      printf("S %lld\n",nfilt);
+      printf("A %lld\n",nlas);
+
+      nyes = 0;
+      nno  = 0;
+      for (i = MAXHIT; i >= 0; i--)
+        { int   j;
+          int64 ny, nn;
+  
+          ny = nn = 0;
+          for (j = 0; j < NTHREADS; j++)
+            { ny += parmr[j].profyes[i];
+              nn += parmr[j].profno[i];
+            }
+          nyes += ny;
+          nno  += nn;
+          if (ny+nn > 0)
+            printf(" %4d %6lld %6lld\n",i,nyes,nno);
+        }
+    }
+#endif
   }
 
   free(work2);

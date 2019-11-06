@@ -20,7 +20,7 @@ encoded in Dazzler database.  The assumption is that the reads are from a PACBIO
 long read sequencer.  That is the reads are long and noisy, up to 15% on average.
 
 Recall that a database has a current partition that divides it into blocks of a size
-that can conveniently be handled by calling the "dalign" overlapper on all the pairs of
+that can conveniently be handled by calling the **daligner** overlapper on all the pairs of
 blocks producing a collection of .las local alignment files that can then be sorted and
 merged into an ordered sequence of sorted files containing all alignments between reads
 in the data set.  The alignment records are parsimonious in that they do not record an
@@ -28,25 +28,25 @@ alignment but simply a set of trace points, typically every 100bp or so, that al
 efficient reconstruction of alignments on demand.
 
 All programs add suffixes (e.g. .db, .las) as needed.
-For the commands that take multiple .las file blocks as arguments, i.e. LAsort, LAmerge, LAcat,
-and LAcheck, one can place a @-sign in the name, which is then interpreted as the sequence of files
+For the commands that take multiple .db or .las file blocks as arguments, i.e. **daligner**, **LAsort**, **LAmerge**, **LAcat**,
+and **LAcheck**, one can place a @-sign in the name, which is then interpreted as the sequence of files
 obtained by replacing the @-sign by 1, 2, 3, ... in sequence until a number is reached for
 which no file matches.  One can also place a @-sign followed by an integer, say, i, in which
-case the sequence starts at i.  Lastly, one can also place @i-j where i and j are integers, in
-which case the sequence is from i to j, inclusive.  The same is now also true of commands such
-as daligner that take multiple .db blocks.
+case the sequence starts at i.  Lastly, one can also use @i-j where i and j are integers, in
+which case the sequence is from i to j, inclusive.
 
 The formal UNIX command line
 descriptions and options for the DALIGNER module commands are as follows:
 
 ```
 1. daligner [-vaAI]
-       [-k<int(16)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>] [-P<dir(/tmp)>]
-       [-e<double(.75)] [-l<int(1500)] [-s<int(100)>] [-H<int>] [-T<int(4)>]
-       [-m<track>]+ <subject:db|dam> <target:db|dam> ...
+       [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>] [-M<int>]
+       [-e<double(.75)] [-l<int(1500)] [-s<int(100)>] [-H<int>]
+       [-T<int(4)>] [-P<dir(/tmp)>] [-m<track>]+
+       <subject:db|dam> <target:db|dam> ...
 ```
 
-Compare sequences in the trimmed \<subject\> block against those in the list of \<target\>
+Compare sequences in the trimmed *\<subject\>* block against those in the list of *\<target\>*
 blocks searching for local alignments involving at least -l base pairs (default 1000)
 or more, that have an average correlation rate of -e (default 70%).  The local
 alignments found will be output in a sparse encoding where a trace point on the
@@ -54,14 +54,13 @@ alignment is recorded every -s base pairs of the a-read (default 100bp). Reads a
 compared in both orientations and local alignments meeting the criteria are output to
 one of several created files described below.  The -v option turns on a verbose
 reporting mode that gives statistics on each major step of the computation.  The
-program runs with 4 threads by default, but this may be set to any power of 2 with
+program runs with 4 threads by default, but this may be set to any positive value with
 the -T option.
 
-The options -k, -h, and -w control the initial filtration search for possible matches
+The options -k, -%, -h, and -w control the initial filtration search for possible matches
 between reads.  Specifically, our search code looks for a pair of diagonal bands of
-width 2<sup>w</sup> (default 2<sup>6</sup> = 64) that contain a collection of exact matching k-mers
-(default 14) between the two reads, such that the total number of bases covered by the
-k-mer hits is h (default 35). k cannot be larger than 32 in the current implementation.
+width 2<sup>w</sup> (default 2<sup>6</sup> = 64) that contain a collection of matching k-mers
+(default 16) in the lowest %-percentifle between the two reads, such that the total number of bases covered by the k-mer hits is h (default 50). k cannot be larger than 32 in the current implementation.  *These parameters will shortly be superceded with a more intuitive interface.*
 
 If there are one or more interval tracks specified with the -m option, then the reads
 of the DB or DB's to which the mask applies are soft masked with the union of the
@@ -92,8 +91,8 @@ where the a-read is in X and the b-read is in Y are reported, and if X = Y then 
 further reports only those overlaps where the a-read index is less than the b-read index.
 In either case, if the -I option is set ("I" for "identity") then when X = Y, overlaps
 between different portions of the same read will also be found and reported.  In summary,
-the command "daligner -A X Y" produces a single file X.Y..las and "daligner X Y" produces
-2 files X.Y..las and Y.X.las (unless X=Y in which case only a single file, X.X.las, is
+the command `daligner -A X Y` produces a single file `X.Y.las` and `daligner X Y` produces
+2 files `X.Y.las` and `Y.X.las` (unless X=Y in which case only a single file, `X.X.las`, is
 produced).  The overlap records in one of these files are sorted as described for LAsort.
 The -a option to daligner is passed directly through to LAsort which is actually called
 as a sub-process to produce the sorted file.
@@ -111,8 +110,8 @@ reports overlaps where the a-read is over N base-pairs long.
 
 While the default parameter settings are good for raw Pacbio data, daligner can be used
 for efficiently finding alignments in corrected reads or other less noisy reads. For
-example, for mapping applications against .dams we run "daligner -k20 -h60 -e.85" and
-on corrected reads, we typically run "daligner -k25 -w5 -h60 -e.95 -s500" and at
+example, for mapping applications against .dams we run `daligner -k20 -h60 -e.85` and
+on corrected reads, we typically run `daligner -k25 -w5 -h60 -e.95 -s500` and at
 these settings it is very fast.
 
 ```

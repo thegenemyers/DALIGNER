@@ -170,7 +170,7 @@ void Free_Work_Data(Work_Data *ework)
 #define PATH_TOP  0x1000000000000000ll   //  Must be 1 << PATH_LEN
 #define PATH_INT  0x0fffffffffffffffll   //  Must be PATH_TOP-1
 #define TRIM_MASK 0x7fff                 //  Must be (1 << TRIM_LEN) - 1
-#define TRIM_MLAG 200                    //  How far can last trim point be behind best point
+#define TRIM_MLAG 250                    //  How far can last trim point be behind best point
 #define WAVE_LAG   30                    //  How far can worst point be behind the best point
 
 static double Bias_Factor[10] = { .690, .690, .690, .690, .780,

@@ -51,7 +51,7 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vaAI] [-k<int(16)>] [-w<int(6)>] [-h<int(50)>] [-t<int>] [-M<int>]",
+  { "[-vaAI] [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>] [-M<int>]",
     "        [-e<double(.75)] [-l<int(1500)>] [-s<int(100)>] [-H<int>]",
     "        [-T<int(4)>] [-P<dir(/tmp)>] [-m<track>]+",
     "        <subject:db|dam> <target:db|dam> ...",
@@ -460,6 +460,7 @@ int main(int argc, char *argv[])
   char      **MASK;
 
   int    KMER_LEN;
+  int    MOD_THR;
   int    BIN_SHIFT;
   int    MAX_REPS;
   int    HIT_MIN;
@@ -476,6 +477,7 @@ int main(int argc, char *argv[])
     ARG_INIT("daligner2.0")
 
     KMER_LEN  = 16;
+    MOD_THR   = 28;
     HIT_MIN   = 50;
     BIN_SHIFT = 6;
     MAX_REPS  = 0;
@@ -569,6 +571,9 @@ int main(int argc, char *argv[])
           case 'T':
             ARG_POSITIVE(NTHREADS,"Number of threads")
             break;
+          case '%':
+            ARG_POSITIVE(MOD_THR,"Modimer percentage")
+            break;
         }
       else
         argv[j++] = argv[i];
@@ -586,6 +591,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"       %*s %s\n",(int) strlen(Prog_Name),"",Usage[3]);
         fprintf(stderr,"\n");
         fprintf(stderr,"      -k: k-mer size (must be <= 32).\n");
+        fprintf(stderr,"      -%%: modimer percentage (take %% of the k-mers).\n");
         fprintf(stderr,"      -w: Look for k-mers in averlapping bands of size 2^-w.\n");
         fprintf(stderr,"      -h: A seed hit if the k-mers in band cover >= -h bps in the");
         fprintf(stderr," targest read.\n");
@@ -611,7 +617,7 @@ int main(int argc, char *argv[])
   }
 
   MINOVER *= 2;
-  Set_Filter_Params(KMER_LEN,BIN_SHIFT,MAX_REPS,HIT_MIN,NTHREADS);
+  Set_Filter_Params(KMER_LEN,MOD_THR,BIN_SHIFT,MAX_REPS,HIT_MIN,NTHREADS);
   Set_LSD_Params(NTHREADS,VERBOSE);
 
   // Create directory in SORT_PATH for file operations
