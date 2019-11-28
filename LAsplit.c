@@ -24,14 +24,14 @@ static char *Usage = "-v <target:las> (<parts:int> | <path:db|dam>) < <source>.l
 #define MEMORY   1000   //  How many megabytes for output buffer
 
 int main(int argc, char *argv[])
-{ char     *iblock, *oblock;
-  FILE     *output, *dbvis;
-  int64     novl, bsize, ovlsize, ptrsize;
-  int       parts, tspace, tbytes;
-  int       olast, blast;
-  char     *pwd, *root, *root2;
+{ char      *iblock, *oblock;
+  FILE      *output;
+  DAZZ_STUB *stub;
+  int64      novl, bsize, ovlsize, ptrsize;
+  int        parts, tspace, tbytes;
+  char      *pwd, *root, *root2;
 
-  int       VERBOSE;
+  int        VERBOSE;
 
   //  Process options
 
@@ -61,46 +61,23 @@ int main(int argc, char *argv[])
   }
 
   { char *eptr;
-    int   nfiles, cutoff, all;
-    int64 size;
-    char  buffer[2*MAX_NAME+100];
 
     parts = strtol(argv[2],&eptr,10);
     if (*eptr != '\0')
       { pwd   = PathTo(argv[2]);
         if (strcmp(argv[2]+(strlen(argv[2])-4),".dam") == 0)
-          root  = Root(argv[2],".dam");
+          { root = Root(argv[2],".dam");
+            stub = Read_DB_Stub(Catenate(pwd,"/",root,".dam"),DB_STUB_BLOCKS);
+          }
         else
-          root  = Root(argv[2],".db");
-        dbvis = fopen(Catenate(pwd,"/",root,".dam"),"r");
-        if (dbvis == NULL)
-          { dbvis = fopen(Catenate(pwd,"/",root,".db"),"r");
-            if (dbvis == NULL)
-              { fprintf(stderr,"%s: Second argument '%s' is not an integer or a DB\n",
-                               Prog_Name,argv[2]);
-                exit (1);
-              }
+          { root = Root(argv[2],".db");
+            stub = Read_DB_Stub(Catenate(pwd,"/",root,".db"),DB_STUB_BLOCKS);
           }
         free(pwd);
         free(root);
-
-        if (fscanf(dbvis,DB_NFILE,&nfiles) != 1)
-          SYSTEM_READ_ERROR
-        while (nfiles-- > 0)
-          if (fgets(buffer,2*MAX_NAME+100,dbvis) == NULL)
-            SYSTEM_READ_ERROR
-        parts = 0;
-        if (fscanf(dbvis,DB_NBLOCK,&parts) != 1)
-          { fprintf(stderr,"%s: DB %s has not been partitioned\n",Prog_Name,argv[2]);
-            exit (1);
-          }
-        if (fscanf(dbvis,DB_PARAMS,&size,&cutoff,&all) != 3)
-          SYSTEM_READ_ERROR
-        if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-          SYSTEM_READ_ERROR
       }
     else
-      { dbvis = NULL;
+      { stub = NULL;
         if (parts <= 0)
           { fprintf(stderr,"%s: Number of parts is not positive\n",Prog_Name);
             exit (1);
@@ -163,10 +140,8 @@ int main(int argc, char *argv[])
           exit (1);
 
         low = hgh;
-        if (dbvis != NULL)
-          { if (fscanf(dbvis,DB_BDATA,&olast,&blast) != 2)
-              SYSTEM_READ_ERROR
-            last = blast-1;
+        if (stub != NULL)
+          { last = stub->tblocks[i+1];
             hgh  = 0;
           }
         else
@@ -192,7 +167,7 @@ int main(int argc, char *argv[])
               }
 
             w = (Overlap *) (iptr-ptrsize);
-            if (dbvis == NULL)
+            if (stub == NULL)
               { if (j >= hgh && w->aread > last)
                   break;
                 last = w->aread;
@@ -244,6 +219,7 @@ int main(int argc, char *argv[])
 
   free(pwd);
   free(root);
+  Free_DB_Stub(stub);
   free(iblock-ptrsize);
   free(oblock);
 

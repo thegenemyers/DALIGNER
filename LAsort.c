@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
                     span  = ovlsize + tsize;
                     if (fptr + span > ftop)
                       { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-                          SYSTEM_READ_ERROR
+                          SYSTEM_WRITE_ERROR
                         fptr = fblock;
                       }
                     memmove(fptr,((char *) w)+ptrsize,ovlsize);
@@ -279,7 +279,7 @@ int main(int argc, char *argv[])
               }
             if (fptr > fblock)
               { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
-                  SYSTEM_READ_ERROR
+                  SYSTEM_WRITE_ERROR
               }
           }
 

@@ -249,7 +249,7 @@ char *Numbered_Suffix(char *left, int num, char *right);
 
 // DB-related utilities
 
-void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
+void Print_Number(int64 num, int width, FILE *out);   //  Print big integer with commas
 int  Number_Digits(int64 num);                        //  Return # of digits in printed number
 
 #define COMPRESSED_LEN(len)  (((len)+3) >> 2)
@@ -274,7 +274,7 @@ void Number_Arrow(char *s);   //  Convert arrow pw string from letters to number
  ********************************************************************************************/
 
 #define DB_QV   0x03ff   //  Mask for 3-digit quality value
-#define DB_CSS  0x0400   //  This is the second or later of a group of subreads from a given insert
+#define DB_CCS  0x0400   //  This is the second or later of a group of subreads from a given insert
 #define DB_BEST 0x0800   //  This is the "best" subread of a given insert (may be the only 1)
 
 #define DB_ARROW 0x2     //  DB is an arrow DB
@@ -300,8 +300,8 @@ typedef struct
 //                                    contains the variable length data
 //    data != NULL && size == 8: anno is an array of nreads+1 int64's and data[anno[i]..anno[i+1])
 //                                    contains the variable length data
-//    if loaded is not set then the data is not loaded if present, rather data is an open file
-//        pointer set for reading.
+//    if loaded is set then the data is not loaded if present, rather data is an open file pointer
+//        set for reading.
 
 typedef struct _track
   { struct _track *next;   //  Link to next track
@@ -365,6 +365,24 @@ typedef struct
     int            loaded;  //  Are arrow vectors loaded in memory?
   } DAZZ_ARROW;
 
+//  Every DB is referred to by an ASCII stub file with extension .db or .dam.  This file
+//    contains the information about the SMRT cells in the DB and the current division of
+//    the DB into blocks for HPC processing.  This file can be read into the following
+//    data structure:
+
+typedef struct
+  { int            nfiles;   //  Number of files/SMRT cells in DB
+    int           *nreads;   //  [0..nfiles) = # of reads from cell
+    char         **fname;    //  [0..nfiles) = file name of cell
+    char         **prolog;   //  [0..nfiles) = fasta header prolog for cell
+    int            all;      //  Keep only best read from each well?
+    int            cutoff;   //  Trim reads less than cutoff
+    int64          bsize;    //  Target size for blocks
+    int            nblocks;  //  Number of blocks for DB
+    int           *ublocks;  //  [0..nblcoks] = index of 1st read in block in untrimmed DB
+    int           *tblocks;  //  [0..nblcoks] = index of 1st read in block in trimmed DB
+  } DAZZ_STUB;
+
 //  The DB record holds all information about the current state of an active DB including an
 //    array of DAZZ_READS, one per read, and a linked list of DAZZ_TRACKs the first of which
 //    is always a DAZZ_QV pseudo-track (if the QVs have been loaded).
@@ -416,6 +434,30 @@ typedef struct
 #define DB_PARAMS "size = %11lld cutoff = %9d all = %1d\n"  //  block size, len cutoff, all in well
 #define DB_BDATA  " %9d %9d\n"      //  First read index (untrimmed), first read index (trimmed)
 
+  // Read the specified contents of the DB stub file at "path" and return it encoded in a DAZZ_STUB
+  //   structure.  This is allocated by the routine.  "path" is assumed to be the complete
+  //   name of the file.  If all flags are off, then just the scalar parts of the stub
+  //   are returned (i.e. nfiles, all, cutoff, bsize, nblocks).  Returns NULL if an error
+  //   occured in INTERACTIVE mode
+
+#define DB_STUB_NREADS    0x1
+#define DB_STUB_FILES     0x2
+#define DB_STUB_PROLOGS   0x4
+#define DB_STUB_BLOCKS    0x8
+
+DAZZ_STUB *Read_DB_Stub(char *path, int what);
+
+  // Read the DB stub file "path" and extract the read index range [*first,*last)
+  //   for block n, for the trimmed DB if trim is set, the untrimmed DB otherwise.
+  //   If n is out of range first and last will be set to -1.  Returns 0 unless
+  //   an error occurs in INTERACTIVE mode in which case it returns 1.
+
+int Fetch_Block_Range(char *path, int trim, int n, int *first, int *last);
+
+  // Free a DAZZ_STUB data structure returned by Read_DB_Stub
+
+void Free_DB_Stub(DAZZ_STUB *stub);
+
 
 /*******************************************************************************************
  *
@@ -428,13 +470,13 @@ typedef struct
   //    (not containing a . !).
 
   // A DAM is basically a DB except that:
-  //    1. there are no QV's, instead .coff points the '\0' terminated fasta header of the read
-  //          in the file .<dam>.hdr file
+  //    1. there are no QV's, instead .coff points to the '\0' terminated fasta header of the read
+  //          in an additional file: .DB.hdr
   //    2. .origin contains the contig # of the read within a fasta entry (assembly sequences
   //          contain N-separated contigs), and .fpulse the first base of the contig in the
   //          fasta entry
 
-  // Open the given database or dam, "path" into the supplied DAZZ_DB record "db". If the name has
+  // Open the given database or dam, "path", into the supplied DAZZ_DB record "db". If the name has
   //   a part # in it then just the part is opened.  The index array is allocated (for all or
   //   just the part) and read in.
   // Return status of routine:

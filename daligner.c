@@ -51,10 +51,10 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vaAI] [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>] [-M<int>]",
-    "        [-e<double(.75)] [-l<int(1500)>] [-s<int(100)>] [-H<int>]",
-    "        [-T<int(4)>] [-P<dir(/tmp)>] [-m<track>]+",
-    "        <subject:db|dam> <target:db|dam> ...",
+  { "[-vaABI] [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>] [-M<int>]",
+    "         [-e<double(.75)] [-l<int(1500)>] [-s<int(100)>] [-H<int>]",
+    "         [-T<int(4)>] [-P<dir(/tmp)>] [-m<track>]+",
+    "         <subject:db|dam> <target:db|dam> ...",
   };
 
 int     VERBOSE;   //   Globally visible to filter.c
@@ -62,6 +62,7 @@ int     MINOVER;
 int     HGAP_MIN;
 int     SYMMETRIC;
 int     IDENTITY;
+int     BRIDGE;
 char   *SORT_PATH;
 
 uint64  MEM_LIMIT;
@@ -507,7 +508,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vaAI")
+            ARG_FLAGS("vaBI")
             break;
           case 'k':
             ARG_POSITIVE(KMER_LEN,"K-mer length")
@@ -557,7 +558,7 @@ int main(int argc, char *argv[])
                 if (MASK == NULL || MSTAT == NULL)
                   exit (1);
               }
-            MASK[MTOP]   = 0;
+            MSTAT[MTOP]  = 0;
             MASK[MTOP++] = argv[i]+2;
             break;
           case 'P':
@@ -582,6 +583,7 @@ int main(int argc, char *argv[])
     VERBOSE   = flags['v'];   //  Globally declared in filter.h
     SYMMETRIC = 1-flags['A'];
     IDENTITY  = flags['I'];
+    BRIDGE    = flags['B'];
     MAP_ORDER = flags['a'];
 
     if (argc <= 2)
@@ -601,6 +603,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"      -e: Look for alignments with -e percent similarity.\n");
         fprintf(stderr,"      -l: Look for alignments of length >= -l.\n");
         fprintf(stderr,"      -s: The trace point spacing for encoding alignments.\n");
+        fprintf(stderr,"      -B: Bridge consecutive aligned segments into one if possible\n");
         fprintf(stderr,"      -H: HGAP option: align only target reads of length >= -H.\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -T: Use -T threads.\n");

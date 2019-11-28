@@ -39,7 +39,6 @@
 #define    HOW_MANY   3000   //  Print first HOW_MANY items for each of the TEST options above
 
 #define DO_ALIGNMENT
-#define DO_BRIDGING
 
 #undef  TEST_GATHER
 #undef  TEST_CONTAIN
@@ -1127,8 +1126,6 @@ typedef struct
     uint16  *trace;
   } Trace_Buffer;
 
-#ifdef DO_BRIDGING
-
 static inline int MapToTPAbove(Path *path, int *x, int isA, Trace_Buffer *tbuf)
 { uint16 *trace = tbuf->trace + (uint64) path->trace;
   int a, b, i;
@@ -1197,8 +1194,8 @@ static inline int MapToTPBelow(Path *path, int *x, int isA, Trace_Buffer *tbuf)
     }
 }
 
-static int Check_Bridge(Path *path)
-{ uint16 *trace = (uint16 *) path->trace;
+static int Check_Bridge(Path *path, Trace_Buffer *tbuf)
+{ uint16 *trace = tbuf->trace + (uint64) path->trace;
   int     i;
 
   if (MR_tspace <= TRACE_XOVR)
@@ -1327,9 +1324,18 @@ static void Compute_Bridge_Path(Path *path1, Path *path2, Alignment *align, int 
     fflush(stdout);
   }
 #endif
-}
 
-#endif // DO_BRIDGING
+  if (tbuf->top + apath->tlen >= tbuf->max)
+    { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
+      tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
+      if (tbuf->trace == NULL)
+        Clean_Exit(1);
+    }
+  trk = tbuf->trace + tbuf->top;
+  memcpy(trk,apath->trace,apath->tlen*sizeof(uint16));
+  apath->trace = (void *) (tbuf->top);
+  tbuf->top += apath->tlen;
+}
 
 static int Entwine(Path *jpath, Path *kpath, Trace_Buffer *tbuf, int *where)
 { int   ac, b2, y2, ae;
@@ -1454,7 +1460,7 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
   len = k1+(path2->tlen-k2);
 
   if (tbuf->top + len >= tbuf->max)
-    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
+    { tbuf->max = 1.2*(tbuf->top+len) + TRACE_CHUNK;
       tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
       if (tbuf->trace == NULL)
         Clean_Exit(1);
@@ -1489,8 +1495,6 @@ static void Fusion(Path *path1, int ap, Path *path2, Trace_Buffer *tbuf)
   path1->tlen  = len;
 }
 
-#ifdef DO_BRIDGING
-
 //  Produce the concatentation of path1, path2, and path3 where they are known to meet at
 //    the ends of path2 which was produced by Compute-Alignment. Place this result in
 //    a big growing buffer.
@@ -1509,7 +1513,7 @@ static void Bridge(Path *path1, Path *path2, Path *path3, Trace_Buffer *tbuf)
   len = k1 + path2->tlen + (path3->tlen-k2);
 
   if (tbuf->top + len >= tbuf->max)
-    { tbuf->max = 1.2*(tbuf->top+len) + 1000;
+    { tbuf->max = 1.2*(tbuf->top+len) + TRACE_CHUNK;
       tbuf->trace = (uint16 *) Realloc(tbuf->trace,sizeof(uint16)*tbuf->max,"Allocating paths");
       if (tbuf->trace == NULL)
         Clean_Exit(1);
@@ -1529,7 +1533,7 @@ static void Bridge(Path *path1, Path *path2, Path *path3, Trace_Buffer *tbuf)
         }
     }
   if (path2->tlen > 0)
-    { uint16 *t = (uint16 *) (path2->trace);
+    { uint16 *t = tbuf->trace + (uint64) (path2->trace);
       for (k = 0; k < path2->tlen; k += 2)
         { trace[len++] = t[k];
           trace[len++] = t[k+1];
@@ -1552,8 +1556,6 @@ static void Bridge(Path *path1, Path *path2, Path *path3, Trace_Buffer *tbuf)
   path1->tlen  = len;
 }
 
-#endif // DO_BRIDGING
-
 static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                                Alignment *align, Work_Data *work, Trace_Buffer *tbuf)
 { Path      *jpath, *kpath, *apath;
@@ -1563,7 +1565,7 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
   int   j, k, no;
   int   dist;
   int   awhen = 0, bwhen = 0;
-  int   has2, bonly, comp;
+  int   comp;
 
 #if defined(TEST_CONTAIN) || defined(TEST_BRIDGE)
   for (j = 0; j < novls; j++)
@@ -1578,21 +1580,11 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
   apath = align->path;
   comp  = COMP(align->flags);
 
-  if (novls < 0)
-    { bonly = 1;
-      novls = -novls;
-    }
-  else
-    bonly = 0;
-  has2 = (bmatch != NULL);
-
-  if (has2 || bonly)
-    { blign->aseq = align->bseq;
-      blign->bseq = align->aseq;
-      blign->alen = align->blen;
-      blign->blen = align->alen;
-      blign->path = bpath;
-    }
+  blign->aseq = align->bseq;
+  blign->bseq = align->aseq;
+  blign->alen = align->blen;
+  blign->blen = align->alen;
+  blign->path = bpath;
 
   (void) apath->tlen;   //  Just to shut up stupid compilers
 
@@ -1610,33 +1602,25 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                 { dist = Entwine(jpath,kpath,tbuf,&awhen);
                   if (dist == 0)
                     { if (kpath->aepos > jpath->aepos)
-                        { if (has2)
-                            { if (comp)
-                                { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
-                                  if (dist != 0)
-                                    continue;
-                                  Fusion(jpath,awhen,kpath,tbuf);
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
-                                  bmatch[j] = bmatch[k];
+                        { if (comp)
+                            { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
+                              if (dist != 0)
+                                continue;
+                              Fusion(jpath,awhen,kpath,tbuf);
+                              Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                              bmatch[j] = bmatch[k];
 #ifdef TEST_CONTAIN
-                                  printf("  Really 1");
+                              printf("  Really 1");
 #endif
-                                }
-                              else
-                                { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
-                                  if (dist != 0)
-                                    continue;
-                                  Fusion(jpath,awhen,kpath,tbuf);
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
-#ifdef TEST_CONTAIN
-                                  printf("  Really 2");
-#endif
-                                }
                             }
                           else
-                            { Fusion(jpath,awhen,kpath,tbuf);
+                            { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
+                              if (dist != 0)
+                                continue;
+                              Fusion(jpath,awhen,kpath,tbuf);
+                              Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
 #ifdef TEST_CONTAIN
-                              printf("  Really 3");
+                              printf("  Really 2");
 #endif
                             }
                           k = j;
@@ -1657,49 +1641,38 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                     { if (kpath->abpos == jpath->abpos)
                         { if (kpath->aepos > jpath->aepos)
                             { *jpath = *kpath;
-                              if (has2)
-                                bmatch[j] = bmatch[k];
+                              bmatch[j] = bmatch[k];
                             }
                         }
                       else if (jpath->aepos > kpath->aepos)
-                        { if (has2)
-                            { if (comp)
-                                { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
-                                  if (dist != 0)
-                                    continue;
-                                  Fusion(kpath,awhen,jpath,tbuf);
-                                  *jpath = *kpath;
-                                  Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
+                        { if (comp)
+                            { dist = Entwine(bmatch+j,bmatch+k,tbuf,&bwhen);
+                              if (dist != 0)
+                                continue;
+                              Fusion(kpath,awhen,jpath,tbuf);
+                              *jpath = *kpath;
+                              Fusion(bmatch+j,bwhen,bmatch+k,tbuf);
 #ifdef TEST_CONTAIN
-                                  printf("  Really 4");
+                              printf("  Really 4");
 #endif
-                                }
-                              else
-                                { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
-                                  if (dist != 0)
-                                    continue;
-                                  Fusion(kpath,awhen,jpath,tbuf);
-                                  *jpath = *kpath;
-                                  Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
-                                  bmatch[j] = bmatch[k];
-#ifdef TEST_CONTAIN
-                                  printf("  Really 5");
-#endif
-                                }
                             }
                           else
-                            { Fusion(kpath,awhen,jpath,tbuf);
+                            { dist = Entwine(bmatch+k,bmatch+j,tbuf,&bwhen);
+                              if (dist != 0)
+                                continue;
+                              Fusion(kpath,awhen,jpath,tbuf);
                               *jpath = *kpath;
+                              Fusion(bmatch+k,bwhen,bmatch+j,tbuf);
+                              bmatch[j] = bmatch[k];
 #ifdef TEST_CONTAIN
-                              printf("  Really 6");
+                              printf("  Really 5");
 #endif
                             }
                           k = j;
                         }
                       else
                         { *jpath = *kpath;
-                          if (has2)
-                            bmatch[j] = bmatch[k];
+                          bmatch[j] = bmatch[k];
                         }
                       kpath->abpos = -1;
 #ifdef TEST_CONTAIN
@@ -1711,45 +1684,42 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
         }
     }
 
-#ifdef DO_BRIDGING
-
   //  Loop to catch LA's that have a narrow parallel overlap and bridge them
 
-  for (j = 1; j < novls; j++)
-    { jpath = amatch+j;
-      if (jpath->abpos < 0)
-        continue;
-
-      for (k = j-1; k >= 0; k--)
-        { Path   *path1, *path2;
-          Path   *bath1, *bath2;
-          int     aovl, bovl;
-          Path    jback, kback;
-
-          kpath = amatch+k;
-	  if (kpath->abpos < 0)
+  if (BRIDGE)
+    { for (j = 1; j < novls; j++)
+        { jpath = amatch+j;
+          if (jpath->abpos < 0)
             continue;
-
-          if (jpath->abpos < kpath->abpos)
-            { path1 = jpath;
-              path2 = kpath;
-            }
-          else
-            { path1 = kpath;
-              path2 = jpath;
-            }
-
-          if (path2->abpos >= path1->aepos || path1->aepos >= path2->aepos ||
-              path1->bbpos >= path2->bbpos || path2->bbpos >= path1->bepos ||
-              path1->bepos >= path2->bepos)
-            continue;
-          aovl = path1->aepos - path2->abpos;
-          bovl = path1->bepos - path2->bbpos;
-          if (abs(aovl-bovl) > .2 * (aovl+bovl))
-            continue;
-
-          if (has2)
-            { if (comp == (jpath->abpos < kpath->abpos))
+    
+          for (k = j-1; k >= 0; k--)
+            { Path   *path1, *path2;
+              Path   *bath1, *bath2;
+              int     aovl, bovl;
+    
+              kpath = amatch+k;
+              if (kpath->abpos < 0)
+                continue;
+    
+              if (jpath->abpos < kpath->abpos)
+                { path1 = jpath;
+                  path2 = kpath;
+                }
+              else
+                { path1 = kpath;
+                  path2 = jpath;
+                }
+    
+              if (path2->abpos >= path1->aepos || path1->aepos >= path2->aepos ||
+                  path1->bbpos >= path2->bbpos || path2->bbpos >= path1->bepos ||
+                  path1->bepos >= path2->bepos)
+                continue;
+              aovl = path1->aepos - path2->abpos;
+              bovl = path1->bepos - path2->bbpos;
+              if (abs(aovl-bovl) > .2 * (aovl+bovl))
+                continue;
+    
+              if (comp == (jpath->abpos < kpath->abpos))
                 { bath1 = bmatch+k;
                   bath2 = bmatch+j;
                 }
@@ -1761,70 +1731,37 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                 { printf("  SYMFAIL %d %d\n",j,k);
                   continue;
                 }
-            }
+    
+              Compute_Bridge_Path(path1,path2,align,0,aovl,bovl,work,tbuf);
+              Compute_Bridge_Path(bath1,bath2,blign,comp,bovl,aovl,work,tbuf);
+    
+              if (Check_Bridge(apath,tbuf) || Check_Bridge(bpath,tbuf))
+                continue;
+ 
+              Bridge(path1,apath,path2,tbuf);
+              *jpath = *path1;
 
-          if (bonly)
-            { Compute_Bridge_Path(path1,path2,blign,comp,aovl,bovl,work,tbuf);
-              apath = bpath;
-            }
-          else
-            Compute_Bridge_Path(path1,path2,align,0,aovl,bovl,work,tbuf);
-
-          if (Check_Bridge(apath))
-            continue;
-
-          jback = *jpath;
-          kback = *kpath;
-
-          Bridge(path1,apath,path2,tbuf);
-          *jpath = *path1;
-          kpath->abpos = -1;
-
-#ifdef TEST_BRIDGE
-          { Alignment extra;
-            Path      pcopy;
-
-            pcopy  = *jpath;
-            if (bonly)
-              extra  = *blign;
-            else
-              extra  = *align;
-            pcopy.trace = tbuf->trace + (uint64) jpath->trace;
-            extra.path = &pcopy;
-            if (bonly && comp)
-              { Complement_Seq(extra.aseq,extra.alen);
-                Complement_Seq(extra.bseq,extra.blen);
-              }
-            Compute_Trace_PTS(&extra,work,MR_tspace,GREEDIEST);
-            Print_Reference(stdout,&extra,work,8,100,10,0,6);
-            fflush(stdout);
-            if (bonly && comp)
-              { Complement_Seq(extra.aseq,extra.alen);
-                Complement_Seq(extra.bseq,extra.blen);
-              }
-          }
-#endif
-
-          if (has2)
-            { Compute_Bridge_Path(bath1,bath2,blign,comp,bovl,aovl,work,tbuf);
-
-              if (Check_Bridge(bpath))
-                { *jpath = jback;
-                  *kpath = kback;
-                  continue;
-                }
-             
               Bridge(bath1,bpath,bath2,tbuf);
               bmatch[j] = *bath1;
 
+              kpath->abpos = -1;
+    
 #ifdef TEST_BRIDGE
               { Alignment extra;
                 Path      pcopy;
 
-	        pcopy  = bmatch[j];
-	        extra  = *blign;
-                pcopy.trace = tbuf->trace + (uint64) bmatch[j].trace;
+                pcopy = *jpath;
+                extra = *align;
+                pcopy.trace = tbuf->trace + (uint64) jpath->trace;
                 extra.path = &pcopy;
+                Compute_Trace_PTS(&extra,work,MR_tspace,GREEDIEST);
+                Print_Reference(stdout,&extra,work,8,100,10,0,6);
+                fflush(stdout);
+    
+                pcopy = *bath1;
+                extra = *blign;
+                pcopy.trace = tbuf->trace + (uint64) bmatch[j].trace;
+                extra.path  = &pcopy;
                 if (comp)
                   { Complement_Seq(extra.aseq,extra.alen);
                     Complement_Seq(extra.bseq,extra.blen);
@@ -1838,18 +1775,16 @@ static int Handle_Redundancies(Path *amatch, int novls, Path *bmatch,
                   }
               }
 #endif
-            }
-        } 
+            } 
+        }
     }
-
-#endif // DO_BRIDGING
 
   no = 0;
   for (j = 0; j < novls; j++)
     if (amatch[j].abpos >= 0)
-      { if (has2)
-          bmatch[no] = bmatch[j];
-        amatch[no++] = amatch[j];
+      { bmatch[no] = bmatch[j];
+        amatch[no] = amatch[j];
+        no += 1;
       }
   novls = no;
 
@@ -1959,8 +1894,7 @@ static void *report_thread(void *arg)
   Path        *bpath;
   char        *bcomp;
 
-  int    AOmax, BOmax;
-  int    novla, novlb;
+  int    Omax, novl;
   Path  *amatch, *bmatch;
 
   Trace_Buffer _tbuf, *tbuf = &_tbuf;
@@ -1992,9 +1926,9 @@ static void *report_thread(void *arg)
       tbytes = sizeof(uint16);
     }
 
-  AOmax = BOmax = MATCH_CHUNK;
-  amatch = Malloc(sizeof(Path)*AOmax,"Allocating match vector");
-  bmatch = Malloc(sizeof(Path)*BOmax,"Allocating match vector");
+  Omax = MATCH_CHUNK;
+  amatch = Malloc(sizeof(Path)*Omax,"Allocating match vector");
+  bmatch = Malloc(sizeof(Path)*Omax,"Allocating match vector");
 
   tbuf->max   = 2*TRACE_CHUNK;
   tbuf->trace = Malloc(sizeof(short)*tbuf->max,"Allocating trace vector");
@@ -2045,7 +1979,9 @@ static void *report_thread(void *arg)
           bc = 0;
         alen = aread[ar].rlen;
         blen = bread[br].rlen;
-        if (alen < HGAP_MIN && blen < HGAP_MIN)
+        doA  = (alen >= HGAP_MIN);
+        doB  = (SYMMETRIC && blen >= HGAP_MIN && ! (ar == br && MG_self));
+        if (! (doA || doB))
           { nidx += 1;
             while ((npair = hitd[nidx].p1) == cpair)
               nidx += 1;
@@ -2057,9 +1993,8 @@ static void *report_thread(void *arg)
         fflush(stdout);
 #endif
         setaln = 1;
-        doA = doB = 0;
         amark2 = 0;
-        novla  = novlb = 0;
+        novl   = 0;
         tbuf->top = 0;
         for (sidx = nidx; hitd[nidx].p1 == cpair; nidx = h2)
           { amark  = amark2 + PANEL_SIZE;
@@ -2111,8 +2046,6 @@ static void *report_thread(void *arg)
                         align->flags = ovla->flags = ovlb->flags = bc;
                         ovlb->bread = ovla->aread = ar + afirst;
                         ovlb->aread = ovla->bread = br + bfirst;
-                        doA = (alen >= HGAP_MIN);
-                        doB = (SYMMETRIC && blen >= HGAP_MIN && ! (ar == br && MG_self));
                       }
 #ifdef TEST_GATHER
                     else
@@ -2157,48 +2090,35 @@ static void *report_thread(void *arg)
                     }
 
                     if ((apath->aepos-apath->abpos) + (apath->bepos-apath->bbpos) >= MINOVER)
-                      { if (doA)
-                          { if (novla >= AOmax)
-                              { AOmax = 1.2*novla + MATCH_CHUNK;
-                                amatch = Realloc(amatch,sizeof(Path)*AOmax,
-                                                 "Reallocating match vector");
-                                if (amatch == NULL)
-                                  Clean_Exit(1);
-                              }
-                            if (tbuf->top + apath->tlen > tbuf->max)
-                              { tbuf->max = 1.2*(tbuf->top+apath->tlen) + TRACE_CHUNK;
-                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
-                                                      "Reallocating trace vector");
-                                if (tbuf->trace == NULL)
-                                  Clean_Exit(1);
-                              }
-                            amatch[novla] = *apath;
-                            amatch[novla].trace = (void *) (tbuf->top);
-                            memmove(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
-                            novla += 1;
-                            tbuf->top += apath->tlen;
+                      { if (novl >= Omax)
+                          { Omax = 1.2*novl + MATCH_CHUNK;
+                            amatch = Realloc(amatch,sizeof(Path)*Omax,
+                                             "Reallocating match vector");
+                            bmatch = Realloc(bmatch,sizeof(Path)*Omax,
+                                             "Reallocating match vector");
+                            if (amatch == NULL || bmatch == NULL)
+                              Clean_Exit(1);
                           }
-                        if (doB)
-                          { if (novlb >= BOmax)
-                              { BOmax = 1.2*novlb + MATCH_CHUNK;
-                                bmatch = Realloc(bmatch,sizeof(Path)*BOmax,
-                                                        "Reallocating match vector");
-                                if (bmatch == NULL)
-                                  Clean_Exit(1);
-                              }
-                            if (tbuf->top + bpath->tlen > tbuf->max)
-                              { tbuf->max = 1.2*(tbuf->top+bpath->tlen) + TRACE_CHUNK;
-                                tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
-                                                      "Reallocating trace vector");
-                                if (tbuf->trace == NULL)
-                                  Clean_Exit(1);
-                              }
-                            bmatch[novlb] = *bpath;
-                            bmatch[novlb].trace = (void *) (tbuf->top);
-                            memmove(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
-                            novlb += 1;
-                            tbuf->top += bpath->tlen;
+
+                        if (tbuf->top + (apath->tlen + bpath->tlen) > tbuf->max)
+                          { tbuf->max = 1.2*(tbuf->top+(apath->tlen+bpath->tlen)) + TRACE_CHUNK;
+                            tbuf->trace = Realloc(tbuf->trace,sizeof(short)*tbuf->max,
+                                                  "Reallocating trace vector");
+                            if (tbuf->trace == NULL)
+                              Clean_Exit(1);
                           }
+
+                        amatch[novl] = *apath;
+                        amatch[novl].trace = (void *) (tbuf->top);
+                        memmove(tbuf->trace+tbuf->top,apath->trace,sizeof(short)*apath->tlen);
+                        tbuf->top += apath->tlen;
+
+                        bmatch[novl] = *bpath;
+                        bmatch[novl].trace = (void *) (tbuf->top);
+                        memmove(tbuf->trace+tbuf->top,bpath->trace,sizeof(short)*bpath->tlen);
+                        tbuf->top += bpath->tlen;
+
+                        novl += 1;
 #ifdef PROFILE
                         profyes[maxhit] += 1;
 #endif
@@ -2270,46 +2190,40 @@ static void *report_thread(void *arg)
          { int i;
 
 #ifdef TEST_CONTAIN
-           if (novla > 1 || novlb > 1)
+           if (novl > 1)
              printf("\n%5d vs %5d:\n",ar,br);
 #endif
 
-           if (novla > 1)
-             { if (novlb > 1)
-                 novla = novlb = Handle_Redundancies(amatch,novla,bmatch,align,work,tbuf);
-               else
-                 novla = Handle_Redundancies(amatch,novla,NULL,align,work,tbuf);
-             }
-           else if (novlb > 1)
-             novlb = Handle_Redundancies(bmatch,-novlb,NULL,align,work,tbuf);
-
-           for (i = 0; i < novla; i++)
-             { ovla->path = amatch[i];
-               ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
-               if (small)
-                 Compress_TraceTo8(ovla,1);
-               if (Write_Overlap(ofile1,ovla,tbytes))
-                 { fprintf(stderr,"%s: Cannot write to %s too small?\n",SORT_PATH,Prog_Name);
-                   Clean_Exit(1);
-                 }
-             }
-           for (i = 0; i < novlb; i++)
-             { ovlb->path = bmatch[i];
-               ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
-               if (small)
-                 Compress_TraceTo8(ovlb,1);
-               if (Write_Overlap(ofile2,ovlb,tbytes))
-                 { fprintf(stderr,"%s: Cannot write to %s, too small?\n",SORT_PATH,Prog_Name);
-                   Clean_Exit(1);
-                 }
-             }
+           novl = Handle_Redundancies(amatch,novl,bmatch,align,work,tbuf);
 
            if (doA)
-             nlas += novla;
-           else
-             nlas += novlb;
-           ahits += novla;
-           bhits += novlb;
+             { for (i = 0; i < novl; i++)
+                 { ovla->path = amatch[i];
+                   ovla->path.trace = tbuf->trace + (uint64) (ovla->path.trace);
+                   if (small)
+                     Compress_TraceTo8(ovla,1);
+                   if (Write_Overlap(ofile1,ovla,tbytes))
+                     { fprintf(stderr,"%s: Cannot write to %s too small?\n",SORT_PATH,Prog_Name);
+                       Clean_Exit(1);
+                     }
+                 }
+               ahits += novl;
+             }
+           if (doB)
+             { for (i = 0; i < novl; i++)
+                 { ovlb->path = bmatch[i];
+                   ovlb->path.trace = tbuf->trace + (uint64) (ovlb->path.trace);
+                   if (small)
+                     Compress_TraceTo8(ovlb,1);
+                   if (Write_Overlap(ofile2,ovlb,tbytes))
+                     { fprintf(stderr,"%s: Cannot write to %s, too small?\n",SORT_PATH,Prog_Name);
+                       Clean_Exit(1);
+                     }
+                 }
+               bhits += novl;
+             }
+
+           nlas += novl;
          }
       }
 

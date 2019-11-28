@@ -19,6 +19,7 @@ extern int    MINOVER;      //  minimum overlap (-l)
 extern int    HGAP_MIN;     //  HGap minimum (-H)
 extern int    SYMMETRIC;    //  output both A vs B and B vs A? ( ! -A)
 extern int    IDENTITY;     //  compare reads against themselves?  (-I)
+extern int    BRIDGE;       //  bridge consecutive, chainable alignments  (-B)
 extern char  *SORT_PATH;    //  where to place temporary files (-P)
 
 extern uint64 MEM_LIMIT;    //  memory limit (-M)

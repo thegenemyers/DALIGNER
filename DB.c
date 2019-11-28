@@ -467,6 +467,201 @@ void Change_Read(char *s)
 
 /*******************************************************************************************
  *
+ *  DB STUB HANDLING ROUTINES
+ *
+ ********************************************************************************************/
+
+  // Read the contents of the DB stub file at "path" and return it encoded in a DAZZ_STUB
+  //   structure.  This is allocated by the routine.  "path" is assumed to be the complete
+  //   name of the file.
+
+DAZZ_STUB *Read_DB_Stub(char *path, int what)
+{ FILE      *dbfile;
+  DAZZ_STUB *stub;
+
+  char  buf1[MAX_NAME+100];
+  char  buf2[MAX_NAME+100];
+  int   nread;
+
+  int   i;
+  int   nfiles;
+  int   nblocks;
+  int64 size;
+  int   all, cutoff;
+
+  dbfile = Fopen(path,"r");
+  if (dbfile == NULL)
+    EXIT(NULL);
+
+  stub = Malloc(sizeof(DAZZ_STUB),"Allocating DB stub record");
+  if (stub == NULL)
+    EXIT(NULL);
+
+  stub->nreads  = NULL;
+  stub->fname   = NULL;
+  stub->prolog  = NULL;
+  stub->ublocks = NULL;
+  stub->tblocks = NULL;
+
+  if (fscanf(dbfile,DB_NFILE,&nfiles) != 1)
+    goto stub_trash;
+
+  if (what & DB_STUB_NREADS)
+    { stub->nreads = ((int *) Malloc(sizeof(int)*(nfiles+1),"Allocating DB stub record"))+1;
+      if (stub->nreads == NULL || stub->fname == NULL)
+        goto stub_error;
+    }
+
+  if (what & DB_STUB_FILES)
+    { stub->fname = ((char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record"))+1;
+      if (stub->nreads == NULL || stub->fname == NULL)
+        goto stub_error;
+
+      stub->nfiles  = nfiles;
+      for (i = 0; i < nfiles; i++)
+        stub->fname[i] = NULL;
+    }
+
+  if (what & DB_STUB_FILES)
+    { stub->prolog = ((char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record"))+1;
+      if (stub->prolog == NULL)
+        goto stub_error;
+
+      for (i = 0; i < nfiles; i++)
+        stub->prolog[i] = NULL;
+    }
+
+  for (i = 0; i < nfiles; i++)
+    { if (fscanf(dbfile,DB_FDATA,&nread,buf1,buf2) != 3)
+        goto stub_trash;
+      if (what & DB_STUB_NREADS)
+        stub->nreads[i] = nread;
+      if (what & DB_STUB_FILES)
+        { stub->fname[i]   = Strdup(buf1,"Alloacting DB stub record");
+          if (stub->fname[i] == NULL)
+            goto stub_error;
+        }
+      if (what & DB_STUB_PROLOGS)
+        { stub->prolog[i] = Strdup(buf2,"Alloacting DB stub record");
+          if (stub->prolog[i] == NULL)
+            goto stub_error;
+        }
+    }
+
+  if (fscanf(dbfile,DB_NBLOCK,&nblocks) != 1)
+    goto stub_trash;
+
+  if (fscanf(dbfile,DB_PARAMS,&size,&cutoff,&all) != 3)
+    goto stub_trash;
+
+  if (what & DB_STUB_BLOCKS)
+    { stub->ublocks  = (int *) Malloc(sizeof(int)*(nblocks+1),"Allocating DB stub record");
+      stub->tblocks  = (int *) Malloc(sizeof(int)*(nblocks+1),"Allocating DB stub record");
+      if (stub->ublocks == NULL || stub->tblocks == NULL)
+        goto stub_error;
+
+      for (i = 0; i <= nblocks; i++)
+        if (fscanf(dbfile,DB_BDATA,stub->ublocks+i,stub->tblocks+i) != 2)
+          goto stub_trash;
+    }
+
+  fclose(dbfile);
+
+  stub->all     = all;
+  stub->cutoff  = cutoff;
+  stub->bsize   = size;
+  stub->nblocks = nblocks;
+  return (stub);
+
+stub_trash:
+  EPRINTF(EPLACE,"%s: Stub file %s is junk\n",Prog_Name,path);
+stub_error:
+  Free_DB_Stub(stub);
+  EXIT(NULL);
+}
+
+  // Read the DB stub file "path" and extract the read index range [*first,*last)
+  //   for block n, for the trimmed DB if trim is set, the untrimmed DB otherwise.
+
+int Fetch_Block_Range(char *path, int trim, int n, int *first, int *last)
+{ FILE *dbfile;
+  char  buffer[2*MAX_NAME+100];
+  int   nfiles;
+  int   nblocks;
+  int64 size;
+  int   all, cutoff;
+  int   tfirst, tlast;
+  int   ufirst, ulast;
+  int   i;
+
+  dbfile = Fopen(path,"r");
+  if (dbfile == NULL)
+    EXIT(1);
+  if (fscanf(dbfile,DB_NFILE,&nfiles) != 1)
+    goto stub_error;
+  for (i = 0; i < nfiles; i++)
+    if (fgets(buffer,2*MAX_NAME+100,dbfile) == NULL)
+      goto stub_error;
+  if (fscanf(dbfile,DB_NBLOCK,&nblocks) != 1)
+    goto stub_error;
+
+  if (n < 0 || n >= nblocks)
+    { *first = *last = -1;
+      return (0);
+    }
+
+  if (fscanf(dbfile,DB_PARAMS,&size,&cutoff,&all) != 3)
+    goto stub_error;
+  for (i = 1; i <= n; i++)
+    if (fscanf(dbfile,DB_BDATA,&ufirst,&tfirst) != 2)
+      goto stub_error;
+  if (fscanf(dbfile,DB_BDATA,&ulast,&tlast) != 2)
+    goto stub_error;
+  fclose(dbfile);
+
+  if (trim)
+    { *first = tfirst;
+      *last  = tlast;
+    }
+  else
+    { *first = ufirst;
+      *last  = ulast;
+    }
+
+  return (0);
+
+stub_error:
+  EPRINTF(EPLACE,"%s: Stub file %s is junk\n",Prog_Name,path);
+  EXIT(1);
+}
+
+  // Free a DAZZ_STUB data structure returned by Read_DB_Stub
+
+void Free_DB_Stub(DAZZ_STUB *stub)
+{ int i;
+
+  if (stub == NULL)
+    return;
+  if (stub->fname != NULL)
+    { for (i = 0; i < stub->nfiles; i++)
+        free(stub->fname[i]);
+      free(stub->fname);
+    }
+  if (stub->prolog != NULL)
+    { for (i = 0; i < stub->nfiles; i++)
+        free(stub->prolog[i]);
+      free(stub->prolog);
+    }
+  if (stub->nreads != NULL)
+    free(stub->nreads-1);
+  free(stub->ublocks);
+  free(stub->tblocks);
+  free(stub);
+}
+
+
+/*******************************************************************************************
+ *
  *  DB OPEN, TRIM, SIZE_OF, LIST_FILES & CLOSE ROUTINES
  *
  ********************************************************************************************/
@@ -807,7 +1002,7 @@ void Trim_DB(DAZZ_DB *db)
   totlen = maxlen = 0;
   for (j = i = 0; i < nreads; i++)
     { f = reads[i].flags;
-      if ((f & DB_CSS) == 0)
+      if ((f & DB_CCS) == 0)
         css = 0;
       r = reads[i].rlen;
       if ((f & DB_BEST) >= allflag && r >= cutoff)
@@ -816,9 +1011,9 @@ void Trim_DB(DAZZ_DB *db)
             maxlen = r;
           reads[j] = reads[i];
           if (css)
-            reads[j++].flags |= DB_CSS;
+            reads[j++].flags |= DB_CCS;
           else
-            reads[j++].flags &= ~DB_CSS;
+            reads[j++].flags &= ~DB_CCS;
           css = 1;
         }
     }
@@ -2081,13 +2276,11 @@ void Close_Track(DAZZ_DB *db, DAZZ_TRACK *track)
   for (record = db->tracks; record != NULL; record = record->next)
     { if (track == record)
         { free(record->anno);
-          if (track->data != NULL)
-            { free(record->alen);
-              if (record->loaded)
-                free(record->data);
-              else
-                fclose((FILE *) record->data);
-            }
+          free(record->alen);
+          if (record->loaded)
+            free(record->data);
+          else
+            fclose((FILE *) record->data);
           free(record->name);
           if (prev == NULL)
             db->tracks = record->next;
