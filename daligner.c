@@ -508,7 +508,7 @@ int main(int argc, char *argv[])
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("vaBI")
+            ARG_FLAGS("vaABI")
             break;
           case 'k':
             ARG_POSITIVE(KMER_LEN,"K-mer length")
