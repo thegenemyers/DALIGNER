@@ -507,15 +507,17 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
     goto stub_trash;
 
   if (what & DB_STUB_NREADS)
-    { stub->nreads = ((int *) Malloc(sizeof(int)*(nfiles+1),"Allocating DB stub record"))+1;
-      if (stub->nreads == NULL || stub->fname == NULL)
+    { stub->nreads = (int *) Malloc(sizeof(int)*(nfiles+1),"Allocating DB stub record");
+      if (stub->nreads == NULL)
         goto stub_error;
+      stub->nreads += 1;
     }
 
   if (what & DB_STUB_FILES)
-    { stub->fname = ((char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record"))+1;
-      if (stub->nreads == NULL || stub->fname == NULL)
+    { stub->fname = (char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record");
+      if (stub->fname == NULL)
         goto stub_error;
+      stub->fname += 1;
 
       stub->nfiles  = nfiles;
       for (i = 0; i < nfiles; i++)
@@ -523,9 +525,10 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
     }
 
   if (what & DB_STUB_FILES)
-    { stub->prolog = ((char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record"))+1;
+    { stub->prolog = (char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record");
       if (stub->prolog == NULL)
         goto stub_error;
+      stub->prolog += 1;
 
       for (i = 0; i < nfiles; i++)
         stub->prolog[i] = NULL;
@@ -645,12 +648,12 @@ void Free_DB_Stub(DAZZ_STUB *stub)
   if (stub->fname != NULL)
     { for (i = 0; i < stub->nfiles; i++)
         free(stub->fname[i]);
-      free(stub->fname);
+      free(stub->fname-1);
     }
   if (stub->prolog != NULL)
     { for (i = 0; i < stub->nfiles; i++)
         free(stub->prolog[i]);
-      free(stub->prolog);
+      free(stub->prolog-1);
     }
   if (stub->nreads != NULL)
     free(stub->nreads-1);

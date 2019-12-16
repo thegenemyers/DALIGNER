@@ -24,10 +24,10 @@
 #undef  SLURM  //  define if want a directly executable SLURM script
 
 static char *Usage[] =
-  { "[-vad] [-l<int(1500)>] [-s<int(100)] [-t<int>] [-M<int>]",
+  { "[-vad] [-l<int(1500)>] [-s<int(100)] [-w<int(6)>] [-t<int>] [-M<int>]",
     "       [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]",
-    "     ( [-k<int(16)>] [-h<int(50)>] [-w<int(6)>] [-e<double(.75)>] [-H<int>]",
-    "       [-k<int(20)>] [-h<int(50)>] [-w<int(6)>] [-e<double(.85)>] <ref:db|dam> )",
+    "     ( [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-e<double(.75)>] [-H<int>]",
+    "       [-k<int(20)>] [-%<int(50)>] [-h<int(70)>] [-e<double(.85)>] <ref:db|dam> )",
     "       [-m<track>]+ <reads:db|dam> [<first:int>[-<last:int>]]"
   };
 
@@ -35,7 +35,7 @@ static char *Usage[] =
 
 static int    BUNIT;
 static int    VON, CON, DON;
-static int    WINT, TINT, HGAP, HINT, KINT, SINT, LINT, MINT;
+static int    WINT, TINT, HGAP, HINT, KINT, SINT, PINT, LINT, MINT;
 static int    NTHREADS;
 static double EREL;
 static int    MMAX, MTOP;
@@ -251,6 +251,8 @@ void daligner_script(int argc, char *argv[])
               fprintf(out," -a");
             if (KINT != 16)
               fprintf(out," -k%d",KINT);
+            if (PINT != 28)
+              fprintf(out," -%%%d",PINT);
             if (WINT != 6)
               fprintf(out," -w%d",WINT);
             if (HINT != 50)
@@ -766,10 +768,14 @@ void mapper_script(int argc, char *argv[])
               fprintf(out," -v");
             if (CON)
               fprintf(out," -a");
-            fprintf(out," -k%d",KINT);
+            if (KINT != 20)
+              fprintf(out," -k%d",KINT);
+            if (PINT != 50)
+              fprintf(out," -%%%d",PINT);
             if (WINT != 6)
               fprintf(out," -w%d",WINT);
-            fprintf(out," -h%d",HINT);
+            if (HINT != 70)
+              fprintf(out," -h%d",HINT);
             if (TINT > 0)
               fprintf(out," -t%d",TINT);
             if (EREL > 0.)
@@ -988,6 +994,7 @@ int main(int argc, char *argv[])
   LINT  = 1500;
   SINT  = 100;
   MINT  = -1;
+  PINT  = -1;
   PDIR  = NULL;
 
   MTOP = 0;
@@ -1062,6 +1069,9 @@ int main(int argc, char *argv[])
         case 'T':
           ARG_POSITIVE(NTHREADS,"Number of threads")
           break;
+        case '%':
+          ARG_POSITIVE(PINT,"Modimer percentage")
+          break;
       }
     else
       argv[j++] = argv[i];
@@ -1080,6 +1090,7 @@ int main(int argc, char *argv[])
       fprintf(stderr,"\n");
       fprintf(stderr,"     Passed through to daligner.\n");
       fprintf(stderr,"      -k: k-mer size (must be <= 32).\n");
+      fprintf(stderr,"      -%%: modimer percentage (take %% of the k-mers).\n");
       fprintf(stderr,"      -w: Look for k-mers in averlapping bands of size 2^-w.\n");
       fprintf(stderr,"      -h: A seed hit if the k-mers in band cover >= -h bps in the");
       fprintf(stderr," targest read.\n");
@@ -1127,12 +1138,16 @@ int main(int argc, char *argv[])
         HINT = 50;
       if (EREL <= 0.)
         EREL = .85;
+      if (PINT <= 0)
+        PINT = 50;
     }
   else
     { if (KINT <= 0)
         KINT = 16;
       if (HINT <= 0)
-        HINT = 50;
+        HINT = 70;
+      if (PINT <= 0)
+        PINT = 28;
     }
 
   if (mapper)
