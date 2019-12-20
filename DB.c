@@ -524,7 +524,7 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
         stub->fname[i] = NULL;
     }
 
-  if (what & DB_STUB_FILES)
+  if (what & DB_STUB_PROLOGS)
     { stub->prolog = (char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record");
       if (stub->prolog == NULL)
         goto stub_error;
