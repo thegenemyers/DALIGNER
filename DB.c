@@ -514,7 +514,7 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
     }
 
   if (what & DB_STUB_FILES)
-    { stub->fname = (char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record");
+    { stub->fname = (char **) Malloc(sizeof(char *)*(nfiles+1),"Allocating DB stub record");
       if (stub->fname == NULL)
         goto stub_error;
       stub->fname += 1;
@@ -525,7 +525,7 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
     }
 
   if (what & DB_STUB_PROLOGS)
-    { stub->prolog = (char **) Malloc(sizeof(char *)*nfiles,"Allocating DB stub record");
+    { stub->prolog = (char **) Malloc(sizeof(char *)*(nfiles+1),"Allocating DB stub record");
       if (stub->prolog == NULL)
         goto stub_error;
       stub->prolog += 1;
@@ -570,6 +570,7 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
 
   fclose(dbfile);
 
+  stub->nfiles  = nfiles;
   stub->all     = all;
   stub->cutoff  = cutoff;
   stub->bsize   = size;

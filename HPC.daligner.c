@@ -1135,7 +1135,7 @@ int main(int argc, char *argv[])
       if (KINT <= 0)
         KINT = 20;
       if (HINT <= 0)
-        HINT = 50;
+        HINT = 70;
       if (EREL <= 0.)
         EREL = .85;
       if (PINT <= 0)
@@ -1145,7 +1145,7 @@ int main(int argc, char *argv[])
     { if (KINT <= 0)
         KINT = 16;
       if (HINT <= 0)
-        HINT = 70;
+        HINT = 50;
       if (PINT <= 0)
         PINT = 28;
     }
