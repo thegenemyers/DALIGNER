@@ -58,6 +58,26 @@ static int SORT_OVL(const void *x, const void *y)
   if (pl != pr)
     return (pl-pr);
 
+  pl = ol->path.aepos;
+  pr = or->path.aepos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.bbpos;
+  pr = or->path.bbpos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.bepos;
+  pr = or->path.bepos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.diffs;
+  pr = or->path.diffs;
+  if (pl != pr)
+    return (pl-pr);
+
   if (ol < or)
     return (-1);
   else if (ol > or)
@@ -72,6 +92,8 @@ static int SORT_MAP(const void *x, const void *y)
 
   Overlap *ol, *or;
   int      al, ar;
+  int      bl, br;
+  int      cl, cr;
   int      pl, pr;
 
   ol = (Overlap *) (IBLOCK+l);
@@ -87,12 +109,86 @@ static int SORT_MAP(const void *x, const void *y)
   if (pl != pr)
     return (pl-pr);
 
+  bl = ol->bread;
+  br = or->bread;
+  if (bl != br)
+    return (bl-br);
+
+  cl = COMP(ol->flags);
+  cr = COMP(or->flags);
+  if (cl != cr)
+    return (cl-cr);
+
+  pl = ol->path.aepos;
+  pr = or->path.aepos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.bbpos;
+  pr = or->path.bbpos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.bepos;
+  pr = or->path.bepos;
+  if (pl != pr)
+    return (pl-pr);
+
+  pl = ol->path.diffs;
+  pr = or->path.diffs;
+  if (pl != pr)
+    return (pl-pr);
+
   if (ol < or)
     return (-1);
   else if (ol > or)
     return (1);
   else
     return (0);
+}
+
+static int EQUAL(Overlap *ol, Overlap *or)
+{ int      al, ar;
+  int      bl, br;
+  int      cl, cr;
+  int      pl, pr;
+
+  al = ol->aread;
+  ar = or->aread;
+  if (al != ar)
+    return (0);
+
+  bl = ol->bread;
+  br = or->bread;
+  if (bl != br)
+    return (0);
+
+  cl = COMP(ol->flags);
+  cr = COMP(or->flags);
+  if (cl != cr)
+    return (0);
+
+  pl = ol->path.abpos;
+  pr = or->path.abpos;
+  if (pl != pr)
+    return (0);
+
+  pl = ol->path.aepos;
+  pr = or->path.aepos;
+  if (pl != pr)
+    return (0);
+
+  pl = ol->path.bbpos;
+  pr = or->path.bbpos;
+  if (pl != pr)
+    return (0);
+
+  pl = ol->path.bepos;
+  pr = or->path.bepos;
+  if (pl != pr)
+    return (0);
+
+  return (1);
 }
 
 int main(int argc, char *argv[])
@@ -249,30 +345,39 @@ int main(int argc, char *argv[])
             qsort(perm,sov,sizeof(int64),SORT_MAP);
           else
             qsort(perm,sov,sizeof(int64),SORT_OVL);
-    
+
           //  Output the records in sorted order
     
-          { int      j;
-            Overlap *w;
+          { int      j, equal;
+            Overlap *w, *x, y;
             int64    tsize, span;
             char    *fptr, *ftop, *wo;
     
+            y.aread = ((Overlap *) (iblock+perm[0]))->aread+1;
+            x = &y;
+
             fptr = fblock;
             ftop = fblock + osize;
             for (j = 0; j < sov; j++)
               { w = (Overlap *) (wo = iblock+perm[j]);
                 do
-                  { tsize = w->path.tlen*tbytes;
+                  { equal = EQUAL(w,x); 
+                    tsize = w->path.tlen*tbytes;
                     span  = ovlsize + tsize;
                     if (fptr + span > ftop)
                       { if (fwrite(fblock,1,fptr-fblock,foutput) != (size_t) (fptr-fblock))
                           SYSTEM_WRITE_ERROR
                         fptr = fblock;
                       }
-                    memmove(fptr,((char *) w)+ptrsize,ovlsize);
-                    fptr += ovlsize;
-                    memmove(fptr,(char *) (w+1),tsize);
-                    fptr += tsize;
+                    if (equal)
+                      fptr += (ovlsize = tsize);
+                    else
+                      { memmove(fptr,((char *) w)+ptrsize,ovlsize);
+                        fptr += ovlsize;
+                        memmove(fptr,(char *) (w+1),tsize);
+                        fptr += tsize;
+                      }
+                    x = w;
                     w = (Overlap *) (wo += span);
                   }
                 while (wo < iend && CHAIN_NEXT(w->flags));

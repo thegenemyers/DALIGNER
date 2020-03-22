@@ -1758,7 +1758,6 @@ static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
                 j += 1;
               }
           }
-        track->data = Realloc(track->data,anno4[j],NULL);
         track->alen = Realloc(track->alen,sizeof(int)*j,NULL);
         track->anno = Realloc(track->anno,track->size*(j+1),NULL);
       }
@@ -1779,7 +1778,6 @@ static int Late_Track_Trim(DAZZ_DB *db, DAZZ_TRACK *track, int ispart)
                 j += 1;
               }
           }
-        track->data = Realloc(track->data,anno8[j],NULL);
         track->alen = Realloc(track->alen,sizeof(int)*j,NULL);
         track->anno = Realloc(track->anno,track->size*(j+1),NULL);
       }
