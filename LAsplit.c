@@ -64,14 +64,16 @@ int main(int argc, char *argv[])
 
     parts = strtol(argv[2],&eptr,10);
     if (*eptr != '\0')
-      { pwd   = PathTo(argv[2]);
+      { pwd = PathTo(argv[2]);
         if (strcmp(argv[2]+(strlen(argv[2])-4),".dam") == 0)
           { root = Root(argv[2],".dam");
             stub = Read_DB_Stub(Catenate(pwd,"/",root,".dam"),DB_STUB_BLOCKS);
+            parts = stub->nblocks;
           }
         else
           { root = Root(argv[2],".db");
             stub = Read_DB_Stub(Catenate(pwd,"/",root,".db"),DB_STUB_BLOCKS);
+            parts = stub->nblocks;
           }
         free(pwd);
         free(root);
@@ -173,7 +175,7 @@ int main(int argc, char *argv[])
                 last = w->aread;
               }
             else
-              { if (w->aread > last)
+              { if (w->aread >= last)
                   break;
               }
 

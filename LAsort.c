@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
                         fptr = fblock;
                       }
                     if (equal)
-                      fptr += (ovlsize = tsize);
+                      fptr += (ovlsize + tsize);
                     else
                       { memmove(fptr,((char *) w)+ptrsize,ovlsize);
                         fptr += ovlsize;

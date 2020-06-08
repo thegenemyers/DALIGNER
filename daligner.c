@@ -51,8 +51,8 @@
 #include "filter.h"
 
 static char *Usage[] =
-  { "[-vaABI] [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>] [-M<int>]",
-    "         [-e<double(.75)] [-l<int(1500)>] [-s<int(100)>] [-H<int>]",
+  { "[-vaABI] [-k<int(16)>] [-%<int(28)>] [-h<int(50)>] [-w<int(6)>] [-t<int>]",
+    "         [-M<int>] [-e<double(.75)] [-l<int(1500)>] [-s<int(100)>] [-H<int>]",
     "         [-T<int(4)>] [-P<dir(/tmp)>] [-m<track>]+",
     "         <subject:db|dam> <target:db|dam> ...",
   };
