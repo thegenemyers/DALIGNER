@@ -28,7 +28,7 @@
 #include "filter.h"
 #include "align.h"
 
-#undef  PROFILE        //  WHen running sensitivity trials, compute histogram of
+                       //  WHen running sensitivity trials, compute histogram of
 #define MAXHIT   1000  //    false & true positive hit scores
 
   //  Debug Controls
@@ -2521,7 +2521,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
   }
 #endif
 
-  { int  max_diag  = ((ablock->maxlen >> Binshift) - ((-bblock->maxlen) >> Binshift)) + 1;
+  { int  max_diag  = ((ablock->maxlen >> Binshift) - ((-bblock->maxlen) >> Binshift)) + 3;
     int *space;
     int  i;
 
@@ -2556,7 +2556,7 @@ void Match_Filter(char *aname, DAZZ_DB *ablock, char *bname, DAZZ_DB *bblock,
       space[i] = 0;
     for (i = 0; i < NTHREADS; i++)
       { if (i == 0)
-          parmr[i].score = space - ((-bblock->maxlen) >> Binshift);
+          parmr[i].score = space - (((-bblock->maxlen) >> Binshift) - 1);
         else
           parmr[i].score = parmr[i-1].lasta + max_diag;
         parmr[i].lastp = parmr[i].score + max_diag;

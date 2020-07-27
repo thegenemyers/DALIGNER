@@ -14,6 +14,8 @@
 #include "DB.h"
 #include "align.h"
 
+#undef PROFILE
+
 extern int    VERBOSE;      //  -v flag is set?
 extern int    MINOVER;      //  minimum overlap (-l)
 extern int    HGAP_MIN;     //  HGap minimum (-H)

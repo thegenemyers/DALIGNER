@@ -284,10 +284,10 @@ int main(int argc, char *argv[])
               exit (1);
 
             if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
-              SYSTEM_READ_ERROR
+              SYSTEM_WRITE_ERROR
             if (fwrite(&tspace,sizeof(int),1,foutput) != 1)
-              SYSTEM_READ_ERROR
-    
+              SYSTEM_WRITE_ERROR
+ 
             if (size > isize)
               { if (iblock == NULL)
                   iblock = Malloc(size+ptrsize,"Allocating LAsort input block");
@@ -309,6 +309,11 @@ int main(int argc, char *argv[])
             free(root);
             free(path);
           }
+
+          if (novl == 0)
+            { fclose(foutput);
+              continue;
+            }
     
           //  Set up unsorted permutation array
         
@@ -337,7 +342,7 @@ int main(int argc, char *argv[])
                 sov = novl;
               }
           }
-    
+
           //  Sort permutation array of ptrs to records
     
           IBLOCK = iblock;
@@ -370,7 +375,9 @@ int main(int argc, char *argv[])
                         fptr = fblock;
                       }
                     if (equal)
-                      fptr += (ovlsize + tsize);
+                      { fptr += (ovlsize + tsize);
+                        novl -= 1;
+                      }
                     else
                       { memmove(fptr,((char *) w)+ptrsize,ovlsize);
                         fptr += ovlsize;
@@ -388,12 +395,15 @@ int main(int argc, char *argv[])
               }
           }
 
+          rewind(foutput);
+          if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
+            SYSTEM_WRITE_ERROR
+
           free(perm);
           fclose(foutput);
         }
       Free_Block_Arg(parse);
     }
-
     
   if (iblock != NULL)
     free(iblock - ptrsize);

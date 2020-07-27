@@ -40,6 +40,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/resource.h>
 
 #include <sys/param.h>
 #if defined(BSD)
@@ -470,6 +471,12 @@ int main(int argc, char *argv[])
   int    NTHREADS;
   int    MAP_ORDER;
 
+#ifdef PROFILE
+  struct rusage stime, etime;
+
+  getrusage(RUSAGE_SELF, &stime);
+#endif
+
   { int    i, j, k;
     int    flags[128];
     char  *eptr;
@@ -728,7 +735,24 @@ int main(int argc, char *argv[])
   Close_DB(ablock);
   free(apath);
   free(aroot);
-  Clean_Exit(0);
 
+#ifdef PROFILE
+  { int64 secs, mics;
+
+    getrusage(RUSAGE_SELF, &etime);
+
+    secs  = etime.ru_utime.tv_sec  - stime.ru_utime.tv_sec;
+    mics  = etime.ru_utime.tv_usec - stime.ru_utime.tv_usec;
+    mics += 1000000*secs;
+
+    secs  = etime.ru_stime.tv_sec  - stime.ru_stime.tv_sec;
+    mics += etime.ru_stime.tv_usec - stime.ru_stime.tv_usec;
+    mics += 1000000*secs;
+
+    printf("T %lld\n",mics/1000);
+  }
+#endif
+
+  Clean_Exit(0);
   exit (0);
 }
