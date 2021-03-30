@@ -495,7 +495,9 @@ DAZZ_STUB *Read_DB_Stub(char *path, int what)
 
   stub = Malloc(sizeof(DAZZ_STUB),"Allocating DB stub record");
   if (stub == NULL)
-    EXIT(NULL);
+    { fclose(dbfile);
+      EXIT(NULL);
+    }
 
   stub->nreads  = NULL;
   stub->fname   = NULL;
@@ -581,6 +583,7 @@ stub_trash:
   EPRINTF(EPLACE,"%s: Stub file %s is junk\n",Prog_Name,path);
 stub_error:
   Free_DB_Stub(stub);
+  fclose(dbfile);
   EXIT(NULL);
 }
 
@@ -621,6 +624,7 @@ int Fetch_Block_Range(char *path, int trim, int n, int *first, int *last)
       goto stub_error;
   if (fscanf(dbfile,DB_BDATA,&ulast,&tlast) != 2)
     goto stub_error;
+
   fclose(dbfile);
 
   if (trim)
@@ -635,6 +639,7 @@ int Fetch_Block_Range(char *path, int trim, int n, int *first, int *last)
   return (0);
 
 stub_error:
+  fclose(dbfile);
   EPRINTF(EPLACE,"%s: Stub file %s is junk\n",Prog_Name,path);
   EXIT(1);
 }
@@ -1639,6 +1644,7 @@ void Close_Arrow(DAZZ_DB *db)
 //     0: Track is for untrimmed DB
 //    -1: Track is not the right size of DB either trimmed or untrimmed
 //    -2: Could not find the track 
+//    -3: Error return (if INTERACTIVE mode only)
 
 int Check_Track(DAZZ_DB *db, char *track, int *kind)
 { FILE       *afile;
@@ -1658,12 +1664,14 @@ int Check_Track(DAZZ_DB *db, char *track, int *kind)
     return (-2);
 
   if (fread(&tracklen,sizeof(int),1,afile) != 1)
-    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      fclose(afile);
+      EXIT(-3);
     }
   if (fread(&size,sizeof(int),1,afile) != 1)
-    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      fclose(afile);
+      EXIT(-3);
     }
 
   if (size == 0)
@@ -1671,8 +1679,9 @@ int Check_Track(DAZZ_DB *db, char *track, int *kind)
   else if (size > 0)
     *kind = CUSTOM_TRACK;
   else
-    { fprintf(stderr,"%s: track files for %s are corrupted\n",Prog_Name,track);
-      exit (1);
+    { EPRINTF(EPLACE,"%s: track files for %s are corrupted\n",Prog_Name,track);
+      fclose(afile);
+      EXIT(-3);
     }
   
   fclose(afile);
@@ -2144,11 +2153,11 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
 #define EREAD(v,s,n,file,ret)                                                           \
   { if (fread(v,s,n,file) != (size_t) n)                                                \
       { if (ferror(file))                                                               \
-          fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);       		\
+          EPRINTF(EPLACE,"%s: System error, read failed!\n",Prog_Name);       		\
         else if (ret)                                                                   \
           return (1);									\
         else										\
-          fprintf(stderr,"%s: The file %s is corrupted\n",Prog_Name,aname);		\
+          EPRINTF(EPLACE,"%s: The file %s is corrupted\n",Prog_Name,aname);		\
         EXIT(-1);									\
       }                                                                                 \
   }
@@ -2160,7 +2169,7 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
 
   if (extra == NULL)
     { if (fseeko(afile,slen+8*nelem,SEEK_CUR) < 0)
-        { fprintf(stderr,"%s: System error, read failed!\n",Prog_Name);
+        { EPRINTF(EPLACE,"%s: System error, read failed!\n",Prog_Name);
           EXIT(-1);
         }
       return (0);
@@ -2168,8 +2177,11 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
 
   name  = (char *) Malloc(slen+1,"Allocating extra name");
   value = Malloc(8*nelem,"Allocating extra value");
-  if (name == NULL || value == NULL)
-    EXIT(-1);
+  if (value == NULL || name == NULL)
+    { free(name);
+      free(value);
+      EXIT(-1);
+    }
 
   EREAD(name,1,slen,afile,0);
   EREAD(value,8,nelem,afile,0);
@@ -2185,22 +2197,23 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
     }
 
   if (vtype != extra->vtype)
-    { fprintf(stderr,"%s: Type of extra %s does not agree with previous .anno block files\n",
+    { EPRINTF(EPLACE,"%s: Type of extra %s does not agree with previous .anno block files\n",
                      Prog_Name,name);
       goto error;
     }
   if (nelem != extra->nelem)
-    { fprintf(stderr,"%s: Length of extra %s does not agree with previous .anno block files\n",
+    { EPRINTF(EPLACE,"%s: Length of extra %s does not agree with previous .anno block files\n",
                      Prog_Name,name);
       goto error;
     }
   if (accum != extra->accum)
-    { fprintf(stderr,"%s: Reduction indicator of extra %s does not agree with",Prog_Name,name);
-      fprintf(stderr," previos .anno block files\n");
+    { EPRINTF(EPLACE,
+           "%s: Reduction indicator of extra %s does not agree with previos .anno block files\n",
+           Prog_Name,name);
       goto error;
     }
   if (strcmp(name,extra->name) != 0)
-    { fprintf(stderr,"%s: Expecting extra %s in .anno block file, not %s\n",
+    { EPRINTF(EPLACE,"%s: Expecting extra %s in .anno block file, not %s\n",
                      Prog_Name,extra->name,name);
       goto error;
     }
@@ -2213,8 +2226,9 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
       if (accum == DB_EXACT)
         { for (j = 0; j < nelem; j++)
             if (eval[j] != ival[j])
-              { fprintf(stderr,"%s: Value of extra %s doe not agree",Prog_Name,name);
-                fprintf(stderr," with previous .anno block files\n");
+              { EPRINTF(EPLACE,
+                    "%s: Value of extra %s doe not agree with previous .anno block files\n",
+                    Prog_Name,name);
                 goto error;
               }
         }
@@ -2232,8 +2246,9 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
       if (accum == DB_EXACT)
         { for (j = 0; j < nelem; j++)
             if (eval[j] != ival[j])
-              { fprintf(stderr,"%s: Value of extra %s doe not agree",Prog_Name,name);
-                fprintf(stderr," with previous .anoo block files\n");
+              { EPRINTF(EPLACE,
+                    "%s: Value of extra %s doe not agree with previous .anno block files\n",
+                    Prog_Name,name);
                 goto error;
               }
         }
@@ -2250,7 +2265,7 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
 error:
   free(value);
   free(name);
-  EXIT(1);
+  EXIT(-2);
 }
 
 //  Write extra record to end of file afile and advance write pointer
@@ -2685,8 +2700,8 @@ FILE *Next_Block_Arg(Block_Looper *e_parse)
 
   if (parse->isDB)
     { fprintf(stderr,"%s: Cannot open a DB block as a file (Next_Block_Arg)\n",Prog_Name);
-      exit (1);
-    }
+      exit (1);  //  exit even in interactive mode as this is a programming bug on
+    }            //   the part of the caller
 
   parse->next += 1;
   if (parse->next > parse->last)
@@ -2699,8 +2714,8 @@ FILE *Next_Block_Arg(Block_Looper *e_parse)
 
   if ((input = fopen(MyCatenate(parse->pwd,"/",disp,".las"),"r")) == NULL)
     { if (parse->last != INT_MAX)
-        { fprintf(stderr,"%s: %s.las is not present\n",Prog_Name,disp);
-          exit (1);
+        { EPRINTF(EPLACE,"%s: %s.las is not present\n",Prog_Name,disp);
+          EXIT(NULL);
         }
       return (NULL);
     }
@@ -2767,7 +2782,7 @@ char *Next_Block_Slice(Block_Looper *e_parse, int slice)
     { int size = strlen(parse->pwd) + strlen(Block_Arg_Root(parse)) + 30;
       parse->slice =  (char *)  Malloc(size,"Block argument slice");
       if (parse->slice == NULL)
-        exit (1);
+        EXIT(NULL);
     }
 
   if (parse->next+1 > parse->last)
@@ -2807,16 +2822,16 @@ static Block_Looper *parse_block_arg(char *arg, int isDB)
   else
     root  = Root(arg,".las");
   if (parse == NULL || pwd == NULL || root == NULL)
-    exit (1);
+    goto error;
 
   ppnt = index(root,BLOCK_SYMBOL);
   if (ppnt == NULL)
     first = last = -1;
   else
     { if (index(ppnt+1,BLOCK_SYMBOL) != NULL)
-        { fprintf(stderr,"%s: Two or more occurences of %c-sign in source name '%s'\n",
+        { EPRINTF(EPLACE,"%s: Two or more occurences of %c-sign in source name '%s'\n",
                          Prog_Name,BLOCK_SYMBOL,root);
-          exit (1);
+          goto error;
         }
       *ppnt++ = '\0';
       first = strtol(ppnt,&cpnt,10);
@@ -2826,24 +2841,24 @@ static Block_Looper *parse_block_arg(char *arg, int isDB)
         }
       else
         { if (first < 1)
-            { fprintf(stderr,
+            { EPRINTF(EPLACE,
                       "%s: Integer following %c-sigan is less than 1 in source name '%s'\n",
                       Prog_Name,BLOCK_SYMBOL,root);
-              exit (1);
+              goto error;
             }
           if (*cpnt == '-')
             { ppnt = cpnt+1;
               last = strtol(ppnt,&cpnt,10);
               if (cpnt == ppnt)
-                { fprintf(stderr,"%s: Second integer must follow - in source name '%s'\n",
+                { EPRINTF(EPLACE,"%s: Second integer must follow - in source name '%s'\n",
                                  Prog_Name,root);
-                  exit (1);
+                  goto error;
                 }
               if (last < first)
-                { fprintf(stderr,
+                { EPRINTF(EPLACE,
                           "%s: 2nd integer is less than 1st integer in source name '%s'\n",
                           Prog_Name,root);
-                  exit (1);
+                  goto error;
                 }
               ppnt = cpnt;
             }
@@ -2875,8 +2890,8 @@ static Block_Looper *parse_block_arg(char *arg, int isDB)
         { dbname = MyCatenate(pwd,"/",root,"dam"); 
           dbfile = fopen(dbname,"r");
           if (dbfile == NULL)
-            { fprintf(stderr,"%s: Cannot open database %s[db|dam]\n",Prog_Name,root);
-              exit (1);
+            { EPRINTF(EPLACE,"%s: Cannot open database %s[db|dam]\n",Prog_Name,root);
+              goto error;
             }
         }
 
@@ -2893,6 +2908,12 @@ static Block_Looper *parse_block_arg(char *arg, int isDB)
     }
 
   return ((Block_Looper *) parse);
+
+error:
+  free(parse);
+  free(root);
+  free(pwd);
+  EXIT(NULL);
 }
 
 Block_Looper *Parse_Block_LAS_Arg(char *arg)

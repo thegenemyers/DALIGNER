@@ -596,6 +596,7 @@ void Close_Arrow(DAZZ_DB *);
   //     0: Track is for untrimmed DB
   //    -1: Track is not the right size of DB either trimmed or untrimmed
   //    -2: Could not find the track
+  //    -3: Error return (if INTERACTIVE mode only)
   // In addition, if opened (0 or 1 returned), then kind points at an integer indicating
   //   the type of track as follows:
   //      CUSTOM  0 => a custom track
@@ -705,7 +706,7 @@ void Close_QVs(DAZZ_DB *db);
   //   Take a command line argument and interpret the '@' block number ranges.
   //   Parse_Block_[LAS,DB]_Arg produces a Block_Looper iterator object that can then
   //   be invoked multiple times to iterate through all the file names implied by
-  //   the @ pattern/range.  Next_Block_Slice returns a string encoing the next
+  //   the @ pattern/range.  Next_Block_Slice returns a string encoding the next
   //   slice files represented by an @-notation, and advances the iterator by
   //   that many files.
 
