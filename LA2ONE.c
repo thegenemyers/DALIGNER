@@ -20,9 +20,114 @@
 
 #include "DB.h"
 #include "align.h"
+#include "ONElib.h"
 
 static char *Usage =
-    "[-cdtlo] <src1:db|dam> [<src2:db|dam>] <align:las> [<reads:FILE> | <reads:range> ...]";
+    "[-cto] <src1:db|dam> [<src2:db|dam>] <align:las> [<reads:FILE> | <reads:range> ...]";
+
+static char *One_Schema =
+  "P 3 dal\n"
+  "D X 1 3 INT\n"             //  Data prolog: trace spacing
+  "O P 2 3 INT 8 INT_LIST\n"  //  A-read and B-read list
+                              //    All per B-read
+  "D O 1 6 STRING\n"          //       orientation [+-]
+  "D C 1 6 STRING\n"          //       chain directive [>+-.]
+  "D B 1 8 INT_LIST\n"        //       (ab,bb)
+  "D E 1 8 INT_LIST\n"        //       (ae,be)
+  "D L 2 3 INT 8 INT_LIST\n"  //       la and then each lb
+  "D D 1 8 INT_LIST\n"        //       diff
+                              //    One line per B-read
+  "D T 1 8 INT_LIST\n"        //       trace segment length
+  "D Q 1 8 INT_LIST\n";       //       trace segment diffs
+
+static Overlap   *ovls;
+static uint16    *trace;
+static int64     *list;
+static char      *string;
+static OneFile   *file1;
+static DAZZ_READ *read1, *read2;
+
+static int     OVERLAP;
+static int     DOCOORDS;
+static int     DOTRACE;
+
+static void output_pile(Overlap *optr)
+{ int i, k;
+  Overlap *o;
+
+  i = 0;
+  for (o = ovls; o < optr; o++)
+    list[i++] = o->bread+1;
+  oneInt(file1,0) = ovls->aread+1;
+  oneWriteLine(file1,'P',i,list);
+
+  i = 0;
+  for (o = ovls; o < optr; o++)
+    if (COMP(o->flags))
+      string[i++] = 'c';
+    else
+      string[i++] = 'n';
+  oneWriteLine(file1,'O',i,string);
+
+  i = 0;
+  for (o = ovls; o < optr; o++)
+    if (CHAIN_NEXT(o->flags))
+      string[i++] = '-';
+    else if (BEST_CHAIN(o->flags))
+      string[i++] = '>';
+    else if (CHAIN_START(o->flags))
+      string[i++] = '+';
+    else
+      string[i++] = '.';
+  oneWriteLine(file1,'C',i,string);
+    
+  if (DOCOORDS)
+    { i = 0;
+      for (o = ovls; o < optr; o++)
+        { list[i++] = o->path.abpos;
+          list[i++] = o->path.bbpos;
+        }
+      oneWriteLine(file1,'B',i,list);
+
+      i = 0;
+      for (o = ovls; o < optr; o++)
+        { list[i++] = o->path.aepos;
+          list[i++] = o->path.bepos;
+        }
+      oneWriteLine(file1,'E',i,list);
+
+      oneInt(file1,0) = read1[ovls->aread].rlen;
+      i = 0;
+      for (o = ovls; o < optr; o++)
+        list[i++] = read2[o->bread].rlen;
+      oneWriteLine(file1,'L',i,list);
+
+      i = 0;
+      for (o = ovls; o < optr; o++)
+        list[i++] = o->path.diffs;
+      oneWriteLine(file1,'D',i,list);
+    }
+    
+  if (DOTRACE)
+    { uint16 *trace;
+      int     tlen;
+
+      for (o = ovls; o < optr; o++)
+        { trace = (uint16 *) o->path.trace;
+          tlen  = o->path.tlen;
+
+          i = 0;
+          for (k = 0; k < tlen; k += 2)
+            list[i++] = trace[k];
+          oneWriteLine(file1,'T',i,list);
+
+          i = 0;
+          for (k = 1; k < tlen; k += 2)
+            list[i++] = trace[k];
+          oneWriteLine(file1,'Q',i,list);
+        }
+    }
+}
 
 static int ORDER(const void *l, const void *r)
 { int x = *((int *) l);
@@ -33,17 +138,14 @@ static int ORDER(const void *l, const void *r)
 int main(int argc, char *argv[])
 { DAZZ_DB   _db1, *db1 = &_db1; 
   DAZZ_DB   _db2, *db2 = &_db2; 
-  Overlap   _ovl, *ovl = &_ovl;
+  OneSchema *schema;
 
   FILE   *input;
-  int64   novl;
-  int     tspace, tbytes, small;
-  int     trmax;
+  int64   novl, omax, tmax;
+  int     tspace, tbytes;
   int     reps, *pts;
   int     input_pts;
 
-  int     OVERLAP;
-  int     DOCOORDS, DODIFFS, DOTRACE, DOLENS;
   int     ISTWO;
 
   //  Process options
@@ -51,14 +153,14 @@ int main(int argc, char *argv[])
   { int    i, j, k;
     int    flags[128];
 
-    ARG_INIT("LAdump")
+    ARG_INIT("LA2ONE")
 
     j = 1;
     for (i = 1; i < argc; i++)
       if (argv[i][0] == '-')
         switch (argv[i][1])
         { default:
-            ARG_FLAGS("ocdtl")
+            ARG_FLAGS("cto")
             break;
         }
       else
@@ -67,9 +169,7 @@ int main(int argc, char *argv[])
 
     OVERLAP   = flags['o'];
     DOCOORDS  = flags['c'];
-    DODIFFS   = flags['d'];
     DOTRACE   = flags['t'];
-    DOLENS    = flags['l'];
 
     if (DOTRACE)
       DOCOORDS = 1;
@@ -77,22 +177,11 @@ int main(int argc, char *argv[])
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
-        fprintf(stderr,"      P #a #b #o #c     -");
-        fprintf(stderr," (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and\n");
-        fprintf(stderr,"                         ");
-        fprintf(stderr,"   #c is '>' (start of best chain), '+' (start of alternate chain),\n");
-        fprintf(stderr,"                         ");
-        fprintf(stderr,"   '-' (continuation of chain), or '.' (no chains in file).\n");
+        fprintf(stderr,"      Output P, O, C and D lines by default\n");
         fprintf(stderr,"\n");
-        fprintf(stderr,"      -c: C #ab #ae #bb #be - #a[#ab,#ae] aligns with #b^#o[#bb,#be]\n");
-        fprintf(stderr,"      -d: D #               - there are # differences in the LA\n");
-        fprintf(stderr,"      -t: T #n              -");
-        fprintf(stderr," there are #n trace point intervals for the LA\n");
-        fprintf(stderr,"           (#d #y )^#n      -");
-        fprintf(stderr," there are #d difference aligning the #y bp's of B with the\n");
-        fprintf(stderr,"                                 next fixed-size interval of A\n");
-        fprintf(stderr,"      -l: L #la #lb         -");
-        fprintf(stderr," #la is the length of the a-read and #lb that of the b-read\n");
+        fprintf(stderr,"      -c: Ootput also aligned intervals and read lengths");
+          fprintf(stderr," (B, E, and L lines\n");
+        fprintf(stderr,"      -t: Output also traces (T and Q lines)\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -o: Output proper overlaps only\n");
 
@@ -283,23 +372,25 @@ int main(int argc, char *argv[])
       SYSTEM_READ_ERROR
 
     if (tspace <= TRACE_XOVR && tspace != 0)
-      { small  = 1;
-        tbytes = sizeof(uint8);
-      }
+      tbytes = sizeof(uint8);
     else
-      { small  = 0;
-        tbytes = sizeof(uint16);
-      }
+      tbytes = sizeof(uint16);
 
     free(pwd);
     free(root);
   }
 
-  //  Scan to count sizes of things
+  schema = oneSchemaCreateFromText(One_Schema);
+  file1  = oneFileOpenWriteNew("-",schema,"dal",true,1);
+  oneWriteHeader(file1);
 
-  { int   j, al, tlen;
-    int   in, npt, idx, ar;
-    int64 novls, odeg, omax, sdeg, smax, tmax, ttot;
+  //  Scan to determine max trace length and max pile size
+
+  { int     in, npt, idx;
+    int     j, ar, al;
+    int     tlen;
+    int64   odeg;
+    Overlap _ovl, *ovl = &_ovl;
 
     in  = 0;
     npt = pts[0];
@@ -307,9 +398,8 @@ int main(int argc, char *argv[])
 
     //  For each record do
 
-    trmax = 0;
-    novls = omax = smax = ttot = tmax = 0;
-    sdeg  = odeg = 0;
+    omax = tmax = 0;
+    odeg = 0;
 
     al = 0;
     for (j = 0; j < novl; j++)
@@ -319,8 +409,6 @@ int main(int argc, char *argv[])
       { Read_Overlap(input,ovl);
         tlen = ovl->path.tlen;
         fseeko(input,tlen*tbytes,SEEK_CUR);
-        if (tlen > trmax)
-          trmax = tlen;
 
         //  Determine if it should be displayed
 
@@ -359,82 +447,105 @@ int main(int argc, char *argv[])
           }
 
         if (ar != al)
-          { if (sdeg > smax)
-              smax = sdeg;
-            if (odeg > omax)
+          { if (odeg > omax)
               omax = odeg;
-            sdeg = odeg = 0;
             al = ar;
           }
-
-        novls += 1;
-        odeg  += 1;
-        sdeg  += tlen;
-        ttot  += tlen;
+        odeg += 1;
         if (tlen > tmax)
           tmax = tlen;
       }
-
-    if (sdeg > smax)
-      smax = sdeg;
     if (odeg > omax)
       omax = odeg;
-
-    printf("+ P %lld\n",novls);
-    printf("%% P %lld\n",omax);
-    if (DOTRACE)
-      { printf("+ T %lld\n",ttot);
-        printf("%% T %lld\n",smax);
-        printf("@ T %lld\n",tmax);
-        printf("X %d\n",tspace);
-      }
   }
 
   //  Read the file and display selected records
   
-  { int        j, k;
-    uint16    *trace;
-    int        in, npt, idx, ar;
-    DAZZ_READ *read1, *read2;
+  { int        j;
+    Overlap   *optr;
+    uint16    *tptr;
+    int        in, npt, idx, ar, last;
 
     rewind(input);
     fread(&novl,sizeof(int64),1,input);
     fread(&tspace,sizeof(int),1,input);
 
-    trace = (uint16 *) Malloc(sizeof(uint16)*trmax,"Allocating trace vector");
-    if (trace == NULL)
+    ovls   = Malloc(sizeof(Overlap)*omax,"Allocating alignment array");
+    trace  = Malloc(sizeof(uint16)*omax*tmax,"Allocating trace buffer");
+    string = Malloc(sizeof(int64)*omax,"Allocating 1-string");
+    if (tmax > 2*omax)
+      list = Malloc(sizeof(int64)*tmax,"Allocating 1-list");
+    else
+      list = Malloc(sizeof(int64)*omax*2,"Allocating 1-list");
+    if (ovls == NULL || trace == NULL || string == NULL || list == NULL)
       exit (1);
 
     read1 = db1->reads;
     read2 = db2->reads;
 
+    oneInt(file1,0) = tspace;
+    oneWriteLine(file1,'X',0,NULL);
+
+    //  For each record do
+
     in  = 0;
     npt = pts[0];
     idx = 1;
 
-    //  For each record do
-
-    for (j = 0; j < novl; j++)
+    optr = ovls;
+    tptr = trace; 
+    last = -1;
+    for (j = 0; j <= novl; j++)
 
        //  Read it in
 
-      { Read_Overlap(input,ovl);
-        ovl->path.trace = (void *) trace;
-        Read_Trace(input,ovl,tbytes);
+      { Read_Overlap(input,optr);
+        ar = optr->aread+1;
 
-        //  Determine if it should be displayed
-
-        ar = ovl->aread+1;
         if (in)
-          { while (ar > npt)
-              { npt = pts[idx++];
-                if (ar < npt)
-                  { in = 0;
-                    break;
+
+          { if (ar == last)
+              { optr->path.trace = (void *) tptr;
+                Read_Trace(input,optr,tbytes);
+                if (tbytes == 1)
+                  Decompress_TraceTo16(optr);
+                tptr += sizeof(uint16)*optr->path.tlen;
+                optr += 1;
+              }
+
+            else
+              { output_pile(optr);
+
+                while (ar > npt)
+                  { npt = pts[idx++];
+                    if (ar < npt)
+                      { in = 0;
+                        break;
+                      }
+                    npt = pts[idx++];
                   }
-                npt = pts[idx++];
+
+                if (in)
+                  { ovls[0] = *optr++;
+                    tptr    = trace;
+                    optr    = ovls;
+                    last    = ar;
+
+                    optr->path.trace = (void *) tptr;
+                    Read_Trace(input,optr,tbytes);
+                    if (tbytes == 1)
+                      Decompress_TraceTo16(optr);
+                    tptr += sizeof(uint16)*optr->path.tlen;
+                    optr += 1;
+                  }
+                else
+                  { fseeko(input,optr->path.tlen*tbytes,SEEK_CUR);
+                    optr = ovls;
+                    tptr = trace;
+                  }
               }
           }
+
         else
           { while (ar >= npt)
               { npt = pts[idx++];
@@ -444,60 +555,33 @@ int main(int argc, char *argv[])
                   }
                 npt = pts[idx++];
               }
-          }
-        if (!in)
-          continue;
 
-        //  If -o check display only overlaps
+            if (in)
+              { last = ar;
 
-        if (OVERLAP)
-          { if (ovl->path.abpos != 0 && ovl->path.bbpos != 0)
-              continue;
-            if (ovl->path.aepos != db1->reads[ovl->aread].rlen &&
-                ovl->path.bepos != db2->reads[ovl->bread].rlen)
-              continue;
-          }
-
-        //  Display it
-            
-        printf("P %d %d",ovl->aread+1,ovl->bread+1);
-        if (COMP(ovl->flags))
-          printf(" c");
-        else
-          printf(" n");
-        if (CHAIN_NEXT(ovl->flags))
-          printf(" -");
-        else if (BEST_CHAIN(ovl->flags))
-          printf(" >");
-        else if (CHAIN_START(ovl->flags))
-          printf(" +");
-        else
-          printf(" .");
-        printf("\n");
-
-        if (DOLENS)
-          printf("L %d %d\n",read1[ovl->aread].rlen,read2[ovl->bread].rlen);
-
-        if (DOCOORDS)
-          printf("C %d %d %d %d\n",ovl->path.abpos,ovl->path.aepos,ovl->path.bbpos,ovl->path.bepos);
-
-        if (DODIFFS)
-          printf("D %d\n",ovl->path.diffs);
-
-        if (DOTRACE)
-          { uint16 *trace = (uint16 *) ovl->path.trace;
-            int     tlen  = ovl->path.tlen;
-
-            if (small)
-              Decompress_TraceTo16(ovl);
-            printf("T %d\n",tlen>>1);
-            for (k = 0; k < tlen; k += 2)
-              printf(" %d %d\n",trace[k],trace[k+1]);
+                optr->path.trace = (void *) tptr;
+                Read_Trace(input,optr,tbytes);
+                if (tbytes == 1)
+                  Decompress_TraceTo16(optr);
+                tptr += sizeof(uint16)*optr->path.tlen;
+                optr += 1;
+              }
+            else
+              fseeko(input,optr->path.tlen*tbytes,SEEK_CUR);
           }
       }
 
+    if (in)
+      output_pile(optr);
+
+    free(string);
+    free(list);
     free(trace);
+    free(ovls);
   }
+
+  oneFileClose(file1);
+  oneSchemaDestroy(schema);
 
   Close_DB(db1);
   if (ISTWO)

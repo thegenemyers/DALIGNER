@@ -250,22 +250,28 @@ scoring chain and + indicates an alternate near optimal chain (controlled by the
 -n parameter to damapper).  Each additional LA of a chain is marked with a - character.
 
 ```
-5a. LAdump [-cdtlo] <src1:db|dam> [ <src2:db|dam> ]
-                   <align:las> [ <reads:FILE> | <reads:range> ... ]
+5a. LA2ONE [-cto] <src1:db|dam> [ <src2:db|dam> ]
+                   <align:las> [ <reads:FILE> | <reads:range> ... ]  > (.dal file)
 
-5b. dumpLA <align.las>
+5b. ONE2LA <align.dal> > (.las file)
 ```
 
-Like LAshow, LAdump allows one to display the local alignments (LAs) of a subset of the
-piles in an .las file and select which information to show about them.  The difference
-is that the information is written in a very simple "1-code" ASCII format that makes it
-easy for one to read and parse the information for further use.  For each LA the pair of
-reads is output on a line.  -c requests that one further output the coordinates of the
-LA segments be output.  The -d option requests that the number of difference in the LA
-be output, -t requests that the tracepoint information be output, and -l requests the
-length of the two reads be output.  Finally, -o requests that only LAs that are proper
-overlaps be output. 
+LA2ONE produces a .dal 1-code data file of all our a portion  of the contents of a .las file.
+[1-code](https://www.github.com/thegenemyers/ONE-Code)
+is a powerful self-describing, simple to use, data system with built in compression.
+Typically a .dal file will be 45% the size of its corresponding .dal file.
+By default only the pairwise overlapped pairs, their orientation, and chaining (if any) are
+output.  The -c option
+requests that one further output the coordinates of the
+LA segments, the lengths of the reads and the # of differences in each LA.
+The -t option requests the trace point alignment details are output for each LA.
+If -t is set then -c must be set and if both are set then all of the information about each
+LA is effectively output.  The -o option requests that only LAs that are proper
+overlaps be output.  Only the overlaps for particular A-reads may be specified as per the same command line arguments as documented for LAshow above.
 
+ONE2LA converts a 1-code .dal file back into a .las file.  It requires that the .dal file contains all the information about each LA therein, that is, it must contain all the information that is output by LA2ONE with the options -ct set.
+
+The .dal format is quite simple. ...
 The format is very simple.  Each requested piece of information occurs on a line.  The
 first character of every line is a "1-code" character that tells you what information
 to expect on the line.  The rest of the line contains information where each item is
@@ -300,23 +306,8 @@ After these lines and before the start of the lines describing alignment records
 single line of the form 'X #' where the number is the trace point spacing for all
 alignments.
 
-The command dumpLA reads a 1-code file from the standard input and if possible produces a .las
-file for it.  The 1-code file is any legitimate coding of alignments as might be produced by LAdump.
-The 1-code file must contain the P-, C-, and T-lines as well as the X-line and the header lines
-beginning with +, %, or @.  So for example, a 1-code file produced by LAdump with the -c and -t
-options is invertible.
-
 ```
-6a. LAa2b
-6b. LAb2a
-```
-
-Pipes (stdin to stdout) that convert an ASCII output produced by LAdump into a compressed
-binary representation (LAa2b) and vice verse (LAb2a).  The idea is to save disk space by
-keeping the dumps in a more compressed format.
-
-```
-7. LAcat [-v] <source:las> ... > <target>.las
+6. LAcat [-v] <source:las> ... > <target>.las
 ```
 
 The sequence of \<source\> files (that can contain @-sign block ranges) are
@@ -326,7 +317,7 @@ option reports the files concatenated and the number of la's within them to
 standard error (as the standard output receives the concatenated file).
 
 ```
-8. LAsplit [-v] <target:las> (<parts:int> | <path:db|dam>) < <source>.las
+7. LAsplit [-v] <target:las> (<parts:int> | <path:db|dam>) < <source>.las
 ```
 
 If the second argument is an integer n, then divide the alignment file \<source\>, piped
@@ -342,7 +333,7 @@ in \<path\>.i.db are in the i'th file generated from the template \<target\>.  T
 option reports the files produced and the number of la's within them to standard error.
 
 ```
-9. LAcheck [-vaS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
+8. LAcheck [-vaS] <src1:db|dam> [ <src2:db|dam> ] <align:las> ...
 ```
 
 LAcheck checks each .las file for structural integrity, where the a- and b-sequences
@@ -361,7 +352,7 @@ information, and if it does, then it checks the validity of chains and checks th
 sorting order of chains as a unit according to the -a option.
 
 ```
-10. HPC.daligner [-vad] [-t<int>] [-w<int(6)>] [-l<int(1500)] [-s<int(100)] [-M<int>]
+9. HPC.daligner [-vad] [-t<int>] [-w<int(6)>] [-l<int(1500)] [-s<int(100)] [-M<int>]
                     [-P<dir(/tmp)>] [-B<int(4)>] [-T<int(4)>] [-f<name>]
                   ( [-k<int(16)>] [-h<int(50)>] [-e<double(.75)] [-H<int>]
                     [-k<int(20)>] [-h<int(50)>] [-e<double(.85)]  <ref:db|dam>  )
