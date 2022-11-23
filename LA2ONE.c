@@ -483,8 +483,10 @@ int main(int argc, char *argv[])
     read1 = db1->reads;
     read2 = db2->reads;
 
-    oneInt(file1,0) = tspace;
-    oneWriteLine(file1,'X',0,NULL);
+    if (DOTRACE)
+      { oneInt(file1,0) = tspace;
+        oneWriteLine(file1,'X',0,NULL);
+      }
 
     //  For each record do
 

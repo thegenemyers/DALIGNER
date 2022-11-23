@@ -271,40 +271,42 @@ overlaps be output.  Only the overlaps for particular A-reads may be specified a
 
 ONE2LA converts a 1-code .dal file back into a .las file.  It requires that the .dal file contains all the information about each LA therein, that is, it must contain all the information that is output by LA2ONE with the options -ct set.
 
-The .dal format is quite simple. ...
-The format is very simple.  Each requested piece of information occurs on a line.  The
-first character of every line is a "1-code" character that tells you what information
-to expect on the line.  The rest of the line contains information where each item is
-separated by a single blank space.  The trace point line gives the number of trace
-point intervals in the LA and is immediately followed by that many lines containing
-a pair of integers giving the number of differences and b-displacement in each successive
-trace point interval.
+The .dal format is quite simple where the primary object is considered to be a **pile**, i.e., the set of all LAs for a given a-read.
+The encoding of all the LAs for a pile is given by several lines in the 1-code format, where each line type is designated by the first character in the line.
+The P-line designated the start of a pile object and consists of giving the a-read and then a list of all the b-reads in the pile. We term the length of this list the size of the pile.  All other line type lists for this given pile should have the same size or a multiple thereof.
+By default the P-line is followed by O- and C-lines that give the orientation and chaining directives (if any) for each b-read in the pile list as strings, one character per b-read.
+
+```    
+    P <a-read: int> <pile b-reads: int_list>
+    O <orientations: string over [nc]>        // n is normal, c is complement
+    C <chain directives: string over [>+-.]>  // '>' start of best chain),
+                                              // '+' start of alternate chain,
+                                              // '-' continuation of chain, or  
+                                              // '.' no chains (in the file).
+```
+If the -c flag is set, then LA2ONE also outputs 1-code lines describing the intervals (ab,ae) of
+the a-read that align with intervals (bb,be) of the b-reads and the diffs in the aligned segments.  The lengths of the a-read and all the b-reads is also output for convenience.
+The B-line outputs a list of the pairs (ab,bb) in the same order as the b-reads are listed in
+the object P-line.  The E-line outputs a list of the pairs (ae,be) an the D-line outputs a list of the corresponding difference in each aligned pair of segments.  Lastly, the L-line gives the
+length of the a-read and then the lengths of the b-reads in the same order as the P-line.
+
+```                                                  
+    B <interval start pairs: int_list>
+    E <interval end pairs: int_list>
+    D <alignment diffs: int_list>
+    L <a-read length: int> <b-read lengths: int_list>
+```
+If the -t flag is set, then LA2ONE outputs a pair of T- and Q-lines, one for each alignment in
+the pile in the order listed in the controlling P-line.  The relative order of the T- and Q-lines
+does not matter as long as the i'th occurrence of a T- or Q-line is for the i'th alignment in the
+pile.  The T-line gives the b-segment lengths for a trace-point encoding of the alignment and the Q-line gives the difference in each segment.  In addition the a-read spacing (which is the same for all alignments) is given in an X-line at the start of the data file.
 
 ```
-    P #a #b #o #c     - (#a,#b^#o) have an LA between them where #o is 'n' or 'c' and
-                           #c is '>' (start of best chain), '+' (start of alternate chain),
-                           '-' (continuation of chain), or '.' (no chains in file).
-    L #la #lb         - #la is the length of the a-read and #lb that of the b-read
-    C #ab #ae #bb #be - #a[#ab,#ae] aligns with #b^#o[#bb,#be]
-    D #               - there are # differences in the LA
-    T #n              - there are #n trace point intervals for the LA
-     (#d #y )^#n      - there are #d difference aligning the #y bp's of B with the
-                           next fixed-size interval of A
-    + X #             - Total amount of X (X = P or T)
-    % X #             - Maximum amount of X in any pile (X = P or T)
-    @ T #             - Maximum number of trace points in any trace
+    T <b-displacements: int_list>
+    Q <segment diffs: int_list>
+    
+    X <trace spacing:int>  //  1st data line before any objects
 ```
-
-1-code lines that begin with +, %, or @ are always the first lines in the output.
-They give size information about what is contained in the output.  Specifically,
-'+ X #' gives the total number of LAs (X=P), or the total number of trace point
-intervals (X=T) in the file .  '% X #' gives the maximum number of LAs (X=P) or
-the maximum number of trace point intervals (X=T) in a given *pile* (collection of
-LAs all with the same a-read (applies only to sorted .las files).  A final line: '@ T #',
-gives the maximum # of trace point intervals in any trace within the file.
-After these lines and before the start of the lines describing alignment records is a
-single line of the form 'X #' where the number is the trace point spacing for all
-alignments.
 
 ```
 6. LAcat [-v] <source:las> ... > <target>.las
