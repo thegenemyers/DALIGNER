@@ -12,8 +12,8 @@ static char *One_Schema =
                               //    All per B-read
   "D O 1 6 STRING\n"          //       orientation [+-]
   "D C 1 6 STRING\n"          //       chain directive [>+-.]
-  "D B 1 8 INT_LIST\n"        //       (ab,bb)
-  "D E 1 8 INT_LIST\n"        //       (ae,be)
+  "D A 1 8 INT_LIST\n"        //       (ab,ae)
+  "D B 1 8 INT_LIST\n"        //       (be,be)
   "D L 2 3 INT 8 INT_LIST\n"  //       la and then each lb
   "D D 1 8 INT_LIST\n"        //       diff
                               //    One line per B-read
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
     file1 = oneFileOpenRead(path,schema,"dal",1);
   }
 
-  if (file1->info['B']->given.count == 0)
+  if (file1->info['A']->given.count == 0)
     { fprintf(stderr,"ONE2LA: .dal file does not contatin coordinate information\n");
       exit (1);
     }
@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
 
       ttop = trace;
       otop = ovls + psize;
-      has['O'] = has['C'] = has['B'] = has['E'] = has['L'] = has['D'] = has['T'] = has['Q'] = 0;
+      has['O'] = has['C'] = has['A'] = has['B'] = has['L'] = has['D'] = has['T'] = has['Q'] = 0;
       for (o = ovls; o < otop; o++)
         { o->flags = 0;
           o->path.tlen = -1;
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
               exit (1);
             }
           has[t] += 1;
-          if (t == 'B' || t == 'E')
+          if (t == 'A' || t == 'B')
             { if (oneLen(file1) != 2*psize)
                 { fprintf(stderr,"ONE2LA: %c-line has incorrect list length\n",t);
                   exit (1);
@@ -175,19 +175,19 @@ int main(int argc, char *argv[])
                 else if (string[i] == '+')
                   o->flags |= START_FLAG;
               break;
-            case 'B':
+            case 'A':
               list = oneIntList(file1);
               i = 0;
               for (o = ovls; o < otop; o++)
                 { o->path.abpos = list[i++];
-                  o->path.bbpos = list[i++];
+                  o->path.aepos = list[i++];
                 }
               break;
-            case 'E':
+            case 'B':
               list = oneIntList(file1);
               i = 0;
               for (o = ovls; o < otop; o++)
-                { o->path.aepos = list[i++];
+                { o->path.bbpos = list[i++];
                   o->path.bepos = list[i++];
                 }
               break;
@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
               else
                 { o->path.tlen  = 2*oneLen(file1);
                   o->path.trace = ttop;
-                  ttop += oneLen(file1)*tbytes;
+                  ttop += o->path.tlen*tbytes;
                 }
               if (t == 'T')
                 k = 0;
@@ -228,6 +228,19 @@ int main(int argc, char *argv[])
                   for (i = 0; k < o->path.tlen; k += 2)
                     t16[k] = list[i++];
                 }
+if (aread < 0 && t == 'Q')
+            { if (tbytes == 1)
+                { uint8 *t8 = (uint8 *) o->path.trace;
+                  for (k = 0; k < o->path.tlen; k++)
+                    fprintf(stderr," %d",t8[k]);
+                }
+              else
+                { uint16 *t16 = (uint16 *) o->path.trace;
+                  for (k = 0; k < o->path.tlen; k++)
+                    fprintf(stderr," %d",t16[k]);
+                }
+  fprintf(stderr,"\n"); fflush(stderr);
+}
               break;
             default:
               fprintf(stderr,"LA2ONE: Unrecognized line type '%c'\n",t);

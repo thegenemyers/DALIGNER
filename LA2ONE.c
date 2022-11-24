@@ -32,8 +32,8 @@ static char *One_Schema =
                               //    All per B-read
   "D O 1 6 STRING\n"          //       orientation [+-]
   "D C 1 6 STRING\n"          //       chain directive [>+-.]
-  "D B 1 8 INT_LIST\n"        //       (ab,bb)
-  "D E 1 8 INT_LIST\n"        //       (ae,be)
+  "D A 1 8 INT_LIST\n"        //       (ab,ae)
+  "D B 1 8 INT_LIST\n"        //       (bb,be)
   "D L 2 3 INT 8 INT_LIST\n"  //       la and then each lb
   "D D 1 8 INT_LIST\n"        //       diff
                               //    One line per B-read
@@ -85,16 +85,16 @@ static void output_pile(Overlap *optr)
     { i = 0;
       for (o = ovls; o < optr; o++)
         { list[i++] = o->path.abpos;
-          list[i++] = o->path.bbpos;
+          list[i++] = o->path.aepos;
         }
-      oneWriteLine(file1,'B',i,list);
+      oneWriteLine(file1,'A',i,list);
 
       i = 0;
       for (o = ovls; o < optr; o++)
-        { list[i++] = o->path.aepos;
+        { list[i++] = o->path.bbpos;
           list[i++] = o->path.bepos;
         }
-      oneWriteLine(file1,'E',i,list);
+      oneWriteLine(file1,'B',i,list);
 
       oneInt(file1,0) = read1[ovls->aread].rlen;
       i = 0;
@@ -115,6 +115,11 @@ static void output_pile(Overlap *optr)
       for (o = ovls; o < optr; o++)
         { trace = (uint16 *) o->path.trace;
           tlen  = o->path.tlen;
+if (ovls->aread < 0)
+  { for (k = 0; k < tlen; k++)
+      fprintf(stderr," %d",trace[k]);
+    fprintf(stderr,"\n"); fflush(stderr);
+  }
 
           i = 0;
           for (k = 0; k < tlen; k += 2)

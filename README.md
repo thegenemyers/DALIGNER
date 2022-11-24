@@ -286,13 +286,13 @@ By default the P-line is followed by O- and C-lines that give the orientation an
 ```
 If the -c flag is set, then LA2ONE also outputs 1-code lines describing the intervals (ab,ae) of
 the a-read that align with intervals (bb,be) of the b-reads and the diffs in the aligned segments.  The lengths of the a-read and all the b-reads is also output for convenience.
-The B-line outputs a list of the pairs (ab,bb) in the same order as the b-reads are listed in
-the object P-line.  The E-line outputs a list of the pairs (ae,be) an the D-line outputs a list of the corresponding difference in each aligned pair of segments.  Lastly, the L-line gives the
+The A-line outputs a list of the pairs (ab,ae) in the same order as the b-reads are listed in
+the object P-line.  The B-line outputs a list of the pairs (ae,be) and the D-line outputs a list of the corresponding difference in each aligned pair of segments.  Not carefully that the length of the A-line and B-line lists are *twice* that of the pile size.  Lastly, the L-line gives the
 length of the a-read and then the lengths of the b-reads in the same order as the P-line.
 
 ```                                                  
-    B <interval start pairs: int_list>
-    E <interval end pairs: int_list>
+    A <a-read intervals: int_list>
+    B <b-read intervals: int_list>
     D <alignment diffs: int_list>
     L <a-read length: int> <b-read lengths: int_list>
 ```
