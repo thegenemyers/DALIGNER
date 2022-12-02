@@ -228,8 +228,7 @@ int main(int argc, char *argv[])
                   for (i = 0; k < o->path.tlen; k += 2)
                     t16[k] = list[i++];
                 }
-if (aread < 0 && t == 'Q')
-            { if (tbytes == 1)
+              if (tbytes == 1)
                 { uint8 *t8 = (uint8 *) o->path.trace;
                   for (k = 0; k < o->path.tlen; k++)
                     fprintf(stderr," %d",t8[k]);
@@ -239,8 +238,6 @@ if (aread < 0 && t == 'Q')
                   for (k = 0; k < o->path.tlen; k++)
                     fprintf(stderr," %d",t16[k]);
                 }
-  fprintf(stderr,"\n"); fflush(stderr);
-}
               break;
             default:
               fprintf(stderr,"LA2ONE: Unrecognized line type '%c'\n",t);

@@ -256,7 +256,7 @@ scoring chain and + indicates an alternate near optimal chain (controlled by the
 5b. ONE2LA <align.dal> > (.las file)
 ```
 
-LA2ONE produces a .dal 1-code data file of all our a portion  of the contents of a .las file.
+LA2ONE produces a .dal 1-code data file of all or a portion  of the contents of a .las file.
 [1-code](https://www.github.com/thegenemyers/ONE-Code)
 is a powerful self-describing, simple to use, data system with built in compression.
 Typically a .dal file will be 45% the size of its corresponding .dal file.
@@ -287,7 +287,9 @@ By default the P-line is followed by O- and C-lines that give the orientation an
 If the -c flag is set, then LA2ONE also outputs 1-code lines describing the intervals (ab,ae) of
 the a-read that align with intervals (bb,be) of the b-reads and the diffs in the aligned segments.  The lengths of the a-read and all the b-reads is also output for convenience.
 The A-line outputs a list of the pairs (ab,ae) in the same order as the b-reads are listed in
-the object P-line.  The B-line outputs a list of the pairs (ae,be) and the D-line outputs a list of the corresponding difference in each aligned pair of segments.  Not carefully that the length of the A-line and B-line lists are *twice* that of the pile size.  Lastly, the L-line gives the
+the object P-line.  The B-line outputs a list of the pairs (ae,be) and the D-line outputs a list
+of the corresponding difference in each aligned pair of segments.  Note carefully that the length
+of the A-line and B-line lists are *twice* that of the pile size.  Lastly, the L-line gives the
 length of the a-read and then the lengths of the b-reads in the same order as the P-line.
 
 ```                                                  

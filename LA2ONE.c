@@ -115,11 +115,6 @@ static void output_pile(Overlap *optr)
       for (o = ovls; o < optr; o++)
         { trace = (uint16 *) o->path.trace;
           tlen  = o->path.tlen;
-if (ovls->aread < 0)
-  { for (k = 0; k < tlen; k++)
-      fprintf(stderr," %d",trace[k]);
-    fprintf(stderr,"\n"); fflush(stderr);
-  }
 
           i = 0;
           for (k = 0; k < tlen; k += 2)
@@ -182,10 +177,11 @@ int main(int argc, char *argv[])
     if (argc <= 2)
       { fprintf(stderr,"Usage: %s %s\n",Prog_Name,Usage);
         fprintf(stderr,"\n");
-        fprintf(stderr,"      Output P, O, C and D lines by default\n");
+        fprintf(stderr,"      Output pile reads, orientation, and chains by default");
+        fprintf(stderr," (P, O, C lines)\n");
         fprintf(stderr,"\n");
-        fprintf(stderr,"      -c: Ootput also aligned intervals and read lengths");
-          fprintf(stderr," (B, E, and L lines\n");
+        fprintf(stderr,"      -c: Ootput also aligned intervals, read lengths, and diffs");
+          fprintf(stderr," (B, E, L, and D lines)\n");
         fprintf(stderr,"      -t: Output also traces (T and Q lines)\n");
         fprintf(stderr,"\n");
         fprintf(stderr,"      -o: Output proper overlaps only\n");
