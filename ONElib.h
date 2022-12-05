@@ -3,11 +3,12 @@
  *  File: ONElib.h
  *    Header for ONE file reading and writing
  *
- *  Author: Richard Durbin (rd109@cam.ac.uk)
- *  Copyright (C) Richard Durbin, Cambridge University, 2019
+ *  Authors: Richard Durbin (rd109@cam.ac.uk), Gene Myers (myers@mpi-cbg.de)
+ *  Copyright (C) Richard Durbin, Gene Myers, 2019-
  *
  * HISTORY:
- * Last edited: Aug 18 22:42 2022 (rd109)
+ * Last edited: Dec  3 06:08 2022 (rd109)
+ * * Dec  3 06:01 2022 (rd109): remove oneWriteHeader(), switch to stdarg for oneWriteComment etc.
  *   * Dec 27 09:46 2019 (gene): style edits
  *   * Created: Sat Feb 23 10:12:43 2019 (rd109)
  *
@@ -17,6 +18,7 @@
 #define ONE_DEFINED
 
 #include <stdio.h>    // for FILE etc.
+#include <stdarg.h>   // for formatted writing in oneWriteComment(), oneAddProvenance()
 #include <inttypes.h> // for standard size int types and their PRI print macros
 #include <stdbool.h>  // for standard bool types
 #include <limits.h>   // for INT_MAX etc.
@@ -32,6 +34,9 @@
 #ifndef U8_DEFINED
 #define U8_DEFINED
 
+typedef int8_t        I8;
+typedef int16_t       I16;
+typedef int32_t       I32;
 typedef int64_t       I64;
 typedef unsigned char U8;
 
@@ -155,6 +160,7 @@ typedef struct
     // fields below here are private to the package
 
     FILE  *f;
+
     bool   isWrite;                // true if open for writing
     bool   isHeaderOut;            // true if header already written
     bool   isBinary;               // true if writing a binary file
@@ -162,6 +168,8 @@ typedef struct
     bool   isLastLineBinary;       // needed to deal with newlines on ascii files
     bool   isIndexIn;              // index read in
     bool   isBig;                  // are we on a big-endian machine?
+    bool   isNoAsciiHeader;        // backdoor for ONEview to avoid writing header in ascii
+
     char   lineBuf[128];           // working buffers
     char   numberBuf[32];
     int    nFieldMax;
@@ -251,19 +259,19 @@ char oneReadLine (OneFile *vf) ;
   //   if at the end of the data section.  The content macros immediately below are
   //   used to access the information of the line most recently read.
 
-void*   oneList (OneFile *vf) ;                // lazy codec decompression if required
-void*   oneCompressedList (OneFile *vf) ;      // lazy codec compression if required
+void*   _oneList (OneFile *vf) ;                // lazy codec decompression if required
+void*   _oneCompressedList (OneFile *vf) ;      // lazy codec compression if required
 
 #define oneInt(vf,x)        ((vf)->field[x].i)
 #define oneReal(vf,x)       ((vf)->field[x].r)
 #define oneChar(vf,x)       ((vf)->field[x].c)
 #define _LF(vf)             ((vf)->info[(int)(vf)->lineType]->listField)
 #define oneLen(vf)          ((vf)->field[_LF(vf)].len & 0xffffffffffffffll)
-#define oneString(vf)       (char *) oneList(vf)
-#define oneDNAchar(vf)      (char *) oneList(vf)
-#define oneDNA2bit(vf)      (U8 *) oneCompressedList(vf)
-#define oneIntList(vf)      (I64 *) oneList(vf)
-#define oneRealList(vf)     (double *) oneList(vf)
+#define oneString(vf)       (char *) _oneList(vf)
+#define oneDNAchar(vf)      (char *) _oneList(vf)
+#define oneDNA2bit(vf)      (U8 *) _oneCompressedList(vf)
+#define oneIntList(vf)      (I64 *) _oneList(vf)
+#define oneRealList(vf)     (double *) _oneList(vf)
 #define oneNextString(vf,s) (s + strlen(s) + 1)
 
   // Access field information.  The index x of a list object is not required as there is
@@ -308,21 +316,18 @@ bool oneInheritReference  (OneFile *vf, OneFile *source);
 bool oneInheritDeferred   (OneFile *vf, OneFile *source);
 
   // Add all provenance/reference/deferred entries in source to header of vf.  Must be
-  //   called before call to oneWriteHeader.
+  //   called before first call to oneWriteLine.
 
-bool oneAddProvenance (OneFile *vf, char *prog, char *version, char *command, char *dateTime);
+bool oneAddProvenance (OneFile *vf, char *prog, char *version, char *format, ...);
 bool oneAddReference  (OneFile *vf, char *filename, I64 count);
 bool oneAddDeferred   (OneFile *vf, char *filename);
 
   // Append provenance/reference/deferred to header information.  Must be called before
-  //   call to oneWriteHeader.  Current data & time filled in if 'dateTime' == NULL.
+  //   first call to oneWriteLine.
 
-void oneWriteHeader (OneFile *vf);
-
-  // Write out the header for file.  For ASCII output, if you want the header to contain
-  //   count information then you must create and fill the relevant OneCounts objects before
-  //   calling this. For binary output, the counts will be accumulated and output in a
-  //   footer upon oneClose.
+  // For ASCII output, if you want the header to contain count information then you must
+  //   create and fill the relevant OneCounts objects before the first call to oneWriteLine.
+  //   For BINARY output, the OneCounts information is accumulated and written automatically.
 
 void oneWriteLine (OneFile *vf, char lineType, I64 listLen, void *listBuf);
 
@@ -332,10 +337,15 @@ void oneWriteLine (OneFile *vf, char lineType, I64 listLen, void *listBuf);
   // For lists, give the length in the listLen argument, and either place the list data in your
   //   own buffer and give it as listBuf, or put in the line's buffer and set listBuf == NULL.
 
-void oneWriteComment (OneFile *vf, char *comment);
+void oneWriteLineFrom (OneFile *vf, OneFile *source) ; // copies a line from source into vf
+void oneWriteLineDNA2bit (OneFile *vf, char lineType, I64 listLen, U8 *dnaBuf);
 
-  // Adds a comment to the current line. Need to use this not fprintf() so as to keep the
-  // index correct in binary mode.
+// Minor variants of oneWriteLine().
+// Use oneWriteLineDNA2bit for DNA lists if your DNA is already 2-bit compressed.
+
+void oneWriteComment (OneFile *vf, char *format, ...); // can not include newline \n chars
+
+  // Adds a comment to the current line. Extends line in ascii, adds special line type in binary.
 
 // CLOSING FILES (FOR BOTH READ & WRITE)
 

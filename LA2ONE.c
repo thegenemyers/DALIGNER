@@ -383,7 +383,6 @@ int main(int argc, char *argv[])
 
   schema = oneSchemaCreateFromText(One_Schema);
   file1  = oneFileOpenWriteNew("-",schema,"dal",true,1);
-  oneWriteHeader(file1);
 
   //  Scan to determine max trace length and max pile size
 

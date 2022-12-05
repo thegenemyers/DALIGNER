@@ -7,7 +7,7 @@
  *  Copyright (C) Richard Durbin, Cambridge University and Eugene Myers 2019-
  *
  * HISTORY:
- * Last edited: Aug 18 23:25 2022 (rd109)
+ * Last edited: Dec  4 23:57 2022 (rd109)
  * * Apr 23 00:31 2020 (rd109): global rename of VGP to ONE, Vgp to One, vgp to one
  * * Apr 20 11:27 2020 (rd109): added VgpSchema to make schema dynamic
  * * Dec 27 09:46 2019 (gene): style edits + compactify code
@@ -16,7 +16,6 @@
  *
  ****************************************************************************************/
 
-#include <assert.h>
 #include <sys/errno.h>
 #include <sys/types.h>
 #include <stdlib.h>
@@ -29,6 +28,12 @@
 #include <unistd.h>
 #include <sys/uio.h>
 #include <math.h>
+
+#ifdef DEBUG
+#include <assert.h>
+#else
+#define assert(x) 0
+#endif
 
 #include "ONElib.h"
 
@@ -481,7 +486,8 @@ static void provRefDefCleanup (OneFile *vf)
 	{ free (p->program) ;
 	  free (p->version) ;
 	  free (p->command) ;
-	  free (p->date) ; }
+	  free (p->date) ;
+	}
       free (vf->provenance) ;
     }
   if (vf->reference)
@@ -715,7 +721,7 @@ static inline void updateCountsAndBuffer (OneFile *vf, char t, I64 size, I64 nSt
 static inline void updateGroupCount(OneFile *vf, bool isGroupLine)
 { int        i;
   OneInfo   *li;
-  OneCounts  *ci;
+  OneCounts *ci;
 
   for (i = 'A'; i <= 'Z' ; i++)
     { li = vf->info[i];
@@ -912,6 +918,8 @@ static void readStringList(OneFile *vf, char t, I64 len)
   free (string);
 }
 
+static bool addProvenance(OneFile *vf, OneProvenance *from, int n) ; // need forward declaration
+
 char oneReadLine (OneFile *vf)
 { bool      isAscii;
   U8        x;
@@ -1086,7 +1094,7 @@ char *oneReadComment (OneFile *vf)
     return 0 ;
 }
 
-void *oneList (OneFile *vf)
+void *_oneList (OneFile *vf)
 {
   OneInfo *li = vf->info[(int) vf->lineType] ;
 
@@ -1103,7 +1111,7 @@ void *oneList (OneFile *vf)
   return li->buffer ;
 }
 
-void *oneCompressedList (OneFile *vf)
+void *_oneCompressedList (OneFile *vf)
 {
   OneInfo *li = vf->info[(int) vf->lineType] ;
 
@@ -1334,13 +1342,13 @@ OneFile *oneFileOpenRead (const char *path, OneSchema *vs, char *fileType, int n
 	  break;
 
         case '!':     // NB need to copy the strings
-          { char *prog     = oneString(vf);
-            char *version  = prog + strlen(prog) + 1;
-            char *command  = version + strlen(version) + 1;
-            char *date = command + strlen(command) + 1;
-
+          { OneProvenance p ;
+	    p.program = oneString(vf) ;
+	    p.version = p.program + strlen(p.program) + 1 ;
+	    p.command = p.version + strlen(p.version) + 1 ;
+	    p.date    = p.command + strlen(p.command) + 1 ;
             vf->info['!']->accum.count -= 1; // to avoid double counting
-            oneAddProvenance (vf, prog, version, command, date);
+            addProvenance (vf, &p, 1) ;
           }
 	  break;
 
@@ -1749,22 +1757,19 @@ static bool addProvenance(OneFile *vf, OneProvenance *from, int n)
 bool oneInheritProvenance(OneFile *vf, OneFile *source)
 { return (addProvenance(vf, source->provenance, source->info['!']->accum.count)); }
 
-bool oneAddProvenance(OneFile *vf, char *prog, char *version, char *command, char *date)
-{ OneProvenance p;
+bool oneAddProvenance(OneFile *vf, char *prog, char *version, char *format, ...)
+{ va_list args ;
+  OneProvenance p;
+  time_t t = time(NULL);
 
   p.program = prog;
   p.version = version;
-  p.command = command;
-  if (date != NULL)
-    p.date = date;
-  else
-    { time_t t = time(NULL);
-      p.date = new (20, char);
-      strftime(p.date, 20, "%F_%T", localtime(&t));
-    }
+  va_start (args, format) ; vasprintf (&p.command, format, args) ; va_end (args) ;
+  p.date = new (20, char);
+  strftime(p.date, 20, "%F_%T", localtime(&t));
   addProvenance (vf, &p, 1);
-  if (date == NULL)
-    free (p.date) ;
+  free (p.command) ;
+  free (p.date) ;
   return true ; // always added something
 }
 
@@ -1843,15 +1848,16 @@ static void writeInfoSpec (OneFile *vf, char ci)
     fprintf (vf->f, " %d %s",
 	     (int)strlen(oneTypeString[vi->fieldType[i]]), oneTypeString[vi->fieldType[i]]) ;
   if (vi->comment)
-    oneWriteComment (vf, vi->comment) ;
+    oneWriteComment (vf, "%s", vi->comment) ;
 }
 
-void oneWriteHeader (OneFile *vf)
+static void writeHeader (OneFile *vf)
 { int         i,n;
   OneInfo   *li;
 
   assert (vf->isWrite) ;
   assert (vf->line == 0) ;
+  assert (vf->share >= 0) ;
 
   vf->isLastLineBinary = false; // header is in ASCII
 
@@ -1984,11 +1990,11 @@ static int writeStringList (OneFile *vf, char t, int len, char *buf)
 }
 
 // process is to fill fields by assigning to macros, then call - list contents are in buf
-// NB adds '\n' before writing line not after, so user fprintf() can add extra material
-// first call will write initial header, allowing space for count sizes to expand on close
+// NB in ASCII mode adds '\n' before writing line not after, so oneWriteComment() can add to line
+// first call will write initial header
 
 void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
-{ I64       i, j;
+{ I64      i, j;
   OneInfo *li;
 
   // fprintf (stderr, "write line %d type %c char %c\n", vf->line, t, oneChar(vf,0)) ;
@@ -2014,6 +2020,8 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
   if (vf->isBinary)
     { U8  x;
 
+      if (!vf->isHeaderOut && vf->share >= 0) writeHeader (vf) ; // no header on slaves
+
       if (!vf->isLastLineBinary)
 	{ fputc ('\n', vf->f) ;
 	  vf->byte = ftello (vf->f) ;
@@ -2032,7 +2040,7 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
               lx->bufSize = ns;
             }
           ((I64 *) lx->buffer)[vf->object] = vf->byte;
-          // assert (ftello (vf->f) == vf->byte) ;
+          // assert (ftello (vf->f) == vf->byte) ; // beware - very costly
 
           ++vf->object ;
         }
@@ -2168,7 +2176,9 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
   // ASCII - write field by field
 
   else
-    { if (!vf->isLastLineBinary)      // terminate previous ascii line
+    { if (!vf->isHeaderOut && !vf->isNoAsciiHeader) writeHeader (vf) ;
+
+      if (!vf->isLastLineBinary)      // terminate previous ascii line
 	fputc ('\n', vf->f);
       
       fputc (t, vf->f);
@@ -2218,12 +2228,32 @@ void oneWriteLine (OneFile *vf, char t, I64 listLen, void *listBuf)
     }
 }
 
-void oneWriteComment (OneFile *vf, char *comment)
+void oneWriteLineDNA2bit (OneFile *vf, char lineType, I64 listLen, U8 *dnaBuf)
+{ die ("not written yet") ;
+  oneWriteLine (vf, lineType, listLen, dnaBuf) ;
+}
+
+void oneWriteComment (OneFile *vf, char *format, ...)
 {
-  if (vf->isLastLineBinary)
-    oneWriteLine (vf, '/', strlen(comment), comment) ;
-  else
-    fprintf (vf->f, " %s", comment) ;
+  va_list args ;
+
+  if (vf->isCheckString) // then check no newlines in format
+    { char *s = format ;
+      while (*s) if (*s++ == '\n') die ("newline in comment format string: %s", format) ;
+    }
+
+  va_start (args, format) ; 
+  if (vf->isLastLineBinary) // write a comment line
+    { char *comment ;
+      vasprintf (&comment, format, args) ; 
+      oneWriteLine (vf, '/', strlen(comment), comment) ;
+      free (comment) ;
+    }
+  else // write on same line after space
+    { fputc (' ', vf->f) ;
+      vfprintf (vf->f, format, args) ;
+    }
+  va_end (args) ;
 }
 
 /***********************************************************************************
@@ -2237,7 +2267,7 @@ static void oneWriteFooter (OneFile *vf)
   off_t    footOff;
   OneInfo *li;
   char    *codecBuf ;
-  
+
   footOff = ftello (vf->f);
   if (footOff < 0)
     die ("ONE write error: failed footer ftell");
@@ -2434,6 +2464,8 @@ void oneFileClose (OneFile *vf)
     {
       if (!vf->isFinal) // RD moved this here from above - surely only needed if isWrite
 	oneFinalizeCounts (vf);
+
+      if (!vf->isHeaderOut && (vf->isBinary || !vf->isNoAsciiHeader)) writeHeader (vf) ;
       
       if (vf->share > 0)
         { int  i, pid, fid, nread;
@@ -2454,6 +2486,7 @@ void oneFileClose (OneFile *vf)
             }
           free(buf);
         }
+
       fputc ('\n', vf->f);  // end of file if ascii, end of data marker if binary
       if (vf->isBinary) // write the footer
         oneWriteFooter (vf);
