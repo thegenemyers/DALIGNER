@@ -117,12 +117,12 @@ static void output_pile(Overlap *optr)
           tlen  = o->path.tlen;
 
           i = 0;
-          for (k = 0; k < tlen; k += 2)
+          for (k = 1; k < tlen; k += 2)
             list[i++] = trace[k];
           oneWriteLine(file1,'T',i,list);
 
           i = 0;
-          for (k = 1; k < tlen; k += 2)
+          for (k = 0; k < tlen; k += 2)
             list[i++] = trace[k];
           oneWriteLine(file1,'Q',i,list);
         }
@@ -497,7 +497,7 @@ int main(int argc, char *argv[])
     optr = ovls;
     tptr = trace; 
     last = -1;
-    for (j = 0; j <= novl; j++)
+    for (j = 0; j < novl; j++)
 
        //  Read it in
 

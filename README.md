@@ -257,14 +257,14 @@ scoring chain and + indicates an alternate near optimal chain (controlled by the
 ```
 
 LA2ONE produces a .dal 1-code data file of all or a portion  of the contents of a .las file.
-[1-code](https://www.github.com/thegenemyers/ONE-Code)
+[1-code](https://www.github.com/thegenemyers/ONEcode)
 is a powerful self-describing, simple to use, data system with built in compression.
 Typically a .dal file will be 45% the size of its corresponding .dal file.
 By default only the pairwise overlapped pairs, their orientation, and chaining (if any) are
 output.  The -c option
 requests that one further output the coordinates of the
 LA segments, the lengths of the reads and the # of differences in each LA.
-The -t option requests the trace point alignment details are output for each LA.
+The -t option requests that the trace point alignment details are output for each LA.
 If -t is set then -c must be set and if both are set then all of the information about each
 LA is effectively output.  The -o option requests that only LAs that are proper
 overlaps be output.  Only the overlaps for particular A-reads may be specified as per the same command line arguments as documented for LAshow above.
@@ -279,7 +279,7 @@ By default the P-line is followed by O- and C-lines that give the orientation an
 ```    
     P <a-read: int> <pile b-reads: int_list>
     O <orientations: string over [nc]>        // n is normal, c is complement
-    C <chain directives: string over [>+-.]>  // '>' start of best chain),
+    C <chain directives: string over [>+-.]>  // '>' start of best chain,
                                               // '+' start of alternate chain,
                                               // '-' continuation of chain, or  
                                               // '.' no chains (in the file).
@@ -287,7 +287,7 @@ By default the P-line is followed by O- and C-lines that give the orientation an
 If the -c flag is set, then LA2ONE also outputs 1-code lines describing the intervals (ab,ae) of
 the a-read that align with intervals (bb,be) of the b-reads and the diffs in the aligned segments.  The lengths of the a-read and all the b-reads is also output for convenience.
 The A-line outputs a list of the pairs (ab,ae) in the same order as the b-reads are listed in
-the object P-line.  The B-line outputs a list of the pairs (ae,be) and the D-line outputs a list
+the object P-line.  The B-line outputs a list of the pairs (bb,be) and the D-line outputs a list
 of the corresponding difference in each aligned pair of segments.  Note carefully that the length
 of the A-line and B-line lists are *twice* that of the pile size.  Lastly, the L-line gives the
 length of the a-read and then the lengths of the b-reads in the same order as the P-line.

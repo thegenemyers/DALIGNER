@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
                   o->path.trace = ttop;
                   ttop += o->path.tlen*tbytes;
                 }
-              if (t == 'T')
+              if (t == 'Q')
                 k = 0;
               else
                 k = 1;
@@ -227,16 +227,6 @@ int main(int argc, char *argv[])
                 { uint16 *t16 = (uint16 *) o->path.trace;
                   for (i = 0; k < o->path.tlen; k += 2)
                     t16[k] = list[i++];
-                }
-              if (tbytes == 1)
-                { uint8 *t8 = (uint8 *) o->path.trace;
-                  for (k = 0; k < o->path.tlen; k++)
-                    fprintf(stderr," %d",t8[k]);
-                }
-              else
-                { uint16 *t16 = (uint16 *) o->path.trace;
-                  for (k = 0; k < o->path.tlen; k++)
-                    fprintf(stderr," %d",t16[k]);
                 }
               break;
             default:
