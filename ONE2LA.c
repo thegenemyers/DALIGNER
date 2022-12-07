@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DB.h"
 #include "align.h"
@@ -31,11 +32,31 @@ int main(int argc, char *argv[])
   OneFile   *file1;
   OneSchema *schema;
   int64     *list;
-  char      *string;
+  char      *string, *command;
 
   int t, i, j, k;
 
-  //  Process arguments
+  //  Process arguments and capture command line for provenance
+
+  { int   n, t;
+    char *c;
+
+    n = 0;
+    for (t = 1; t < argc; t++)
+      n += strlen(argv[t])+1;
+
+    command = Malloc(n+1,"Allocating command string");
+    if (command == NULL)
+      exit (1);
+
+    c = command;
+    if (argc >= 1)
+      { c += sprintf(c,"%s",argv[1]);
+        for (t = 2; t < argc; t++)
+          c += sprintf(c," %s",argv[t]);
+      }
+    *c = '\0';
+  }
 
   if (argc != 2)
     { fprintf(stderr,"Usage: ONE2LA <align:dal> > (.las)\n");
@@ -64,6 +85,8 @@ int main(int argc, char *argv[])
     schema = oneSchemaCreateFromText(One_Schema);
 
     file1 = oneFileOpenRead(path,schema,"dal",1);
+
+    oneAddProvenance(file1,"ONE2LA","1.0","%s >?.las",command);
   }
 
   if (file1->info['A']->given.count == 0)
@@ -245,6 +268,8 @@ int main(int argc, char *argv[])
     }
 
   oneSchemaDestroy(schema);
+
+  free(command);
 
   exit (0);
 }

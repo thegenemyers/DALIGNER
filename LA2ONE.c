@@ -139,6 +139,7 @@ int main(int argc, char *argv[])
 { DAZZ_DB   _db1, *db1 = &_db1; 
   DAZZ_DB   _db2, *db2 = &_db2; 
   OneSchema *schema;
+  char      *command;
 
   FILE   *input;
   int64   novl, omax, tmax;
@@ -148,12 +149,32 @@ int main(int argc, char *argv[])
 
   int     ISTWO;
 
-  //  Process options
+  //  Process options and capture command line for provenance
 
   { int    i, j, k;
     int    flags[128];
 
     ARG_INIT("LA2ONE")
+
+    { int   n, t;
+      char *c;
+
+      n = 0;
+      for (t = 1; t < argc; t++)
+        n += strlen(argv[t])+1;
+
+      command = Malloc(n+1,"Allocating command string");
+      if (command == NULL)
+        exit (1);
+
+      c = command;
+      if (argc >= 1)
+        { c += sprintf(c,"%s",argv[1]);
+          for (t = 2; t < argc; t++)
+            c += sprintf(c," %s",argv[t]);
+        }
+      *c = '\0';
+    }
 
     j = 1;
     for (i = 1; i < argc; i++)
@@ -383,6 +404,7 @@ int main(int argc, char *argv[])
 
   schema = oneSchemaCreateFromText(One_Schema);
   file1  = oneFileOpenWriteNew("-",schema,"dal",true,1);
+  oneAddProvenance(file1,Prog_Name,"1.0","%s >?.dal",command);
 
   //  Scan to determine max trace length and max pile size
 
@@ -588,6 +610,8 @@ int main(int argc, char *argv[])
   Close_DB(db1);
   if (ISTWO)
     Close_DB(db2);
+
+  free(command);
 
   exit (0);
 }
