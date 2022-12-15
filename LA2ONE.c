@@ -26,19 +26,19 @@ static char *Usage =
     "[-cto] <src1:db|dam> [<src2:db|dam>] <align:las> [<reads:FILE> | <reads:range> ...]";
 
 static char *One_Schema =
-  "P 3 dal\n"
-  "D X 1 3 INT\n"             //  Data prolog: trace spacing
-  "O P 2 3 INT 8 INT_LIST\n"  //  A-read and B-read list
-                              //    All per B-read
-  "D O 1 6 STRING\n"          //       orientation [+-]
-  "D C 1 6 STRING\n"          //       chain directive [>+-.]
-  "D A 1 8 INT_LIST\n"        //       (ab,ae)
-  "D B 1 8 INT_LIST\n"        //       (bb,be)
-  "D L 2 3 INT 8 INT_LIST\n"  //       la and then each lb
-  "D D 1 8 INT_LIST\n"        //       diff
-                              //    One line per B-read
-  "D T 1 8 INT_LIST\n"        //       trace segment length
-  "D Q 1 8 INT_LIST\n";       //       trace segment diffs
+  "P 3 dal                  This is a 1-code las file from daligner\n"
+  "D X 1 3 INT              Data prolog: trace spacing\n"
+  "O P 2 3 INT 8 INT_LIST   A-read and B-read list\n"
+  ".                        All per B-read/l.a.s:\n"
+  "D O 1 6 STRING               Orientation [+-]\n"
+  "D C 1 6 STRING               Chain directive [>+-.]\n"
+  "D A 1 8 INT_LIST             A-read alignment intervals: (ab,ae)\n"
+  "D B 1 8 INT_LIST             B-read alignment intervals: (bb,be)\n"
+  "D D 1 8 INT_LIST             Diffs in alignment\n"
+  "D L 2 3 INT 8 INT_LIST    A-read length and then each B-read length\n"
+  ".                         One line per B-read:\n"
+  "D T 1 8 INT_LIST              Trace segment length\n"
+  "D Q 1 8 INT_LIST              Trace segment diffs\n";
 
 static Overlap   *ovls;
 static uint16    *trace;
