@@ -241,7 +241,7 @@ int main(int argc, char *argv[])
   for (i = 1; i < argc; i++)
     { int64    *perm;
       FILE     *input, *foutput;
-      int64     novl, sov;
+      int64     novl, sov, bovl;
       Block_Looper *parse;
 
       parse = Parse_Block_LAS_Arg(argv[i]);
@@ -273,9 +273,9 @@ int main(int argc, char *argv[])
             if (VERBOSE)
               { printf("  %s: ",root);
                 Print_Number(novl,0,stdout);
-                printf(" records ");
+                printf(" records, ");
                 Print_Number(size-novl*ovlsize,0,stdout);
-                printf(" trace bytes\n");
+                printf(" trace bytes");
                 fflush(stdout);
               }
 
@@ -361,6 +361,7 @@ int main(int argc, char *argv[])
             y.aread = ((Overlap *) (iblock+perm[0]))->aread+1;
             x = &y;
 
+            bovl = novl;
             fptr = fblock;
             ftop = fblock + osize;
             for (j = 0; j < sov; j++)
@@ -396,6 +397,16 @@ int main(int argc, char *argv[])
           rewind(foutput);
           if (fwrite(&novl,sizeof(int64),1,foutput) != 1)
             SYSTEM_WRITE_ERROR
+
+          if (VERBOSE)
+            { if (bovl == novl)
+                fprintf(stdout,"\n");
+              else
+                { fprintf(stdout,", ");
+                  Print_Number(bovl-novl,0,stdout);
+                  fprintf(stdout," duplicates removed\n");
+                }
+            }
 
           free(perm);
           fclose(foutput);
