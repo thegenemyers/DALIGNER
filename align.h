@@ -99,12 +99,12 @@ typedef struct
 
      An alignment is modeled by an Alignment record, which in addition to a *pointer* to a
      'path', gives pointers to the A and B sequences, their lengths, and indicates whether
-     the B-sequence needs to be complemented ('comp' non-zero if so).  The 'trace' pointer
-     of the 'path' subrecord can be either NULL, a list of pass-through points, or an exact
+     the B- or A-sequence needs to be complemented ('comp' non-zero if so).  The 'trace' pointer
+     of the 'path' subrecord can be either NULL, a list of trace points, or an exact
      trace depending on what routines have been called on the record.
 
      One can (1) compute a trace, with Compute_Trace, either from scratch if 'path.trace' = NULL,
-     or using the sequence of pass-through points in trace, (2) print an ASCII representation
+     or using the sequence of trace points in trace, (2) print an ASCII representation
      of an alignment, or (3) reverse the roles of A and B, and (4) complement a sequence
      (which is a reversible process).
 
@@ -209,8 +209,8 @@ void Complement_Seq(char *a, int n);
        (b) it passes through one of the points (anti+k)/2,(anti-k)/2 for k in [low,hgh] within
              the underlying dynamic programming matrix (i.e. the points on diagonals low to hgh
              on anti-diagonal anti or anti-1 (depending on whether the diagonal is odd or even)),
-       (c) if lbord >= 0, then the alignment is always above diagonal low-lbord, and
-       (d) if hbord >= 0, then the alignment is always below diagonal hgh+hbord.
+       (c) if lbord >= 0, then the alignment is always above or on diagonal low-lbord, and
+       (d) if hbord >= 0, then the alignment is always below or on diagonal hgh+hbord.
 
      The path record of 'align' has its 'trace' filled from the point of view of an overlap
      between the aread and the bread.  In addition a Path record from the point of view of the
@@ -244,7 +244,7 @@ void Complement_Seq(char *a, int n);
 
      Compute_Trace_PTS computes a trace by computing the trace between successive trace points.
      It is much, much faster than Compute_Alignment below but at the tradeoff of not necessarily
-     being optimal as pass-through points are not all perfect.  Compute_Trace_MID computes a trace
+     being optimal as trace points are not all perfect.  Compute_Trace_MID computes a trace
      by computing the trace between the mid-points of alignments between two adjacent pairs of trace
      points.  It is generally twice as slow as Compute_Trace_PTS, but it produces nearer optimal
      alignments.  Both these routines return 1 if an error occurred and 0 otherwise.
@@ -307,7 +307,8 @@ void Complement_Seq(char *a, int n);
 
      Flip_Alignment modifies align so the roles of A and B are reversed.  If full is off then
      the trace is ignored, otherwise the trace must be to a full alignment trace and this trace
-     is also appropriately inverted.
+     is also appropriately inverted.  Similarly, Complement_Alignment switches which sequence
+     is complemented when an alignment involves said, and does nothing otherwise.
   */
 
   void Alignment_Cartoon(FILE *file, Alignment *align, int indent, int coord);

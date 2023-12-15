@@ -163,6 +163,8 @@ void Free_Work_Data(Work_Data *ework)
                          //     2*TRIM_LEN edits are prefix-positive at rate ave_corr*f(bias)
                          //     (max value is 20)
 
+#define DUB_TRIM    45   //  = 3*TRIM_LEN
+
 #define PATH_LEN    60   //  Follow the last PATH_LEN columns/edges (max value is 63)
 
   //  Derivative fixed parameters
@@ -236,6 +238,8 @@ Align_Spec *New_Align_Spec(double ave_corr, int trace_space, float *freq, int re
   spec->freq[3]     = freq[3];
 
   match = freq[0] + freq[3];
+  if ((match <= 0.) == (match > 0.))   //  frequencies accidentally undefined?
+    match = .5;
   if (match > .5)
     match = 1.-match;
   bias = (int) ((match+.025)*20.-1.);
@@ -1729,6 +1733,7 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   int   aoff, boff;
   int   minp, maxp;
   int   selfie;
+  int   fshort, rshort;
 
   { int alen, blen;
     int maxtp, wsize;
@@ -1765,6 +1770,9 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
 #endif
 
   selfie = (align->aseq == align->bseq);
+
+  while (((anti-hgh) >> 1) < 0)
+    hgh -= 1;
    
   if (lbord < 0)
     { if (selfie && low >= 0)
@@ -1799,9 +1807,11 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   if (forward_wave(work,spec,align,bpath,&low,hgh,anti,minp,maxp,aoff,boff))
     EXIT(NULL);
 
+  fshort = ((apath->aepos + apath->bepos) - anti < DUB_TRIM);
+
 #ifdef DEBUG_PASSES
   printf("F1 (%d,%d) ~ %d => (%d,%d) %d\n",
-         (2*anti+(low+hgh))/4,(anti-(low+hgh))/4,hgh-low,
+         (2*anti+(low+hgh))/4,(2*anti-(low+hgh))/4,hgh-low,
          apath->aepos,apath->bepos,apath->diffs);
 #endif
 
@@ -1812,6 +1822,37 @@ Path *Local_Alignment(Alignment *align, Work_Data *ework, Align_Spec *espec,
   printf("R1 (%d,%d) => (%d,%d) %d\n",
          (anti+low)/2,(anti-low)/2,apath->abpos,apath->bbpos,apath->diffs);
 #endif
+
+  rshort = (anti - (apath->abpos + apath->bbpos) < DUB_TRIM);
+
+  if (fshort)
+    { if (rshort)
+        { apath->aepos = apath->abpos = (apath->abpos+apath->aepos)/2;
+          apath->bepos = apath->bbpos = (apath->bbpos+apath->bepos)/2;
+          bpath->aepos = bpath->abpos = (bpath->abpos+bpath->aepos)/2;
+          bpath->bepos = bpath->bbpos = (bpath->bbpos+bpath->bepos)/2;
+          apath->tlen  = 0;
+          bpath->tlen  = 0;
+        }
+      else
+        { low  = apath->abpos - apath->bbpos;
+          anti = apath->abpos + apath->bbpos;
+          apath->tlen = bpath->tlen = 0;
+          if (forward_wave(work,spec,align,bpath,&low,low,anti,minp,maxp,aoff,boff))
+            EXIT(NULL);
+        }
+    }
+  else
+    { if (rshort)
+        { low  = apath->aepos - apath->bepos;
+          anti = apath->aepos + apath->bepos;
+          apath->tlen = bpath->tlen = 0;
+          apath->diffs = 0;
+          if (reverse_wave(work,spec,align,bpath,low,low,anti,minp,maxp,aoff,boff))
+            EXIT(NULL);
+        }
+    }
+        
 
   bpath->diffs = apath->diffs;
   if (ACOMP(align->flags))
@@ -3389,19 +3430,18 @@ int Print_Alignment(FILE *file, Alignment *align, Work_Data *ework,
   b = align->bseq - 1;
 
   o  = 0;
-  i = j = 1;
+  i = align->path->abpos;
+  j = align->path->bbpos;
 
-  prefa = align->path->abpos;
-  prefb = align->path->bbpos;
+  prefa = 0;
+  for (prefa = 0; prefa < border && a[i] != 4; prefa++)
+    i -= 1;
+  i += 1;
 
-  if (prefa > border)
-    { i = prefa-(border-1);
-      prefa = border;
-    }
-  if (prefb > border)
-    { j = prefb-(border-1);
-      prefb = border;
-    }
+  prefb = 0;
+  for (prefb = 0; prefb < border && b[j] != 4; prefb++)
+    j -= 1;
+  j += 1;
 
   sa   = i-1;
   sb   = j-1;
@@ -3652,19 +3692,18 @@ int Print_Reference(FILE *file, Alignment *align, Work_Data *ework,
   b = align->bseq - 1;
 
   o  = 0;
-  i = j = 1;
+  i = align->path->abpos;
+  j = align->path->bbpos;
 
-  prefa = align->path->abpos;
-  prefb = align->path->bbpos;
+  prefa = 0;
+  for (prefa = 0; prefa < border && a[i] != 4; prefa++)
+    i -= 1;
+  i += 1;
 
-  if (prefa > border)
-    { i = prefa-(border-1);
-      prefa = border;
-    }
-  if (prefb > border)
-    { j = prefb-(border-1);
-      prefb = border;
-    }
+  prefb = 0;
+  for (prefb = 0; prefb < border && b[j] != 4; prefb++)
+    j -= 1;
+  j += 1;
 
   s0   = i;
   sa   = i-1;
