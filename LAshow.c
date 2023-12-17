@@ -169,6 +169,7 @@ int main(int argc, char *argv[])
         actg = alen + db1->treads;
 
         s = -1;
+        amaxlen = 0;
         for (r = 0; r < db1->treads; r++)
           { if (db1->reads[r].fpulse == 0)
               { s += 1;
@@ -197,6 +198,7 @@ int main(int argc, char *argv[])
             bctg = blen + db2->treads;
 
             s = -1;
+            bmaxlen = 0;
             for (r = 0; r < db2->treads; r++)
               { if (db2->reads[r].fpulse == 0)
                   { s += 1;
@@ -220,6 +222,9 @@ int main(int argc, char *argv[])
           { bmap = amap;
             blen = alen;
             bctg = actg;
+            nbscaff = nascaff;
+            bctgmax = actgmax;
+            bmaxlen = amaxlen;
           }
       }
   }
