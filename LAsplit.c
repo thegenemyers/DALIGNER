@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
       exit (1);
     }
   if (index(root2+1,BLOCK_SYMBOL) != NULL)
-    { fprintf(stderr,"%s: Two or more occurences of %c-sign in source name '%s'\n",
+    { fprintf(stderr,"%s: Two or more occurrences of %c-sign in source name '%s'\n",
                      Prog_Name,BLOCK_SYMBOL,root);
       exit (1);
     }
