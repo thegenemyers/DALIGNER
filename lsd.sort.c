@@ -55,7 +55,7 @@ typedef struct
     int64  thresh[256];   //  If check then multiple of LEX_zdiv to check for thread assignment
     int64  tptr[256];     //  Finger for each 8-bit value
     int64 *sptr;          //  Conceptually [256][NTHREADS].  At end of sorting pass
-  } Lex_Arg;              //    sprtr[b][n] = # of occurences of value b in rangd of
+  } Lex_Arg;              //    sprtr[b][n] = # of occurrences of value b in rangd of
                           //    thread n for the *next* pass
 
 //  Threaded sorting pass

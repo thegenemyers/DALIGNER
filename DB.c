@@ -2208,7 +2208,7 @@ int Read_Extra(FILE *afile, char *aname, DAZZ_EXTRA *extra)
     }
   if (accum != extra->accum)
     { EPRINTF(EPLACE,
-           "%s: Reduction indicator of extra %s does not agree with previos .anno block files\n",
+           "%s: Reduction indicator of extra %s does not agree with previous .anno block files\n",
            Prog_Name,name);
       goto error;
     }
@@ -2829,7 +2829,7 @@ static Block_Looper *parse_block_arg(char *arg, int isDB)
     first = last = -1;
   else
     { if (index(ppnt+1,BLOCK_SYMBOL) != NULL)
-        { EPRINTF(EPLACE,"%s: Two or more occurences of %c-sign in source name '%s'\n",
+        { EPRINTF(EPLACE,"%s: Two or more occurrences of %c-sign in source name '%s'\n",
                          Prog_Name,BLOCK_SYMBOL,root);
           goto error;
         }

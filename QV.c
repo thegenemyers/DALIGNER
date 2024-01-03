@@ -1319,7 +1319,7 @@ error:
   EXIT(NULL);
 }
 
-  //  Free all the auxilliary storage associated with the encoding argument
+  //  Free all the auxiliary storage associated with the encoding argument
 
 void Free_QVcoding(QVcoding *coding)
 { if (coding->subChar >= 0)

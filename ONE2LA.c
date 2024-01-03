@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
         { t = oneReadLine(file1);
 
           if (t == 0)
-            { fprintf(stderr,"ONE2LA: Pile object not followed by sufficient auxilliary lines\n");
+            { fprintf(stderr,"ONE2LA: Pile object not followed by sufficient auxiliary lines\n");
               exit (1);
             }
           if (has[t] > 0 && t != 'T' && t != 'Q')

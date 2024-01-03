@@ -531,7 +531,7 @@ int main(int argc, char *argv[])
             ARG_POSITIVE(HIT_MIN,"Hit threshold (in bp.s)")
             break;
           case 't':
-            ARG_POSITIVE(MAX_REPS,"Tuple supression frequency")
+            ARG_POSITIVE(MAX_REPS,"Tuple suppression frequency")
             break;
           case 'H':
             ARG_POSITIVE(HGAP_MIN,"HGAP threshold (in bp.s)")
