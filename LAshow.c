@@ -18,6 +18,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#undef DEBUG_GAP_IMPROVER
+
 #include "DB.h"
 #include "align.h"
 
@@ -695,8 +697,10 @@ int main(int argc, char *argv[])
                   Compute_Trace_IRR(aln,work,GREEDIEST);
                 else
                   Compute_Trace_PTS(aln,work,tspace,GREEDIEST);
+                Gap_Improver(aln,work);
               }
 
+#ifdef DEBUG_GAP_IMPROVER
             aln->path->abpos += aoffs;
             aln->path->aepos += aoffs;
             aln->alen = alens;
@@ -716,6 +720,7 @@ int main(int argc, char *argv[])
                   else
                     trace[i] += boffs;
               }
+#endif
 
             if (CARTOON)
               Alignment_Cartoon(stdout,aln,INDENT,mx_wide);
