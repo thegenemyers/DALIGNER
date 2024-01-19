@@ -700,7 +700,7 @@ int main(int argc, char *argv[])
                 Gap_Improver(aln,work);
               }
 
-#ifdef DEBUG_GAP_IMPROVER
+#ifndef DEBUG_GAP_IMPROVER
             aln->path->abpos += aoffs;
             aln->path->aepos += aoffs;
             aln->alen = alens;
