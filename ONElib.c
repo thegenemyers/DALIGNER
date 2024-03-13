@@ -16,8 +16,10 @@
  *
  ****************************************************************************************/
 
+#define _GNU_SOURCE
 #include <sys/errno.h>
 #include <sys/types.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
