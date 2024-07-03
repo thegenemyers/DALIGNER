@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 
   OneFile   *file1;
   OneSchema *schema;
-  int64     *list;
+  I64       *list;
   char      *string, *command;
 
   int t, i, j, k;
